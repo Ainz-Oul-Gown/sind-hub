@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Синдикат-Хаб</title>
+    <!-- Скрипт Телеграма -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <!-- Скрипт Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        /* Берем цвета прямо из темы Телеграма пользователя! */
+        body {
+            font-family: sans-serif;
+            background-color: var(--tg-theme-bg-color, #181818);
+            color: var(--tg-theme-text-color, #ffffff);
+            padding: 20px;
+            text-align: center;
+        }
+        button {
+            background-color: var(--tg-theme-button-color, #2481cc);
+            color: var(--tg-theme-button-text-color, #ffffff);
+            border: none;
+            padding: 15px 20px;
+            border-radius: 10px;
+            font-size: 16px;
+            width: 100%;
+            margin-top: 20px;
+        }
+        .status-box {
+            margin-top: 20px;
+            padding: 20px;
+            border-radius: 10px;
+            background-color: var(--tg-theme-secondary-bg-color, #2c2c2c);
+        }
+    </style>
+</head>
+<body>
+<h2>Синдикат-Хаб 🕵️‍♂️</h2>
+<div id="user-info">Загрузка...</div>
+
+<div class="status-box">
+    <p>Твой статус: <strong id="current-status">?</strong></p>
+    <button onclick="setStatus('Свободен 🟢')">Я свободен</button>
+    <button onclick="setStatus('Занят 🔴')" style="background-color: #cc2424; margin-top: 10px;">Я занят</button>
+</div>
+
+<script>
+    // Инициализируем Телеграм
+    const tg = window.Telegram.WebApp;
+    tg.expand(); // Открываем на весь экран
+
+    // ПОДСТАВЬ СВОИ ДАННЫЕ ИЗ SUPABASE
+    const SUPABASE_URL = 'https://cqhndgtiqdjzzrqdzrfq.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaG5kZ3RpcWRqenpycWR6cmZxIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MzI4NzE3MCwiZXhwIjoyMDk4ODYzMTcwfQ.OMiry_4g_5Bn5VzjoA79V_MGnccm1x5D-Yne1Wc49Sw';
+    const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    const user = tg.initDataUnsafe?.user;
+
+    async function initApp() {
+        if (!user) {
+            document.getElementById('user-info').innerText = "Открой через Телеграм!";
+            return;
+        }
+
+        document.getElementById('user-info').innerHTML = `Привет, <b>${user.first_name}</b>!`;
+
+        // Сохраняем/Обновляем юзера в базе (Upsert)
+        const { data, error } = await supabase
+            .from('users')
+            .upsert({
+                tg_id: user.id,
+                first_name: user.first_name
+            }, { onConflict: 'tg_id' })
+            .select();
+
+        if (data && data[0]) {
+            document.getElementById('current-status').innerText = data[0].status;
+        }
+    }
+
+    // Функция смены статуса
+    async function setStatus(newStatus) {
+        document.getElementById('current-status').innerText = "Обновляю...";
+
+        await supabase
+            .from('users')
+            .update({ status: newStatus })
+            .eq('tg_id', user.id);
+
+        document.getElementById('current-status').innerText = newStatus;
+
+        // Вибрация телефона при успешном нажатии
+        tg.HapticFeedback.impactOccurred('light');
+    }
+
+    initApp();
+</script>
+</body>
+</html>
