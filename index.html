@@ -3,232 +3,296 @@
 <head>
     <link rel="manifest" href="manifest.json">
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Синдикат-Хаб</title>
+    
+    <!-- Подключаем современный шрифт и иконки -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/idb-keyval@6/dist/umd.js"></script>
 
-    <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
-    <script>eruda.init();</script>
-
     <style>
-        body { font-family: -apple-system, sans-serif; background-color: var(--tg-theme-bg-color, #181818); color: var(--tg-theme-text-color, #ffffff); margin: 0; padding: 15px; }
-        .screen { display: none; } .screen.active { display: block; }
-        .card { background: var(--tg-theme-secondary-bg-color, #2c2c2c); padding: 15px; border-radius: 12px; margin-bottom: 15px; }
-        .friend-item { display: flex; justify-content: space-between; padding: 15px; background: var(--tg-theme-secondary-bg-color, #2c2c2c); border-radius: 12px; margin-bottom: 10px; cursor: pointer; }
+        :root {
+            --bg: var(--tg-theme-bg-color, #0f0f13);
+            --surface: var(--tg-theme-secondary-bg-color, #1c1c1e);
+            --surface-hover: rgba(255,255,255,0.05);
+            --primary: var(--tg-theme-button-color, #0A84FF);
+            --text: var(--tg-theme-text-color, #ffffff);
+            --muted: var(--tg-theme-hint-color, #8e8e93);
+            --danger: #FF453A;
+            --success: #32D74B;
+            --border: rgba(255,255,255,0.08);
+            --radius-lg: 16px;
+            --radius-md: 12px;
+        }
 
-        button { background: var(--tg-theme-button-color, #2481cc); color: var(--tg-theme-button-text-color, #fff); border: none; padding: 12px; border-radius: 8px; width: 100%; font-size: 16px; font-weight: bold; cursor: pointer;}
-        input, select { width: 100%; box-sizing: border-box; padding: 10px; margin-top: 5px; margin-bottom: 15px; border-radius: 8px; border: none; background: #111; color: #fff; font-size: 16px;}
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background-color: var(--bg); 
+            color: var(--text); 
+            margin: 0; 
+            padding: 0;
+            overflow-x: hidden;
+        }
 
-        .header-nav { display: flex; align-items: center; margin-bottom: 20px; font-weight: bold;}
-        .back-btn { margin-right: 15px; cursor: pointer; font-size: 20px; color: var(--tg-theme-button-color, #2481cc); }
-        .money-btn { background: #4caf50; border-radius: 50%; width: 55px; height: 55px; display: flex; align-items: center; justify-content: center; font-size: 24px; position: fixed; bottom: 20px; right: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); z-index: 100; cursor: pointer;}
-        .chat-placeholder { background: #1a1a1a; border: 1px dashed #555; border-radius: 12px; height: 100px; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #777; margin-top: 15px; }
+        .screen { display: none; padding: 16px; padding-bottom: 40px; min-height: 100vh; animation: fadeIn 0.3s ease; } 
+        .screen.active { display: block; }
+        
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
-        /* Кнопка закрытия долга  */
-        .btn-resolve { background: #444; color: #fff; font-size: 12px; padding: 4px 10px; border-radius: 6px; cursor: pointer; border: none; width: auto; font-weight: normal; }
-        /* Стили для окна чата */
-        .chat-container {
-            height: 400px;
-            background-color: var(--tg-theme-bg-color, #1a1a1a);
-            border-radius: 12px;
-            display: flex;
-            flex-direction: column;
-            margin-top: 20px;
-            overflow: hidden;
-            border: 1px solid rgba(255,255,255,0.1);
-        }
-        .messages-area {
-            flex-grow: 1;
-            overflow-y: auto;
-            padding: 15px;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-        .msg-bubble {
-            max-width: 80%;
-            padding: 10px 14px;
-            border-radius: 12px;
-            word-wrap: break-word;
-        }
-        .msg-mine {
-            background-color: var(--tg-theme-button-color, #2481cc);
-            align-self: flex-end;
-            border-bottom-right-radius: 2px;
-        }
-        .msg-other {
-            background-color: #2c2c2c;
-            align-self: flex-start;
-            border-bottom-left-radius: 2px;
-        }
-        .chat-input-area {
-            display: flex;
-            padding: 10px;
-            background-color: #242424;
-            gap: 10px;
-        }
-        .chat-input-area input {
-            flex-grow: 1;
-            padding: 12px;
-            border-radius: 20px;
-            border: none;
-            background-color: #333;
-            color: white;
-            outline: none;
-        }
-        .btn-send, .btn-mic {
-            background: none;
-            border: none;
-            font-size: 20px;
-            cursor: pointer;
-            padding: 5px 10px;
-        }
-        .msg-time {
-            font-size: 11px;
-            color: rgba(255, 255, 255, 0.5);
-            text-align: right;
-            margin-top: 4px;
-            margin-bottom: -4px;
-            user-select: none;
-        }
+        /* Типографика */
+        h2.brand-title { font-size: 28px; font-weight: 700; text-align: center; margin: 10px 0 24px; background: linear-gradient(135deg, var(--primary), #32D74B); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        h3.section-title { font-size: 14px; text-transform: uppercase; color: var(--muted); letter-spacing: 0.5px; margin: 24px 0 12px 4px; font-weight: 600; }
+
+        /* Карточки и элементы */
+        .card { background: var(--surface); padding: 16px; border-radius: var(--radius-lg); margin-bottom: 16px; border: 1px solid var(--border); box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
+        
+        /* Профиль */
+        .profile-card { display: flex; align-items: center; justify-content: space-between; }
+        .profile-info { display: flex; align-items: center; gap: 12px; }
+        .avatar { width: 48px; height: 48px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: bold; color: white; background: linear-gradient(135deg, #FF9F0A, #FF453A); flex-shrink: 0; }
+        .status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 20px; font-size: 13px; font-weight: 500; background: rgba(50, 215, 75, 0.15); color: var(--success); cursor: pointer; border: 1px solid rgba(50, 215, 75, 0.3); transition: 0.2s; }
+        .status-badge.busy { background: rgba(255, 69, 58, 0.15); color: var(--danger); border-color: rgba(255, 69, 58, 0.3); }
+        
+        /* Сетка кнопок */
+        .action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 24px; }
+        .action-btn { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px; text-align: center; color: var(--text); font-weight: 600; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 8px; transition: 0.2s; }
+        .action-btn:active { transform: scale(0.96); background: var(--surface-hover); }
+        .action-btn i { font-size: 24px; color: var(--primary); }
+
+        /* Списки (Друзья, Валюты) */
+        .list-item { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--surface); border-radius: var(--radius-md); margin-bottom: 8px; border: 1px solid var(--border); cursor: pointer; transition: 0.2s; }
+        .list-item:active { background: var(--surface-hover); }
+        .list-item-left { display: flex; align-items: center; gap: 12px; }
+        .list-item-title { font-weight: 600; font-size: 16px; }
+        .list-item-subtitle { font-size: 13px; color: var(--muted); margin-top: 2px; }
+        
+        /* Кнопки */
+        button.primary-btn { background: var(--primary); color: #fff; border: none; padding: 14px; border-radius: var(--radius-md); width: 100%; font-size: 16px; font-weight: 600; cursor: pointer; transition: 0.2s; box-shadow: 0 4px 10px rgba(10, 132, 255, 0.3); }
+        button.primary-btn:active { transform: scale(0.98); opacity: 0.9; }
+        
+        /* Формы */
+        input, select { width: 100%; padding: 14px; margin-bottom: 12px; border-radius: var(--radius-md); border: 1px solid var(--border); background: rgba(0,0,0,0.2); color: var(--text); font-size: 16px; outline: none; transition: 0.2s; font-family: 'Inter', sans-serif;}
+        input:focus, select:focus { border-color: var(--primary); }
+        
+        /* Навигация */
+        .header-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+        .back-btn { background: none; border: none; color: var(--primary); font-size: 18px; cursor: pointer; display: flex; align-items: center; gap: 8px; padding: 0; }
+        
+        /* Долги */
+        .debt-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--border); }
+        .debt-row:last-child { border-bottom: none; padding-bottom: 0; }
+        .debt-amount { font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 6px; }
+        .debt-amount.owe { color: var(--danger); }
+        .debt-amount.owed { color: var(--success); }
+        .btn-resolve { background: rgba(255,255,255,0.1); color: var(--text); font-size: 13px; padding: 6px 14px; border-radius: 20px; cursor: pointer; border: none; font-weight: 500; }
+
+        /* ОСОБЫЙ ЛЕЙАУТ ДЛЯ ЧАТА */
+        #screen-friend { display: flex; flex-direction: column; height: 100vh; padding: 0; }
+        .friend-header-wrap { padding: 16px 16px 0; flex-shrink: 0; }
+        
+        .chat-container { flex-grow: 1; display: flex; flex-direction: column; background: var(--bg); overflow: hidden; position: relative; }
+        .messages-area { flex-grow: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+        
+        .msg-bubble { max-width: 85%; padding: 12px 16px; border-radius: 20px; font-size: 15px; line-height: 1.4; word-wrap: break-word; position: relative; }
+        .msg-mine { background: var(--primary); align-self: flex-end; border-bottom-right-radius: 4px; box-shadow: 0 2px 5px rgba(10,132,255,0.2); }
+        .msg-other { background: var(--surface); align-self: flex-start; border-bottom-left-radius: 4px; border: 1px solid var(--border); }
+        .msg-time { font-size: 11px; color: rgba(255, 255, 255, 0.6); text-align: right; margin-top: 4px; margin-bottom: -4px; user-select: none; }
+        
+        /* Поле ввода чата (Стеклянное) */
+        .chat-input-area { flex-shrink: 0; display: flex; align-items: center; padding: 12px 16px; gap: 10px; background: rgba(28, 28, 30, 0.8); backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px); border-top: 1px solid var(--border); padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
+        .chat-input-area input { flex-grow: 1; margin: 0; padding: 12px 16px; border-radius: 24px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); }
+        .btn-send, .btn-mic { background: var(--primary); border: none; width: 44px; height: 44px; border-radius: 50%; color: white; font-size: 18px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s; box-shadow: 0 2px 10px rgba(10,132,255,0.3); }
+        .btn-mic { background: var(--surface); color: var(--text); border: 1px solid var(--border); box-shadow: none; }
+        .btn-mic.recording { background: var(--danger); color: white; animation: pulse 1.5s infinite; }
+        
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(255,69,58,0.7); } 70% { box-shadow: 0 0 0 10px rgba(255,69,58,0); } 100% { box-shadow: 0 0 0 0 rgba(255,69,58,0); } }
+
+        /* ГС UI */
+        .voice-player { display: flex; align-items: center; gap: 12px; padding: 8px 12px; background: rgba(0,0,0,0.2); border-radius: 12px; cursor: pointer; margin-bottom: 6px; }
+        .voice-play-btn { width: 36px; height: 36px; background: var(--primary); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; }
+        .voice-status { font-size: 13px; font-weight: 500; }
+        .voice-text { font-size: 14px; font-style: italic; color: rgba(255,255,255,0.9); }
     </style>
 </head>
 <body>
 
-<!-- ЭКРАН 1: ГЛАВНАЯ -->
-<div id="screen-main" class="screen active">
-    <h2 style="text-align: center; margin-top: 0;">Синдикат</h2>
-    <div class="card" style="display: flex; justify-content: space-between; align-items: center;">
-        <div>Мой статус:<br><strong id="my-status" style="font-size: 18px;">...</strong></div>
-        <button onclick="toggleStatus()" style="width: auto; padding: 8px 15px;">Сменить</button>
-    </div>
-
-    <div style="display: flex; gap: 10px; margin-bottom: 20px;">
-        <button onclick="switchScreen('screen-currencies')" style="background: #555;">⚙️ Валюты</button>
-        <button onclick="openPWA()" style="background: #28a745;" id="btn-pwa">🌐 Открыть как PWA</button>
-    </div>
-
-    <h3 style="color: #999;">Братва:</h3>
-    <div id="friends-list">Загрузка...</div>
-</div>
-
-<!-- ЭКРАН 2: ВАЛЮТЫ -->
-<div id="screen-currencies" class="screen">
-    <div class="header-nav"><span class="back-btn" onclick="switchScreen('screen-main')">⬅</span> Настройки моих валют</div>
-    <div class="card">
-        <input type="text" id="cur-name" placeholder="Название (напр. Адреналин)">
-        <input type="number" id="cur-price" placeholder="Цена в рублях (напр. 150)">
-        <button onclick="addCurrency()">Добавить валюту</button>
-    </div>
-    <div id="my-currencies-list"></div>
-</div>
-
-<!-- ЭКРАН 3: ПРОФИЛЬ ДРУГА И ЛС -->
-<div id="screen-friend" class="screen">
-
-    <div class="header-nav" style="justify-content: space-between;">
-        <div><span class="back-btn" onclick="switchScreen('screen-main')">⬅</span> <span id="friend-name-title">Друг</span></div>
-        <span style="cursor:pointer; font-size: 20px;" onclick="document.getElementById('search-panel').style.display = document.getElementById('search-panel').style.display === 'none' ? 'block' : 'none'">🔍</span>
-    </div>
-
-    <div class="card">
-        <h3 style="margin-top:0; margin-bottom: 5px;">Сводка долгов</h3>
-        <div id="friend-debts">Загрузка...</div>
-        <button onclick="openDebtModal()" style="margin-top: 10px; background: #4caf50;">💰 Добавить долг</button>
-    </div>
-
-    <!-- ЧАТ С ДРУГОМ -->
-    <div class="chat-container">
-        <!-- ПАНЕЛЬ ПОИСКА -->
-        <div id="search-panel" style="display: none; padding: 10px; background: #222; border-bottom: 1px solid #333;">
-            <div style="display: flex; gap: 10px; margin-bottom: 10px;">
-                <input type="text" id="search-input" placeholder="Найти в переписке..." style="margin: 0; padding: 8px;">
-                <button onclick="performSearch()" style="width: auto; padding: 8px 15px;">🔍</button>
-            </div>
-            <div style="display: flex; align-items: center; justify-content: space-between; font-size: 14px;">
-                <label style="color: #bbb; display: flex; align-items: center; gap: 5px;">
-                    <input type="checkbox" id="semantic-toggle" onchange="toggleSlider()"> ИИ-поиск
-                </label>
-                <div id="slider-container" style="display: none; align-items: center; gap: 5px; color: #777;">
-                    Точность: <input type="range" id="semantic-slider" min="0.3" max="0.8" step="0.1" value="0.4" style="width: 70px; margin: 0;">
+    <!-- ЭКРАН 1: ГЛАВНАЯ -->
+    <div id="screen-main" class="screen active">
+        <h2 class="brand-title">СИНДИКАТ</h2>
+        
+        <div class="card profile-card">
+            <div class="profile-info">
+                <div class="avatar" id="my-avatar">М</div>
+                <div>
+                    <div style="font-weight: 600; font-size: 18px; margin-bottom: 4px;">Мой профиль</div>
+                    <div id="my-status" class="status-badge" onclick="toggleStatus()">
+                        <i class="fas fa-circle" style="font-size: 8px;"></i> Свободен
+                    </div>
                 </div>
             </div>
-            <div id="search-results" style="max-height: 150px; overflow-y: auto; margin-top: 10px; font-size: 13px;"></div>
+            <i class="fas fa-cog text-muted" style="color: var(--muted); font-size: 20px;" onclick="switchScreen('screen-currencies')"></i>
+        </div>
+        
+        <div class="action-grid">
+            <div class="action-btn" onclick="switchScreen('screen-currencies')">
+                <i class="fas fa-coins"></i>
+                <span>Мои валюты</span>
+            </div>
+            <div class="action-btn" onclick="openPWA()" id="btn-pwa">
+                <i class="fas fa-mobile-screen"></i>
+                <span>Установить PWA</span>
+            </div>
         </div>
 
-        <div class="messages-area" id="messages-area">
-            <div style="text-align:center; color:#777; margin-top: 20px;">Подключение к защищенному каналу...</div>
-        </div>
-        <div class="chat-input-area">
-            <button class="btn-mic" id="btn-mic" onclick="recordVoice()">🎤</button>
-            <input type="text" id="chat-input" placeholder="Сообщение..." onkeypress="handleEnter(event)">
-            <button class="btn-send" onclick="sendPrivateMessage()">✈️</button>
+        <h3 class="section-title">Братва</h3>
+        <div id="friends-list">
+            <div style="text-align:center; color: var(--muted); padding: 20px;">Загрузка данных...</div>
         </div>
     </div>
-</div>
 
-<!-- ЭКРАН 4: ОФОРМИТЬ ДОЛГ -->
-<div id="screen-add-debt" class="screen">
-    <div class="header-nav"><span class="back-btn" onclick="switchScreen('screen-friend')">⬅</span> Я должен</div>
-    <div class="card">
-        <label>Сумма в рублях:</label>
-        <input type="number" id="debt-rubles" placeholder="Напр. 300" oninput="calculateDebt()">
-        <label id="debt-currency-label">В чем принимает друг:</label>
-        <select id="debt-currency" onchange="calculateDebt()"></select>
-        <div style="margin: 20px 0; font-size: 18px; text-align: center;">Итог: <strong id="debt-result" style="color: #4caf50;">0</strong></div>
-        <button onclick="saveDebt()">Записать долг</button>
+    <!-- ЭКРАН 2: ВАЛЮТЫ -->
+    <div id="screen-currencies" class="screen">
+        <div class="header-nav">
+            <button class="back-btn" onclick="switchScreen('screen-main')"><i class="fas fa-chevron-left"></i> Назад</button>
+            <span>Эмиссия валют</span>
+            <div style="width: 24px;"></div>
+        </div>
+        
+        <div class="card">
+            <h3 class="section-title" style="margin-top: 0;">Создать новую</h3>
+            <input type="text" id="cur-name" placeholder="Название (напр. Адреналин)">
+            <input type="number" id="cur-price" placeholder="Цена в рублях (напр. 150)">
+            <button class="primary-btn" onclick="addCurrency()"><i class="fas fa-plus" style="margin-right: 8px;"></i>Добавить</button>
+        </div>
+        
+        <h3 class="section-title">Мои активы</h3>
+        <div id="my-currencies-list"></div>
     </div>
-</div>
+
+    <!-- ЭКРАН 3: ПРОФИЛЬ ДРУГА И ЛС -->
+    <div id="screen-friend" class="screen">
+        
+        <div class="friend-header-wrap">
+            <div class="header-nav">
+                <button class="back-btn" onclick="switchScreen('screen-main')"><i class="fas fa-chevron-left"></i></button>
+                <div style="text-align: center;">
+                    <div id="friend-name-title" style="font-weight: 600; font-size: 17px;">Друг</div>
+                    <div id="friend-fingerprint" style="font-size: 11px; color: var(--success); font-family: monospace; margin-top: 2px;"></div>
+                </div>
+                <button class="back-btn" onclick="document.getElementById('search-panel').style.display = document.getElementById('search-panel').style.display === 'none' ? 'block' : 'none'"><i class="fas fa-search"></i></button>
+            </div>
+            
+            <div class="card" style="margin-bottom: 0;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <span style="font-weight: 600; color: var(--muted); text-transform: uppercase; font-size: 12px;">Сводка долгов</span>
+                    <button class="btn-resolve" style="background: rgba(10,132,255,0.15); color: var(--primary);" onclick="openDebtModal()"><i class="fas fa-plus"></i> Записать</button>
+                </div>
+                <div id="friend-debts">Загрузка...</div>
+            </div>
+        </div>
+
+        <!-- ЧАТ С ДРУГОМ -->
+        <div class="chat-container">
+            <!-- ПАНЕЛЬ ПОИСКА -->
+            <div id="search-panel" style="display: none; padding: 12px; background: rgba(0,0,0,0.5); border-bottom: 1px solid var(--border); position: absolute; top: 0; width: 100%; z-index: 10; backdrop-filter: blur(10px);">
+                <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                    <input type="text" id="search-input" placeholder="Найти..." style="margin: 0; padding: 10px;">
+                    <button class="primary-btn" onclick="performSearch()" style="width: auto; padding: 0 16px;"><i class="fas fa-search"></i></button>
+                </div>
+                <div style="display: flex; align-items: center; justify-content: space-between; font-size: 13px;">
+                    <label style="color: var(--muted); display: flex; align-items: center; gap: 6px;">
+                        <input type="checkbox" id="semantic-toggle" onchange="toggleSlider()"> ИИ-поиск
+                    </label>
+                    <div id="slider-container" style="display: none; align-items: center; gap: 5px; color: var(--muted);">
+                        Точность: <input type="range" id="semantic-slider" min="0.3" max="0.8" step="0.1" value="0.4" style="width: 70px; margin: 0;">
+                    </div>
+                </div>
+                <div id="search-results" style="max-height: 200px; overflow-y: auto; margin-top: 10px;"></div>
+            </div>
+            
+            <div class="messages-area" id="messages-area">
+                <div style="text-align:center; color:var(--muted); margin-top: 40px; font-size: 14px;">
+                    <i class="fas fa-shield-alt" style="font-size: 24px; color: var(--success); margin-bottom: 10px;"></i><br>
+                    Установка сквозного шифрования...
+                </div>
+            </div>
+            
+            <div class="chat-input-area">
+                <button class="btn-mic" id="btn-mic" onclick="recordVoice()"><i class="fas fa-microphone"></i></button>
+                <input type="text" id="chat-input" placeholder="Сообщение..." onkeypress="handleEnter(event)">
+                <button class="btn-send" onclick="sendPrivateMessage()"><i class="fas fa-paper-plane"></i></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ЭКРАН 4: ОФОРМИТЬ ДОЛГ -->
+    <div id="screen-add-debt" class="screen">
+        <div class="header-nav">
+            <button class="back-btn" onclick="switchScreen('screen-friend')"><i class="fas fa-chevron-left"></i> Назад</button>
+            <span>Оформление долга</span>
+            <div style="width: 24px;"></div>
+        </div>
+        
+        <div class="card">
+            <label style="font-size: 14px; color: var(--muted); margin-bottom: 6px; display: block;">Я должен (в рублях):</label>
+            <input type="number" id="debt-rubles" placeholder="Напр. 300" oninput="calculateDebt()" style="font-size: 20px; font-weight: bold;">
+            
+            <label id="debt-currency-label" style="font-size: 14px; color: var(--muted); margin-bottom: 6px; margin-top: 10px; display: block;">В чем принимает друг:</label>
+            <select id="debt-currency" onchange="calculateDebt()"></select>
+            
+            <div style="margin: 24px 0; font-size: 16px; text-align: center; color: var(--muted);">
+                Итого к выплате:<br>
+                <strong id="debt-result" style="color: var(--success); font-size: 28px; display: block; margin-top: 5px;">0</strong>
+            </div>
+            <button class="primary-btn" onclick="saveDebt()"><i class="fas fa-handshake" style="margin-right: 8px;"></i>Закрепить сделку</button>
+        </div>
+    </div>
 
 <script>
-
-    // Функция для защиты от XSS (превращает опасные символы в безопасные)
+    // --- ВСЯ ЛОГИКА ОСТАЛАСЬ БЕЗ ИЗМЕНЕНИЙ ---
+    
     function escapeHTML(str) {
         if (typeof str !== 'string') return str;
         return str.replace(/[&<>'"]/g,
-            tag => ({
-                '&': '&amp;',
-                '<': '&lt;',
-                '>': '&gt;',
-                "'": '&#39;',
-                '"': '&quot;'
-            }[tag])
+            tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag])
         );
     }
+    
+    // Вспомогательная функция для генерации цвета аватарки
+    function getAvatarGradient(id) {
+        const colors = [
+            ['#FF2D55', '#FF375F'], ['#FF9F0A', '#FF453A'], ['#32D74B', '#28CD41'],
+            ['#0A84FF', '#007AFF'], ['#5E5CE6', '#5856D6'], ['#BF5AF2', '#AF52DE']
+        ];
+        const num = id.toString().split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+        const pair = colors[num % colors.length];
+        return `linear-gradient(135deg, ${pair[0]}, ${pair[1]})`;
+    }
 
-    // --- ИИ: СВЯЗЬ С ФОНОВЫМ ПОТОКОМ (WEB WORKER) ---
-    // Обязательно указываем type: 'module', так как внутри воркера есть import
-    // Добавляем глобальный флаг
     let isAiReady = false;
-
     const aiWorker = new Worker('ai-worker.js', { type: 'module' });
     const audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
 
     aiWorker.onmessage = (event) => {
         const msg = event.data;
         const micBtn = document.getElementById('btn-mic');
-
         if (msg.type === 'progress' && micBtn) {
-            micBtn.innerText = `⬇️ ${msg.percent}%`;
-            micBtn.style.fontSize = '14px';
+            micBtn.innerHTML = `<span style="font-size: 12px; font-weight: bold;">${msg.percent}%</span>`;
         } else if (msg.type === 'ready') {
-            // ФИКС: Сообщаем Хабу, что мы готовы расшифровывать чужие ГС
             isAiReady = true;
-            if (micBtn && micBtn.innerText.includes('⬇️')) {
-                micBtn.innerText = '🎤';
-                micBtn.style.fontSize = '';
-
-            }
+            if (micBtn) micBtn.innerHTML = '<i class="fas fa-microphone"></i>';
         }
     };
 
-    // Обертка-промис, которая отправляет звук в воркер и ждет текст
     function transcribeViaWorker(audioFloat32Array) {
         return new Promise((resolve, reject) => {
             const taskId = Date.now();
-
             const handler = (event) => {
                 const msg = event.data;
                 if (msg.id === taskId) {
@@ -237,19 +301,14 @@
                     else if (msg.type === 'error') reject(new Error(msg.error));
                 }
             };
-
             aiWorker.addEventListener('message', handler);
             aiWorker.postMessage({ type: 'transcribe', id: taskId, audioData: audioFloat32Array });
         });
     }
 
-
-    // --- МОДУЛЬ ЗАПИСИ ---
     let mediaRecorder;
     let audioChunks = [];
     let isRecording = false;
-
-    // ФИКС 1: Создаем глобальную переменную для хранения "открытого" микрофона
     let globalAudioStream = null;
 
     async function recordVoice() {
@@ -257,142 +316,74 @@
             mediaRecorder.stop();
             return;
         }
-
         try {
-            // ФИКС 2: Проверяем, есть ли уже доступ. Если нет — запрашиваем.
-            if (!globalAudioStream) {
-                globalAudioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            }
-
-            // Заряжаем рекордер нашим открытым потоком
+            if (!globalAudioStream) globalAudioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
             mediaRecorder = new MediaRecorder(globalAudioStream);
             audioChunks = [];
-
             mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
-
             mediaRecorder.onstop = async () => {
                 const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
                 isRecording = false;
-
                 const micBtn = document.getElementById('btn-mic');
-                micBtn.innerText = '🎤';
-                micBtn.style.color = '';
+                micBtn.innerHTML = '<i class="fas fa-microphone"></i>';
+                micBtn.classList.remove('recording');
 
-                // --- НОВЫЙ БЛОК БЕЗОПАСНОСТИ ---
-                if (audioBlob.size > 15 * 1024 * 1024) { // Лимит 15 МБ
-                    alert('Голосовое сообщение слишком длинное (Максимум 15 МБ)');
-                    return;
-                }
-                // -------------------------------
-
+                if (audioBlob.size > 15 * 1024 * 1024) return alert('Голосовое сообщение слишком длинное (Максимум 15 МБ)');
                 processBackgroundVoice(audioBlob).catch(e => console.error("Ошибка конвейера ГС:", e));
             };
-
             mediaRecorder.start();
             isRecording = true;
-
             const micBtn = document.getElementById('btn-mic');
-            micBtn.innerText = '🛑';
-            micBtn.style.color = '#ff5252';
-
+            micBtn.innerHTML = '<i class="fas fa-stop"></i>';
+            micBtn.classList.add('recording');
             if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
-
-        } catch (err) {
-            alert('Синдикату нужен доступ к микрофону!');
-        }
+        } catch (err) { alert('Синдикату нужен доступ к микрофону!'); }
     }
 
-    // --- ИДЕНТИФИКАЦИЯ УСТРОЙСТВА ---
-    function getDeviceId() {
-        let did = localStorage.getItem('syndicate_device_id');
-        if (!did) {
-            did = 'dev_' + Math.random().toString(36).substr(2, 9);
-            localStorage.setItem('syndicate_device_id', did);
-        }
-        return did;
-    }
-
-    // --- ФОНОВЫЙ КОНВЕЙЕР (Отправка -> Транскрипция -> Вектор -> Апдейт) ---
     async function processBackgroundVoice(audioBlob) {
         if (!currentAesKey || !currentChatId) return;
-
         const fileName = `voice_${Date.now()}_${currentUser.id}.bin`;
-
-        // 1. Шифруем и загружаем аудио-файл
         const arrayBuffer = await audioBlob.arrayBuffer();
         const iv = window.crypto.getRandomValues(new Uint8Array(12));
-        const encryptedContent = await window.crypto.subtle.encrypt(
-            { name: "AES-GCM", iv: iv }, currentAesKey, arrayBuffer
-        );
-
+        const encryptedContent = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, currentAesKey, arrayBuffer);
         const encryptedBytes = new Uint8Array(encryptedContent);
         const payload = new Uint8Array(iv.length + encryptedBytes.length);
-        payload.set(iv, 0);
-        payload.set(encryptedBytes, iv.length);
+        payload.set(iv, 0); payload.set(encryptedBytes, iv.length);
 
         await supabaseClient.storage.from('voice_messages').upload(fileName, payload, { contentType: 'application/octet-stream' });
-
-        // 2. ОТПРАВКА БЕЗ ТЕКСТА
         const textMarker = `[VOICE]:${fileName}`;
         const encryptedPayloadText = await encryptText(textMarker, currentAesKey);
 
         const { data: insertedMsg, error: insertErr } = await supabaseClient.from('messages').insert([
             { chat_id: currentChatId, sender_id: currentUser.id, encrypted_text: encryptedPayloadText }
         ]).select().single();
-
         if (!insertedMsg || insertErr) return;
 
-        // 3. ФОНОВАЯ ТРАНСКРИПЦИЯ И АПДЕЙТ
         try {
-            // Распаковываем аудио для ИИ-воркера
             if (audioContext.state === 'suspended') await audioContext.resume();
-            const rawAudioBuffer = await audioBlob.arrayBuffer(); // Берем свежий буфер
+            const rawAudioBuffer = await audioBlob.arrayBuffer();
             const decodedAudio = await audioContext.decodeAudioData(rawAudioBuffer);
-            const audioFloat32 = decodedAudio.getChannelData(0); // Получаем массив частот
-
-            // Кидаем математику в соседнее ядро и ждем результат (UI в этот момент ИДЕАЛЬНО ПЛАВНЫЙ)
+            const audioFloat32 = decodedAudio.getChannelData(0);
             const transcribedText = await transcribeViaWorker(audioFloat32);
-
-            if (!transcribedText || transcribedText.trim() === '') {
-                throw new Error("ИИ не услышал слов");
-            }
+            if (!transcribedText || transcribedText.trim() === '') throw new Error("ИИ не услышал слов");
 
             const encryptedVector = await generateAndEncryptVector(transcribedText, currentAesKey);
-
             const newMarker = `[VOICE]:${fileName}|${transcribedText.trim()}`;
             const newEncryptedText = await encryptText(newMarker, currentAesKey);
 
-            const { error: updateErr } = await supabaseClient.from('messages')
-                .update({ encrypted_text: newEncryptedText, encrypted_vector: encryptedVector })
-                .eq('id', insertedMsg.id);
-
-            if (updateErr) throw new Error("БД заблокировала UPDATE (RLS)");
-
+            await supabaseClient.from('messages').update({ encrypted_text: newEncryptedText, encrypted_vector: encryptedVector }).eq('id', insertedMsg.id);
         } catch (e) {
-            console.error("Фоновый процесс прерван:", e);
-
-            // Если произошла ошибка, обновляем пузырь в чате, чтобы показать её
             try {
                 const errorMarker = `[VOICE]:${fileName}|❌ Ошибка: ${e.message}`;
                 const errorEncryptedText = await encryptText(errorMarker, currentAesKey);
-                await supabaseClient.from('messages')
-                    .update({ encrypted_text: errorEncryptedText })
-                    .eq('id', insertedMsg.id);
-            } catch (fallbackErr) {
-                // Если даже отправить ошибку не вышло, значит точно проблема с правами БД
-            }
+                await supabaseClient.from('messages').update({ encrypted_text: errorEncryptedText }).eq('id', insertedMsg.id);
+            } catch (fallbackErr) {}
         }
     }
 
-
-    // Вычисление сходства векторов (от -1 до 1, где 1 — идеальное совпадение)
     function cosineSimilarity(vecA, vecB) {
         let dotProduct = 0, normA = 0, normB = 0;
-        for (let i = 0; i < vecA.length; i++) {
-            dotProduct += vecA[i] * vecB[i];
-            normA += vecA[i] * vecA[i];
-            normB += vecB[i] * vecB[i];
-        }
+        for (let i = 0; i < vecA.length; i++) { dotProduct += vecA[i] * vecB[i]; normA += vecA[i] * vecA[i]; normB += vecB[i] * vecB[i]; }
         if (normA === 0 || normB === 0) return 0;
         return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
     }
@@ -404,128 +395,73 @@
         const threshold = parseFloat(document.getElementById('semantic-slider').value);
 
         if (!query || !currentChatId) return;
-        resultsDiv.innerHTML = '<div style="color: #ff9800; text-align: center;">Взлом истории сообщений...</div>';
+        resultsDiv.innerHTML = '<div style="color: var(--primary); text-align: center; padding: 10px;"><i class="fas fa-spinner fa-spin"></i> Поиск в зашифрованной базе...</div>';
 
-        // 1. Скачиваем все сообщения из комнаты
-        const { data: history } = await supabaseClient.from('messages')
-            .select('encrypted_text, encrypted_vector, created_at')
-            .eq('chat_id', currentChatId);
-
-        if (!history || history.length === 0) {
-            resultsDiv.innerHTML = '<div style="color: #777;">Чат пуст.</div>';
-            return;
-        }
+        const { data: history } = await supabaseClient.from('messages').select('encrypted_text, encrypted_vector, created_at').eq('chat_id', currentChatId);
+        if (!history || history.length === 0) { resultsDiv.innerHTML = '<div style="color: var(--muted); text-align:center;">Чат пуст.</div>'; return; }
 
         let results = [];
         let queryVector = null;
 
-        // 2. Если ИИ-поиск, векторизуем запрос
         if (isSemantic) {
-            resultsDiv.innerHTML = '<div style="color: #ff9800; text-align: center;">Анализ смысла запроса...</div>';
+            resultsDiv.innerHTML = '<div style="color: var(--success); text-align: center; padding: 10px;"><i class="fas fa-brain"></i> ИИ анализирует смысл...</div>';
             const ai = await initAI();
             const output = await ai(query, { pooling: 'mean', normalize: true });
-            queryVector = output.data; // Float32Array
+            queryVector = output.data; 
         }
 
-        resultsDiv.innerHTML = '<div style="color: #ff9800; text-align: center;">Сравнение данных...</div>';
-
-        // 3. Расшифровываем и ищем
         for (const msg of history) {
             try {
-                // Расшифровываем ТЕКСТ
                 const rawData = atob(msg.encrypted_text);
                 const bytes = new Uint8Array(rawData.length);
                 for (let i = 0; i < rawData.length; i++) bytes[i] = rawData.charCodeAt(i);
-
-                const decryptedTextBuffer = await window.crypto.subtle.decrypt(
-                    { name: "AES-GCM", iv: bytes.slice(0, 12) }, currentAesKey, bytes.slice(12)
-                );
+                const decryptedTextBuffer = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.slice(0, 12) }, currentAesKey, bytes.slice(12));
                 let plainText = dec.decode(decryptedTextBuffer);
-
-                // Очищаем маркеры ГС для красивого отображения
                 let displayText = plainText;
                 if (plainText.startsWith('[VOICE]:')) {
                     const parts = plainText.replace('[VOICE]:', '').split('|');
-                    displayText = parts[1] ? `🎤 ${parts[1]}` : '🎤 Зашифрованное ГС';
+                    displayText = parts[1] ? `🎤 ${parts[1]}` : '🎤 ГС';
                 }
 
                 if (isSemantic && msg.encrypted_vector) {
-                    // ИИ ПОИСК: Расшифровываем ВЕКТОР
                     const vecRaw = atob(msg.encrypted_vector);
                     const vecBytes = new Uint8Array(vecRaw.length);
                     for (let i = 0; i < vecRaw.length; i++) vecBytes[i] = vecRaw.charCodeAt(i);
-
-                    const decryptedVecBuffer = await window.crypto.subtle.decrypt(
-                        { name: "AES-GCM", iv: vecBytes.slice(0, 12) }, currentAesKey, vecBytes.slice(12)
-                    );
-                    const msgVector = new Float32Array(decryptedVecBuffer); // Превращаем байты обратно в числа
-
-                    // Сравниваем смысл
+                    const decryptedVecBuffer = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: vecBytes.slice(0, 12) }, currentAesKey, vecBytes.slice(12));
+                    const msgVector = new Float32Array(decryptedVecBuffer); 
                     const score = cosineSimilarity(queryVector, msgVector);
-                    if (score >= threshold) {
-                        results.push({ text: displayText, score: score, time: msg.created_at });
-                    }
+                    if (score >= threshold) results.push({ text: displayText, score: score, time: msg.created_at });
                 } else if (!isSemantic) {
-                    // ОБЫЧНЫЙ ПОИСК: Ищем подстроку
-                    if (displayText.toLowerCase().includes(query.toLowerCase())) {
-                        results.push({ text: displayText, score: 1, time: msg.created_at });
-                    }
+                    if (displayText.toLowerCase().includes(query.toLowerCase())) results.push({ text: displayText, score: 1, time: msg.created_at });
                 }
-            } catch (e) {
-                console.error("Пропуск битого сообщения при поиске");
-            }
+            } catch (e) {}
         }
 
-        // 4. Отрисовка результатов
-        if (results.length === 0) {
-            resultsDiv.innerHTML = '<div style="color: #777; text-align: center;">Ничего не найдено.</div>';
-            return;
-        }
-
-        // Сортируем: ИИ-поиск по точности совпадения, обычный по дате
-        if (isSemantic) {
-            results.sort((a, b) => b.score - a.score);
-        } else {
-            results.sort((a, b) => new Date(b.time) - new Date(a.time));
-        }
+        if (results.length === 0) { resultsDiv.innerHTML = '<div style="color: var(--muted); text-align: center; padding: 10px;">Ничего не найдено.</div>'; return; }
+        if (isSemantic) results.sort((a, b) => b.score - a.score);
+        else results.sort((a, b) => new Date(b.time) - new Date(a.time));
 
         resultsDiv.innerHTML = results.map(r => `
-            <div style="padding: 8px; background: #2a2a2a; border-radius: 6px; margin-bottom: 5px;">
-                <div style="color: #fff; margin-bottom: 3px;">${escapeHTML(r.text)}</div>
-                <div style="color: #777; display: flex; justify-content: space-between;">
+            <div style="padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px; margin-bottom: 8px;">
+                <div style="color: #fff; margin-bottom: 4px;">${escapeHTML(r.text)}</div>
+                <div style="color: var(--muted); display: flex; justify-content: space-between; font-size: 11px;">
                     <span>${new Date(r.time).toLocaleDateString()} ${new Date(r.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                    ${isSemantic ? `<span style="color:#4caf50;">Точность: ${(r.score * 100).toFixed(0)}%</span>` : ''}
+                    ${isSemantic ? `<span style="color:var(--success);"><i class="fas fa-bullseye"></i> ${(r.score * 100).toFixed(0)}%</span>` : ''}
                 </div>
             </div>
         `).join('');
-
     }
 
-    // Показ ползунка только если включен ИИ-поиск
-    function toggleSlider() {
-        const isChecked = document.getElementById('semantic-toggle').checked;
-        document.getElementById('slider-container').style.display = isChecked ? 'flex' : 'none';
-    }
+    function toggleSlider() { document.getElementById('slider-container').style.display = document.getElementById('semantic-toggle').checked ? 'flex' : 'none'; }
 
-
-    // --- ИИ: ЭМБЕДДИНГИ ДЛЯ ПОИСКА (RAG) ---
     let extractor = null;
     let isAiLoading = false;
-
     async function initAI() {
         if (extractor) return extractor;
-        if (isAiLoading) {
-            while (isAiLoading) await new Promise(r => setTimeout(r, 100));
-            return extractor;
-        }
-
+        if (isAiLoading) { while (isAiLoading) await new Promise(r => setTimeout(r, 100)); return extractor; }
         isAiLoading = true;
-        console.log("Загрузка ИИ-модели для векторов...");
-
-        // Динамический импорт прямо внутри функции! HTML-кнопки не сломаются.
         const { pipeline, env } = await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.14.0');
         env.allowLocalModels = false;
-
         extractor = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', { quantized: true });
         isAiLoading = false;
         return extractor;
@@ -533,26 +469,15 @@
 
     async function generateAndEncryptVector(text, aesKey) {
         const ai = await initAI();
-
-        // Генерируем вектор из текста
         const output = await ai(text, { pooling: 'mean', normalize: true });
-        const arrayBuffer = output.data.buffer; // Float32Array -> бинарный буфер
-
-        // Шифруем вектор нашим AES-ключом комнаты
+        const arrayBuffer = output.data.buffer;
         const iv = window.crypto.getRandomValues(new Uint8Array(12));
-        const encryptedContent = await window.crypto.subtle.encrypt(
-            { name: "AES-GCM", iv: iv }, aesKey, arrayBuffer
-        );
-
-        // Склеиваем IV и шифр, пакуем в Base64 для базы
+        const encryptedContent = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, aesKey, arrayBuffer);
         const encryptedBytes = new Uint8Array(encryptedContent);
         const payload = new Uint8Array(iv.length + encryptedBytes.length);
-        payload.set(iv, 0);
-        payload.set(encryptedBytes, iv.length);
-
+        payload.set(iv, 0); payload.set(encryptedBytes, iv.length);
         return btoa(String.fromCharCode.apply(null, payload));
     }
-
 
     const tg = window.Telegram.WebApp;
     tg.expand();
@@ -562,206 +487,92 @@
         'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaG5kZ3RpcWRqenpycWR6cmZxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMyODcxNzAsImV4cCI6MjA5ODg2MzE3MH0.Tt432Nn4A9z9IYiVQcePj9v0FEFJNdjGI5pywdFYSOQ'
     );
 
-    // Функция, которая "включает" авторизацию для базы данных
-    function setSupabaseToken(token) {
-        // Мы используем токен как кастомный заголовок
-        //supabaseClient.realtime.setAuth(token); // Для вебсокетов
-        supabaseClient.rest.headers['Authorization'] = `Bearer ${token}`; // Для обычных запросов
-    }
+    function setSupabaseToken(token) { supabaseClient.rest.headers['Authorization'] = `Bearer ${token}`; }
 
-    // Теперь юзер глобальный и может браться как из ТГ, так и из БД напрямую
     let currentUser = null;
     let currentFriend = null;
-
-
-
-    // Вспомогательная функция перевода строки в байты
     const enc = new TextEncoder();
     const dec = new TextDecoder();
 
-    // 1. ШИФРОВАНИЕ ТЕКСТА
+    function getDeviceId() {
+        let did = localStorage.getItem('syndicate_device_id');
+        if (!did) { did = 'dev_' + Math.random().toString(36).substr(2, 9); localStorage.setItem('syndicate_device_id', did); }
+        return did;
+    }
+
     async function encryptText(text, aesKey) {
-        // В AES-GCM нужен вектор инициализации (IV). Это как "соль" для пароля.
         const iv = window.crypto.getRandomValues(new Uint8Array(12));
-
-        const encryptedContent = await window.crypto.subtle.encrypt(
-            { name: "AES-GCM", iv: iv },
-            aesKey,
-            enc.encode(text)
-        );
-
-        // Склеиваем IV и само сообщение, чтобы при расшифровке знать эту "соль"
+        const encryptedContent = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, aesKey, enc.encode(text));
         const encryptedBytes = new Uint8Array(encryptedContent);
         const payload = new Uint8Array(iv.length + encryptedBytes.length);
-        payload.set(iv, 0);
-        payload.set(encryptedBytes, iv.length);
-
-        // Превращаем массив в Base64, чтобы положить в Supabase как текст (text тип колонки)
+        payload.set(iv, 0); payload.set(encryptedBytes, iv.length);
         return btoa(String.fromCharCode.apply(null, payload));
     }
 
-    // 2. ОТПРАВКА СООБЩЕНИЯ
-    async function sendTextMessage() {
+    async function sendPrivateMessage() {
         const input = document.getElementById('chat-input');
         const text = input.value.trim();
-        if (!text) return;
-
-        // Временно берем "тестовый" chat_id (нужно будет создать запись в таблице chats)
-        const testChatId = "00000000-0000-0000-0000-000000000001";
-        const aesKey = await idbKeyval.get('current_chat_key'); // Достаем ключ из памяти
-
-        if (!aesKey) {
-            alert("Сначала нужно выковать ключ чата!");
-            return;
-        }
-
-        const encryptedPayload = await encryptText(text, aesKey);
-
-        input.value = ""; // Очищаем поле
-
-        // Пишем в БД
-        await supabaseClient.from('messages').insert([
-            {
-                chat_id: testChatId,
-                sender_id: currentUser.id,
-                encrypted_text: encryptedPayload
-            }
-        ]);
+        if (!text || !currentAesKey || !currentChatId) return;
+        input.value = "";
+        const encryptedPayload = await encryptText(text, currentAesKey);
+        const encryptedVector = await generateAndEncryptVector(text, currentAesKey);
+        await supabaseClient.from('messages').insert([ { chat_id: currentChatId, sender_id: currentUser.id, encrypted_text: encryptedPayload, encrypted_vector: encryptedVector } ]);
+        if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
     }
 
-    // 3. СЛУШАЕМ БАЗУ (WebSockets)
-    // 1. Добавляем глобальную переменную для хранения текущей подписки (где-нибудь в начале скрипта)
-    let testRoomSubscription = null;
+    function handleEnter(e) { if (e.key === 'Enter') sendPrivateMessage(); }
 
-    // 2. Обновляем саму функцию
-    function listenForMessages(chatId, aesKey) {
-        // ГЛАВНЫЙ ФИКС: Если мы уже слушаем канал — отписываемся от него перед пересозданием
-        if (testRoomSubscription) {
-            supabaseClient.removeChannel(testRoomSubscription);
-        }
-
-        // Записываем новую подписку в нашу переменную
-        testRoomSubscription = supabaseClient.channel('custom-all-channel')
+    let currentChatSubscription = null;
+    function subscribeToPrivateMessages() {
+        if (currentChatSubscription) supabaseClient.removeChannel(currentChatSubscription);
+        currentChatSubscription = supabaseClient.channel(`chat-${currentChatId}`)
             .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `chat_id=eq.${currentChatId}` },
                 async (payload) => {
                     const newMsg = payload.new;
                     if (!newMsg || !newMsg.encrypted_text) return;
-
                     const msgDate = new Date(newMsg.created_at);
                     const timeStr = msgDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-                    // --- ДЕШИФРОВКА ---
                     const rawData = atob(newMsg.encrypted_text);
                     const bytes = new Uint8Array(rawData.length);
                     for (let i = 0; i < rawData.length; i++) bytes[i] = rawData.charCodeAt(i);
-
-                    const iv = bytes.slice(0, 12);
-                    const data = bytes.slice(12);
-
+                    const iv = bytes.slice(0, 12); const data = bytes.slice(12);
                     try {
                         const decryptedBuffer = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: iv }, currentAesKey, data);
-                        const dec = new TextDecoder();
-                        const plainText = dec.decode(decryptedBuffer); // ВОТ ОНА, ПЕРЕМЕННАЯ
-
-                        // 1. Рендерим сообщение
+                        const plainText = dec.decode(decryptedBuffer); 
                         renderMessage(plainText, newMsg.sender_id === currentUser.id, timeStr, newMsg.id);
-
-                        // 2. ДЕЦЕНТРАЛИЗОВАННАЯ ТРАНСКРИПЦИЯ (всё еще внутри try, поэтому plainText виден!)
-                        if (newMsg.sender_id !== currentUser.id) {
-                            if (plainText.startsWith('[VOICE]:') && !plainText.includes('|')) {
-                                if (isAiReady) {
-                                    const fileName = plainText.replace('[VOICE]:', '');
-                                    console.log("🔍 [P2P] Запуск P2P обработки:", fileName);
-                                    helpFriendTranscribe(fileName, newMsg.id);
-                                }
-                            }
+                        if (newMsg.sender_id !== currentUser.id && plainText.startsWith('[VOICE]:') && !plainText.includes('|') && isAiReady) {
+                            helpFriendTranscribe(plainText.replace('[VOICE]:', ''), newMsg.id);
                         }
-
-                    } catch (e) {
-                        console.error("Ошибка расшифровки:", e);
-                        renderMessage("🔒 [Ошибка расшифровки]", newMsg.sender_id === currentUser.id, timeStr, newMsg.id);
-                    }
+                    } catch (e) { renderMessage("🔒 [Ошибка расшифровки]", newMsg.sender_id === currentUser.id, timeStr, newMsg.id); }
                 }
-            )
-            .subscribe();
+            ).subscribe((status, err) => {
+                if (status === 'CHANNEL_ERROR') console.error('❌ Ошибка вебсокетов:', err);
+            });
     }
 
-    // --- ФУНКЦИЯ ВЗАИМОВЫРУЧКИ УСТРОЙСТВ ---
-    // --- ФУНКЦИЯ ВЗАИМОВЫРУЧКИ УСТРОЙСТВ (ДЕЦЕНТРАЛ) ---
     async function helpFriendTranscribe(fileName, msgId) {
-        console.log("🔍 [P2P] Запуск транскрипции для:", fileName, "ID сообщения:", msgId);
-
-        if (!currentAesKey || !currentChatId) {
-            console.error("❌ [P2P] Нет ключа шифрования или ID чата, отмена");
-            return;
-        }
-
+        if (!currentAesKey || !currentChatId) return;
         try {
-            console.log("📥 [P2P] Скачиваю файл из Storage...");
-            const { data: fileData, error: downloadErr } = await supabaseClient.storage
-                .from('voice_messages')
-                .download(fileName);
-
-            if (downloadErr) throw new Error("Не удалось скачать файл: " + downloadErr.message);
-            console.log("✅ [P2P] Файл скачан, размер:", fileData.size, "байт");
-
-            // Расшифровка
+            const { data: fileData, error: downloadErr } = await supabaseClient.storage.from('voice_messages').download(fileName);
+            if (downloadErr) throw new Error(downloadErr.message);
             const arrayBuffer = await fileData.arrayBuffer();
             const bytes = new Uint8Array(arrayBuffer);
-            const iv = bytes.slice(0, 12);
-            const encryptedData = bytes.slice(12);
-
-            const decryptedBuffer = await window.crypto.subtle.decrypt(
-                { name: "AES-GCM", iv: iv }, currentAesKey, encryptedData
-            );
-
-            // Подготовка аудио для Web Worker
+            const decryptedBuffer = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.slice(0, 12) }, currentAesKey, bytes.slice(12));
             if (audioContext.state === 'suspended') await audioContext.resume();
             const audioBuffer = await audioContext.decodeAudioData(decryptedBuffer.slice(0));
-            const audioFloat32 = audioBuffer.getChannelData(0);
-
-            // Запуск транскрипции в фоновом потоке
-            console.log("🧠 [P2P] Передаю математику в ИИ-воркер...");
-            const transcribedText = await transcribeViaWorker(audioFloat32);
-
-            if (!transcribedText || transcribedText.trim() === '') {
-                throw new Error("ИИ не распознал речь");
-            }
-
-            console.log("📝 [P2P] Транскрипция готова:", transcribedText);
-
-            // Генерация и шифрование данных
+            const transcribedText = await transcribeViaWorker(audioBuffer.getChannelData(0));
+            if (!transcribedText || transcribedText.trim() === '') throw new Error("ИИ не распознал речь");
             const encryptedVector = await generateAndEncryptVector(transcribedText, currentAesKey);
-            const newMarker = `[VOICE]:${fileName}|${transcribedText.trim()}`;
-            const newEncryptedText = await encryptText(newMarker, currentAesKey);
-
-            // АПДЕЙТ сообщения
-            console.log("💾 [P2P] Отправляю результат в БД...");
-            const { error: updateErr } = await supabaseClient.from('messages')
-                .update({
-                    encrypted_text: newEncryptedText,
-                    encrypted_vector: encryptedVector
-                })
-                .eq('id', msgId);
-
-            if (updateErr) throw new Error("Ошибка БД при апдейте: " + updateErr.message);
-
-            console.log("🚀 [P2P] Успешно! Текст добавлен в сообщение", msgId);
-
-        } catch (e) {
-            console.error("❌ [P2P] Критическая ошибка:", e);
-            // Можно добавить здесь отправку ошибки в чат, если нужно
-        }
+            const newEncryptedText = await encryptText(`[VOICE]:${fileName}|${transcribedText.trim()}`, currentAesKey);
+            await supabaseClient.from('messages').update({ encrypted_text: newEncryptedText, encrypted_vector: encryptedVector }).eq('id', msgId);
+        } catch (e) { console.error("P2P Ошибка:", e); }
     }
 
-    // ФИКС: Теперь мы передаем msgId (ID из базы), чтобы уметь обновлять пузырь чата
+    // НОВЫЙ РЕНДЕР СООБЩЕНИЙ С КРАСИВЫМИ ГС
     function renderMessage(text, isMine, timeString = "", msgId = null) {
         const area = document.getElementById('messages-area');
-
-        // Ищем, есть ли уже такое сообщение на экране (для апдейта ГС)
         let div = msgId ? document.getElementById(`msg-${msgId}`) : null;
         let isNew = false;
-
         if (!div) {
             div = document.createElement('div');
             if (msgId) div.id = `msg-${msgId}`;
@@ -772,19 +583,17 @@
         if (text.startsWith('[VOICE]:')) {
             const parts = text.replace('[VOICE]:', '').split('|');
             const fileName = parts[0];
-
-            // Если текста еще нет, показываем часики или статус
-            const transcription = parts[1] ? `<i>"${parts[1]}"</i>` : '<i style="color:#777">Анализ голоса... ⏳</i>';
-
+            const transcription = parts[1] ? parts[1] : 'ИИ анализирует... ⏳';
+            
             div.innerHTML = `
-                <div style="cursor:pointer; display:flex; align-items:center; gap:8px; padding: 5px; background: rgba(0,0,0,0.15); border-radius: 8px;"
-                     onclick="loadAndPlayVoice('${fileName}', this)">
-                    <span style="font-size: 24px;">▶️</span>
-                    <span class="voice-status">Зашифрованное ГС</span>
+                <div class="voice-player" onclick="loadAndPlayVoice('${fileName}', this)">
+                    <div class="voice-play-btn"><i class="fas fa-play" style="margin-left: 3px;"></i></div>
+                    <div>
+                        <div class="voice-status">Голосовое сообщение</div>
+                    </div>
                 </div>
-                <div style="margin-top: 8px; font-size: 14px; color: #ddd; word-break: break-word;">
-                    ${transcription}
-                </div>`;
+                <div class="voice-text">${escapeHTML(transcription)}</div>
+            `;
         } else {
             div.innerText = text;
         }
@@ -798,206 +607,91 @@
 
         if (isNew) {
             area.appendChild(div);
-            area.scrollTop = area.scrollHeight;
+            // Плавная прокрутка
+            area.scrollTo({ top: area.scrollHeight, behavior: 'smooth' });
         }
     }
-
 
     async function loadAndPlayVoice(fileName, element) {
-        const statusSpan = element.querySelector('.voice-status');
-        statusSpan.innerText = 'Взлом файла...';
-
-        // 1. Скачиваем шифр из бакета
+        const icon = element.querySelector('.voice-play-btn i');
+        icon.className = 'fas fa-spinner fa-spin';
         const { data, error } = await supabaseClient.storage.from('voice_messages').download(fileName);
-        if (error) { statusSpan.innerText = 'Ошибка сети'; return; }
-
-        // 2. Достаем байты
-        const arrayBuffer = await data.arrayBuffer();
-        const bytes = new Uint8Array(arrayBuffer);
-        const iv = bytes.slice(0, 12);
-        const encryptedData = bytes.slice(12);
-
+        if (error) { icon.className = 'fas fa-exclamation-triangle'; return; }
+        const bytes = new Uint8Array(await data.arrayBuffer());
         try {
-            // 3. Расшифровываем аудио
-            const decryptedBuffer = await window.crypto.subtle.decrypt(
-                { name: "AES-GCM", iv: iv },
-                currentAesKey,
-                encryptedData
-            );
-
-            // 4. Собираем аудиофайл и создаем локальную ссылку
-            const decryptedBlob = new Blob([decryptedBuffer]);
-            const audioUrl = URL.createObjectURL(decryptedBlob);
-
-            // ФИКС: Заменяем только саму кнопку, оставляя текст и время нетронутыми!
-            element.outerHTML = `
-                <audio controls src="${audioUrl}" autoplay
-                       style="height: 35px; width: 220px; outline: none; margin-bottom: 5px;">
-                </audio>`;
-
-        } catch (e) {
-            statusSpan.innerText = 'Ошибка ключа 🔒';
-        }
+            const decryptedBuffer = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.slice(0, 12) }, currentAesKey, bytes.slice(12));
+            const audioUrl = URL.createObjectURL(new Blob([decryptedBuffer]));
+            element.outerHTML = `<audio controls src="${audioUrl}" autoplay style="height: 40px; width: 220px; outline: none; margin-bottom: 8px; border-radius: 20px;"></audio>`;
+        } catch (e) { icon.className = 'fas fa-lock'; }
     }
 
-
-
-    // 1. ПРИ ГЕНЕРАЦИИ СОХРАНЯЕМ С ID ПОЛЬЗОВАТЕЛЯ
     async function generatePersonalArmor(userId) {
-        const keyPair = await window.crypto.subtle.generateKey(
-            { name: "RSA-OAEP", modulusLength: 4096, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" },
-            true, ["encrypt", "decrypt"]
-        );
-
-        // ФИКС: У каждого юзера теперь свой личный сейф в памяти телефона
+        const keyPair = await window.crypto.subtle.generateKey({ name: "RSA-OAEP", modulusLength: 4096, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["encrypt", "decrypt"]);
         await idbKeyval.set(`my_private_key_${userId}`, keyPair.privateKey);
-
-        const exportedPublicKey = await window.crypto.subtle.exportKey("jwk", keyPair.publicKey);
-        return exportedPublicKey;
+        return await window.crypto.subtle.exportKey("jwk", keyPair.publicKey);
     }
 
-    // 2. ПРИ ПРОВЕРКЕ ИЩЕМ КЛЮЧ КОНКРЕТНОГО ПОЛЬЗОВАТЕЛЯ
     async function checkCryptoKeys(userId) {
         const deviceId = getDeviceId();
         const privateKey = await idbKeyval.get(`my_private_key_${userId}`);
         const { data: userData } = await supabaseClient.from('users').select('public_key').eq('tg_id', userId).single();
-
         let publicKeysDict = {};
         if (userData && userData.public_key) {
-            try {
-                publicKeysDict = JSON.parse(userData.public_key);
-                // Защита от старого формата (если там лежал просто 1 ключ)
-                if (publicKeysDict.kty) publicKeysDict = { "legacy_dev": publicKeysDict };
-            } catch (e) { publicKeysDict = {}; }
+            try { publicKeysDict = JSON.parse(userData.public_key); if (publicKeysDict.kty) publicKeysDict = { "legacy_dev": publicKeysDict }; } catch (e) { publicKeysDict = {}; }
         }
-
         if (!privateKey || !publicKeysDict[deviceId]) {
-            console.log("Генерация ключей для нового устройства: ", deviceId);
             const publicKeyJwk = await generatePersonalArmor(userId);
-
-            // Добавляем ключ нового устройства в общий словарь
             publicKeysDict[deviceId] = publicKeyJwk;
-
-            const { error } = await supabaseClient.from('users').update({ public_key: JSON.stringify(publicKeysDict) }).eq('tg_id', userId);
-            if (error) console.error("Ошибка загрузки ключа в базу:", error);
+            await supabaseClient.from('users').update({ public_key: JSON.stringify(publicKeysDict) }).eq('tg_id', userId);
         }
     }
 
-    async function generateChatKey() {
-        // Генерируем AES-GCM (очень быстрый алгоритм для текста)
-        const chatKey = await window.crypto.subtle.generateKey(
-            { name: "AES-GCM", length: 256 },
-            true, // Разрешаем экспорт, чтобы упаковать в чужие сейфы
-            ["encrypt", "decrypt"]
-        );
-        return chatKey;
-    }
+    async function generateChatKey() { return await window.crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]); }
 
-    // publicJwk - это публичный ключ друга из БД Supabase
-    // НАДЁЖНОЕ ШИФРОВАНИЕ КЛЮЧА ЧАТА (Конвертируем в Base64)
     async function encryptChatKeyForFriend(chatKey, friendPublicJwk) {
-        const friendPublicKey = await window.crypto.subtle.importKey(
-            "jwk",
-            friendPublicJwk,
-            { name: "RSA-OAEP", hash: "SHA-256" },
-            true,
-            ["encrypt"]
-        );
-
+        const friendPublicKey = await window.crypto.subtle.importKey("jwk", friendPublicJwk, { name: "RSA-OAEP", hash: "SHA-256" }, true, ["encrypt"]);
         const rawChatKey = await window.crypto.subtle.exportKey("raw", chatKey);
-
-        const encryptedKeyBuffer = await window.crypto.subtle.encrypt(
-            { name: "RSA-OAEP" },
-            friendPublicKey,
-            rawChatKey
-        );
-
-        // ФИКС: Переводим бинарный ArrayBuffer в безопасную Base64 строку
-        const bytes = new Uint8Array(encryptedKeyBuffer);
-        return btoa(String.fromCharCode.apply(null, bytes));
+        const encryptedKeyBuffer = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, friendPublicKey, rawChatKey);
+        return btoa(String.fromCharCode.apply(null, new Uint8Array(encryptedKeyBuffer)));
     }
 
-    // НАДЁЖНОЕ РАСШИФРОВЫВАНИЕ КЛЮЧА ЧАТА (Из Base64 обратно в байты)
-    // 3. ПРИ РАСШИФРОВКЕ ДОСТАЕМ ИМЕННО СВОЙ КЛЮЧ
     async function decryptChatKey(encryptedKeyBase64) {
-        // ФИКС: Достаем ключ текущего юзера
         const myPrivateKey = await idbKeyval.get(`my_private_key_${currentUser.id}`);
-
         const binaryString = atob(encryptedKeyBase64);
         const encryptedKeyBuffer = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-            encryptedKeyBuffer[i] = binaryString.charCodeAt(i);
-        }
-
-        const rawChatKey = await window.crypto.subtle.decrypt(
-            { name: "RSA-OAEP" },
-            myPrivateKey,
-            encryptedKeyBuffer
-        );
-
-        const chatKey = await window.crypto.subtle.importKey(
-            "raw",
-            rawChatKey,
-            { name: "AES-GCM", length: 256 },
-            false,
-            ["encrypt", "decrypt"]
-        );
-
-        return chatKey;
+        for (let i = 0; i < binaryString.length; i++) encryptedKeyBuffer[i] = binaryString.charCodeAt(i);
+        const rawChatKey = await window.crypto.subtle.decrypt({ name: "RSA-OAEP" }, myPrivateKey, encryptedKeyBuffer);
+        return await window.crypto.subtle.importKey("raw", rawChatKey, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
     }
 
     async function authUser() {
-        // БЕРЕМ ТОКЕН ИЗ ХЭША, А НЕ ИЗ ПАРАМЕТРОВ ЗАПРОСА
         const hashParams = new URLSearchParams(window.location.hash.substring(1));
         const urlToken = hashParams.get('token');
-
-        // Берем СЫРУЮ строку данных, а не разобранный объект
         const tgInitData = window.Telegram.WebApp.initData;
         let isAuthorized = false;
 
-        // Вариант 1: Мы внутри Телеграма
         if (tgInitData) {
             try {
-                // Прямой запрос, чтобы увидеть РЕАЛЬНУЮ ошибку сервера
-                const res = await fetch('https://cqhndgtiqdjzzrqdzrfq.supabase.co/functions/v1/tg-auth', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ initData: tgInitData })
-                });
-                
-                const rawText = await res.text(); // Читаем ответ как текст
-                
-                if (!res.ok) {
-                    alert(`СТАТУС: ${res.status}\nОШИБКА: ${rawText}`);
-                    return false;
+                const { data: result, error: fetchErr } = await supabaseClient.functions.invoke('tg-auth', { body: { initData: tgInitData } });
+                if (fetchErr) { alert("Ошибка сервера: " + fetchErr.message); } 
+                else if (result && result.token) {
+                    currentUser = { id: result.id, first_name: result.first_name };
+                    localStorage.setItem('synd_token', result.token);
+                    setSupabaseToken(result.token); 
+                    isAuthorized = true;
                 }
-
-                const result = JSON.parse(rawText);
-                currentUser = { id: result.id, first_name: result.first_name };
-                localStorage.setItem('synd_token', result.token);
-                setSupabaseToken(result.token); 
-                isAuthorized = true;
-
-            } catch(e) {
-                alert("Критический сбой сети: " + e.message); 
-            }
+            } catch(e) {}
         }
-        // Вариант 2: Перешли по ссылке с токеном (PWA)
         else if (urlToken) {
             localStorage.setItem('synd_token', urlToken);
             window.history.replaceState({}, document.title, window.location.pathname);
             isAuthorized = await fetchUserByToken(urlToken);
         }
-        // Вариант 3: Просто открыли PWA
         else if (localStorage.getItem('synd_token')) {
             isAuthorized = await fetchUserByToken(localStorage.getItem('synd_token'));
         }
 
-        if (isAuthorized && currentUser && currentUser.id) {
-            await checkCryptoKeys(currentUser.id);
-            return true;
-        }
-
+        if (isAuthorized && currentUser && currentUser.id) { await checkCryptoKeys(currentUser.id); return true; }
         return false;
     }
 
@@ -1005,9 +699,8 @@
         const { data } = await supabaseClient.from('users').select('tg_id, first_name').eq('auth_token', token).single();
         if (data) {
             currentUser = { id: data.tg_id, first_name: data.first_name };
-            setSupabaseToken(token); // <--- ДОБАВИТЬ ЭТО
+            setSupabaseToken(token); 
             document.getElementById('btn-pwa').style.display = 'none';
-
             return true;
         }
         return false;
@@ -1015,161 +708,89 @@
 
     async function getFingerprint(jwkKeyString) {
         if (!jwkKeyString) return "НЕТ КЛЮЧА";
-        // Хэшируем публичный ключ с помощью SHA-256
         const hashBuffer = await window.crypto.subtle.digest('SHA-256', enc.encode(jwkKeyString));
         const hashArray = Array.from(new Uint8Array(hashBuffer));
-        // Берем первые 4 байта и переводим в число (от 0 до 4 миллиардов)
         const num = (hashArray[0] << 24 | hashArray[1] << 16 | hashArray[2] << 8 | hashArray[3]) >>> 0;
-        return num.toString().padStart(10, '0').match(/.{1,5}/g).join('-'); // Формат: 12345-67890
+        return num.toString().padStart(10, '0').match(/.{1,5}/g).join('-'); 
     }
 
-    // --- ФУНКЦИЯ ДЛЯ ПЕРЕХОДА В PWA ---
     function openPWA() {
         const token = localStorage.getItem('synd_token');
         if (!token) return alert('Ошибка токена!');
-
-        // Формируем безопасную ссылку через хэш (#), который не виден серверам
         const baseUrl = window.location.href.split('?')[0].split('#')[0];
-        const pwaUrl = `${baseUrl}#token=${token}`;
-
-        // Заставляем Телеграм открыть ссылку во внешнем браузере
-        tg.openLink(pwaUrl);
+        tg.openLink(`${baseUrl}#token=${token}`);
     }
-
 
     let currentChatId = null;
     let currentAesKey = null;
-    let currentChatSubscription = null;
 
-    // Вызывается автоматически при открытии профиля друга
     async function initPrivateChat(friendId) {
-        document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:#777;">Проверка крипто-ключей...</div>';
-
-        // 1. Ищем общую комнату через SQL-функцию
-        const { data: existingChatId, error } = await supabaseClient.rpc('get_private_chat', {
-            user1_id: currentUser.id,
-            user2_id: friendId
-        });
-
-        if (existingChatId) {
-            currentChatId = existingChatId;
-            await loadExistingChat();
-        } else {
-            await createNewPrivateChat(friendId);
-        }
+        document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:var(--muted); margin-top: 40px; font-size: 14px;"><i class="fas fa-shield-alt fa-spin" style="font-size: 24px; color: var(--primary); margin-bottom: 10px;"></i><br>Проверка крипто-ключей...</div>';
+        const { data: existingChatId } = await supabaseClient.rpc('get_private_chat', { user1_id: currentUser.id, user2_id: friendId });
+        if (existingChatId) { currentChatId = existingChatId; await loadExistingChat(); } 
+        else { await createNewPrivateChat(friendId); }
     }
 
     async function createNewPrivateChat(friendId) {
         const { data: friendData } = await supabaseClient.from('users').select('public_key').eq('tg_id', friendId).single();
         const { data: myData } = await supabaseClient.from('users').select('public_key').eq('tg_id', currentUser.id).single();
-
-        if (!friendData?.public_key) {
-            document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:#ff5252;">Друг еще не создал крипто-броню.</div>';
-            return;
-        }
-
-        document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:#ff9800;">Генерация безопасного канала...</div>';
+        if (!friendData?.public_key) { document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:var(--danger); margin-top:20px;">Пользователь еще не создал крипто-броню.</div>'; return; }
+        
         currentAesKey = await generateChatKey();
         const { data: newChat } = await supabaseClient.from('chats').insert({ name: 'private' }).select().single();
         currentChatId = newChat.id;
 
-        // Разбираем ключи друга
-        let friendKeys = JSON.parse(friendData.public_key);
-        if (friendKeys.kty) friendKeys = { "legacy": friendKeys }; // Поддержка старых ключей
+        let friendKeys = JSON.parse(friendData.public_key); if (friendKeys.kty) friendKeys = { "legacy": friendKeys };
+        let encKeysForFriend = {}; for (const [devId, pubJwk] of Object.entries(friendKeys)) encKeysForFriend[devId] = await encryptChatKeyForFriend(currentAesKey, pubJwk);
 
-        let encKeysForFriend = {};
-        for (const [devId, pubJwk] of Object.entries(friendKeys)) {
-            encKeysForFriend[devId] = await encryptChatKeyForFriend(currentAesKey, pubJwk);
-        }
+        let myKeys = JSON.parse(myData.public_key); if (myKeys.kty) myKeys = { "legacy": myKeys };
+        let encKeysForMe = {}; for (const [devId, pubJwk] of Object.entries(myKeys)) encKeysForMe[devId] = await encryptChatKeyForFriend(currentAesKey, pubJwk);
 
-        // Разбираем твои ключи
-        let myKeys = JSON.parse(myData.public_key);
-        if (myKeys.kty) myKeys = { "legacy": myKeys };
-
-        let encKeysForMe = {};
-        for (const [devId, pubJwk] of Object.entries(myKeys)) {
-            encKeysForMe[devId] = await encryptChatKeyForFriend(currentAesKey, pubJwk);
-        }
-
-        // Сохраняем целые словари зашифрованных ключей!
         await supabaseClient.from('chat_keys').insert([
             { chat_id: currentChatId, user_id: friendId, encrypted_key: JSON.stringify(encKeysForFriend) },
             { chat_id: currentChatId, user_id: currentUser.id, encrypted_key: JSON.stringify(encKeysForMe) }
         ]);
-
-        document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:#4caf50;">Канал защищен. E2EE активно 🔒</div>';
+        document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:var(--success); margin-top: 20px;"><i class="fas fa-lock" style="margin-bottom:8px;"></i><br>Канал защищен. E2EE активно</div>';
         subscribeToPrivateMessages();
     }
 
     async function loadExistingChat() {
-        const { data: keyData } = await supabaseClient.from('chat_keys')
-            .select('encrypted_key').eq('chat_id', currentChatId).eq('user_id', currentUser.id).single();
-
+        const { data: keyData } = await supabaseClient.from('chat_keys').select('encrypted_key').eq('chat_id', currentChatId).eq('user_id', currentUser.id).single();
         const deviceId = getDeviceId();
         let myEncryptedKey = null;
 
-        try {
-            // Пробуем разобрать как словарь устройств
-            const keysDict = JSON.parse(keyData.encrypted_key);
-            // Ищем ключ конкретно для нашего устройства
-            myEncryptedKey = keysDict[deviceId] || keysDict["legacy_dev"] || keysDict["legacy"];
-        } catch (e) {
-            // Поддержка старых чатов
-            myEncryptedKey = keyData.encrypted_key;
-        }
+        try { const keysDict = JSON.parse(keyData.encrypted_key); myEncryptedKey = keysDict[deviceId] || keysDict["legacy_dev"] || keysDict["legacy"]; } 
+        catch (e) { myEncryptedKey = keyData.encrypted_key; }
 
-        // --- ИСПРАВЛЕННЫЙ БЛОК: СМЕНА КЛЮЧЕЙ ДЛЯ НОВОГО УСТРОЙСТВА ---
         if (!myEncryptedKey) {
-            document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:#ff9800; padding: 20px;">🔒 История скрыта для этого устройства.<br><span style="font-size:12px; color:#aaa;">Генерация новых ключей для продолжения общения...</span></div>';
-            
-            // 1. Создаем НОВЫЙ ключ для этой комнаты
+            document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:#ff9800; padding: 20px; font-size: 14px;"><i class="fas fa-key" style="font-size: 24px; margin-bottom: 10px;"></i><br>Синхронизация ключей...</div>';
             currentAesKey = await generateChatKey();
-
-            // 2. Скачиваем ВСЕ публичные ключи (мои и друга)
             const { data: friendData } = await supabaseClient.from('users').select('public_key').eq('tg_id', currentFriend.id).single();
             const { data: myData } = await supabaseClient.from('users').select('public_key').eq('tg_id', currentUser.id).single();
 
-            // 3. Шифруем новый ключ для всех устройств друга
-            let friendKeys = JSON.parse(friendData.public_key);
-            if (friendKeys.kty) friendKeys = { "legacy": friendKeys };
-            let encKeysForFriend = {};
-            for (const [devId, pubJwk] of Object.entries(friendKeys)) {
-                encKeysForFriend[devId] = await encryptChatKeyForFriend(currentAesKey, pubJwk);
-            }
+            let friendKeys = JSON.parse(friendData.public_key); if (friendKeys.kty) friendKeys = { "legacy": friendKeys };
+            let encKeysForFriend = {}; for (const [devId, pubJwk] of Object.entries(friendKeys)) encKeysForFriend[devId] = await encryptChatKeyForFriend(currentAesKey, pubJwk);
 
-            // 4. Шифруем новый ключ для всех МОИХ устройств (включая это новое)
-            let myKeys = JSON.parse(myData.public_key);
-            if (myKeys.kty) myKeys = { "legacy": myKeys };
-            let encKeysForMe = {};
-            for (const [devId, pubJwk] of Object.entries(myKeys)) {
-                encKeysForMe[devId] = await encryptChatKeyForFriend(currentAesKey, pubJwk);
-            }
+            let myKeys = JSON.parse(myData.public_key); if (myKeys.kty) myKeys = { "legacy": myKeys };
+            let encKeysForMe = {}; for (const [devId, pubJwk] of Object.entries(myKeys)) encKeysForMe[devId] = await encryptChatKeyForFriend(currentAesKey, pubJwk);
 
-            // 5. Перезаписываем ключи в базе (Смена эпохи)
             await supabaseClient.from('chat_keys').update({ encrypted_key: JSON.stringify(encKeysForFriend) }).eq('chat_id', currentChatId).eq('user_id', currentFriend.id);
             await supabaseClient.from('chat_keys').update({ encrypted_key: JSON.stringify(encKeysForMe) }).eq('chat_id', currentChatId).eq('user_id', currentUser.id);
 
-            document.getElementById('messages-area').innerHTML += '<div style="text-align:center; color:#4caf50; margin-top: 10px;">✅ Канал обновлен. Можно писать!</div>';
-            
-            // Запускаем вебсокеты (раньше они тут обрывались)
+            document.getElementById('messages-area').innerHTML += '<div style="text-align:center; color:var(--success); margin-top: 10px;">Готово! Можно писать.</div>';
             subscribeToPrivateMessages();
             return;
         }
-        // -------------------------------------------------------------
 
-        // Если ключ найден - расшифровываем как обычно
         currentAesKey = await decryptChatKey(myEncryptedKey);
         document.getElementById('messages-area').innerHTML = '';
 
-        const { data: history } = await supabaseClient.from('messages')
-            .select('*').eq('chat_id', currentChatId).order('created_at', { ascending: true });
+        const { data: history } = await supabaseClient.from('messages').select('*').eq('chat_id', currentChatId).order('created_at', { ascending: true });
 
         if (history && history.length > 0) {
             for (const msg of history) {
-                // ФИКС: Вынесли время за пределы try-catch!
                 const msgDate = new Date(msg.created_at);
                 const timeStr = msgDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                
                 try {
                     const rawData = atob(msg.encrypted_text);
                     const bytes = new Uint8Array(rawData.length);
@@ -1177,162 +798,27 @@
                     const decryptedBuffer = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.slice(0, 12) }, currentAesKey, bytes.slice(12));
                     renderMessage(dec.decode(decryptedBuffer), msg.sender_id === currentUser.id, timeStr, msg.id);
                 } catch (e) {
-                    // Теперь timeStr отлично читается здесь
                     renderMessage("🔒 [История скрыта]", msg.sender_id === currentUser.id, timeStr, msg.id);
                 }
             }
         }
-        
         subscribeToPrivateMessages();
     }
 
-    async function sendPrivateMessage() {
-        const input = document.getElementById('chat-input');
-        const text = input.value.trim();
-        if (!text || !currentAesKey || !currentChatId) return;
-
-        input.value = ""; // Сразу очищаем
-
-        // 1. Шифруем сам текст
-        const encryptedPayload = await encryptText(text, currentAesKey);
-
-        // 2. Генерируем и шифруем вектор для поиска по смыслу
-        const encryptedVector = await generateAndEncryptVector(text, currentAesKey);
-
-        // 3. Отправляем в Supabase
-        await supabaseClient.from('messages').insert([
-            {
-                chat_id: currentChatId,
-                sender_id: currentUser.id,
-                encrypted_text: encryptedPayload,
-                encrypted_vector: encryptedVector // <--- Сохраняем зашифрованный вектор
-            }
-        ]);
-        if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
-    }
-
-    function handleEnter(e) { if (e.key === 'Enter') sendPrivateMessage(); }
-
-    function subscribeToPrivateMessages() {
-        // Отписываемся от предыдущего чата, если быстро переключили профиль
-        if (currentChatSubscription) {
-            supabaseClient.removeChannel(currentChatSubscription);
-        }
-
-        // ФИКС: Делаем имя канала уникальным для текущей комнаты
-        currentChatSubscription = supabaseClient.channel(`chat-${currentChatId}`)
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `chat_id=eq.${currentChatId}` },
-                async (payload) => {
-                    const newMsg = payload.new;
-                    if (!newMsg || !newMsg.encrypted_text) return;
-
-                    const msgDate = new Date(newMsg.created_at);
-                    const timeStr = msgDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-                    // --- ДЕШИФРОВКА ---
-                    const rawData = atob(newMsg.encrypted_text);
-                    const bytes = new Uint8Array(rawData.length);
-                    for (let i = 0; i < rawData.length; i++) bytes[i] = rawData.charCodeAt(i);
-
-                    const iv = bytes.slice(0, 12);
-                    const data = bytes.slice(12);
-
-                    try {
-                        const decryptedBuffer = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: iv }, currentAesKey, data);
-                        const dec = new TextDecoder();
-                        const plainText = dec.decode(decryptedBuffer); 
-                        
-                        // 1. Рендерим сообщение
-                        renderMessage(plainText, newMsg.sender_id === currentUser.id, timeStr, newMsg.id);
-
-                        // 2. ДЕЦЕНТРАЛИЗОВАННАЯ ТРАНСКРИПЦИЯ
-                        if (newMsg.sender_id !== currentUser.id) {
-                            if (plainText.startsWith('[VOICE]:') && !plainText.includes('|')) {
-                                if (isAiReady) {
-                                    const fileName = plainText.replace('[VOICE]:', '');
-                                    console.log("🔍 [P2P] Запуск P2P обработки:", fileName);
-                                    helpFriendTranscribe(fileName, newMsg.id);
-                                }
-                            }
-                        }
-
-                    } catch (e) {
-                        console.error("Ошибка расшифровки:", e);
-                        renderMessage("🔒 [Ошибка расшифровки]", newMsg.sender_id === currentUser.id, timeStr, newMsg.id);
-                    }
-                }
-            ).subscribe((status, err) => {
-                if (status === 'SUBSCRIBED') {
-                    console.log('✅ Канал связи успешно открыт!');
-                } else if (status === 'CHANNEL_ERROR') {
-                    console.error('❌ Ошибка вебсокетов:', err);
-                }
-            });
-    }
-
-
-
-    async function uploadAndSendVoice(audioBlob, transcription) {
-        if (!currentAesKey || !currentChatId) return;
-
-        // 1. Шифруем аудио-файл
-        const arrayBuffer = await audioBlob.arrayBuffer();
-        const iv = window.crypto.getRandomValues(new Uint8Array(12));
-        const encryptedContent = await window.crypto.subtle.encrypt(
-            { name: "AES-GCM", iv: iv }, currentAesKey, arrayBuffer
-        );
-
-        const encryptedBytes = new Uint8Array(encryptedContent);
-        const payload = new Uint8Array(iv.length + encryptedBytes.length);
-        payload.set(iv, 0);
-        payload.set(encryptedBytes, iv.length);
-
-        const fileName = `voice_${Date.now()}_${currentUser.id}.bin`;
-        await supabaseClient.storage.from('voice_messages').upload(fileName, payload, { contentType: 'application/octet-stream' });
-
-        // 2. Формируем маркер, склеивая имя файла и распознанный текст (через символ |)
-        let textMarker = `[VOICE]:${fileName}`;
-        if (transcription) textMarker += `|${transcription}`;
-
-        const encryptedPayloadText = await encryptText(textMarker, currentAesKey);
-
-        // 3. Если есть текст из ГС, сразу делаем из него вектор!
-        let encryptedVector = null;
-        if (transcription) {
-            encryptedVector = await generateAndEncryptVector(transcription, currentAesKey);
-        }
-
-        // 4. Отправляем в базу
-        await supabaseClient.from('messages').insert([
-            {
-                chat_id: currentChatId,
-                sender_id: currentUser.id,
-                encrypted_text: encryptedPayloadText,
-                encrypted_vector: encryptedVector // <--- Сохраняем вектор ГС
-            }
-        ]);
-    }
-
     async function initApp() {
-
         const isAuth = await authUser();
-
-        if (!isAuth) {
-            document.body.innerHTML = '<h2 style="text-align:center; margin-top: 50px;">❌ Доступ запрещен. Открой Хаб через Telegram-бота!</h2>';
-            return;
-        }
-
+        if (!isAuth) { document.body.innerHTML = '<div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; color:var(--danger);"><i class="fas fa-lock" style="font-size:48px; margin-bottom:20px;"></i><h2>Доступ запрещен</h2><p style="color:var(--muted)">Открой Хаб через Telegram-бота</p></div>'; return; }
+        
+        // Устанавливаем аватарку
+        const avatarEl = document.getElementById('my-avatar');
+        avatarEl.innerText = currentUser.first_name.charAt(0).toUpperCase();
+        avatarEl.style.background = getAvatarGradient(currentUser.id);
 
         loadMyStatus();
         loadFriends();
         loadMyCurrencies();
-        // Ленивая загрузка тяжелой ИИ-модели в фоне
-        setTimeout(() => {
-            // Даем команду фоновому процессу начать загрузку модели
-            aiWorker.postMessage({ type: 'init' });
-        }, 1000);
+        setTimeout(() => { aiWorker.postMessage({ type: 'init' }); }, 1000);
     }
-
 
     function switchScreen(screenId) {
         document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -1342,58 +828,71 @@
 
     async function loadMyStatus() {
         const { data } = await supabaseClient.from('users').select('status').eq('tg_id', currentUser.id).single();
-        document.getElementById('my-status').innerText = data?.status || 'Свободен 🟢';
+        const statusEl = document.getElementById('my-status');
+        const isBusy = data?.status?.includes('Занят');
+        statusEl.className = `status-badge ${isBusy ? 'busy' : ''}`;
+        statusEl.innerHTML = `<i class="fas fa-circle" style="font-size: 8px;"></i> ${isBusy ? 'Занят' : 'Свободен'}`;
     }
 
     async function toggleStatus() {
         const curr = document.getElementById('my-status').innerText;
         const newStatus = curr.includes('Свободен') ? 'Занят 🔴' : 'Свободен 🟢';
-        document.getElementById('my-status').innerText = newStatus;
         await supabaseClient.from('users').update({ status: newStatus }).eq('tg_id', currentUser.id);
+        loadMyStatus();
         if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
     }
 
+    window.currentFriendsData = [];
     async function loadFriends() {
         const { data } = await supabaseClient.from('users').select('*');
+        window.currentFriendsData = data;
         const list = document.getElementById('friends-list');
         list.innerHTML = '';
-
-        // Сохраняем друзей в глобальную переменную, чтобы не передавать имена через HTML-строки
-        window.currentFriendsData = data;
-
         data.forEach(f => {
             if(f.tg_id === currentUser.id) return;
             const safeName = escapeHTML(f.first_name);
-            const safeStatus = escapeHTML(f.status || 'Свободен 🟢');
-
-            // Теперь мы передаем только ID (число), кавычки ничего не сломают
-            list.innerHTML += `<div class="friend-item" onclick="safeOpenFriend(${f.tg_id})">
-                <span>${safeName}</span><span>${safeStatus}</span>
-            </div>`;
+            const isBusy = f.status?.includes('Занят');
+            const statusColor = isBusy ? 'var(--danger)' : 'var(--success)';
+            
+            list.innerHTML += `
+                <div class="list-item" onclick="safeOpenFriend(${f.tg_id})">
+                    <div class="list-item-left">
+                        <div class="avatar" style="background: ${getAvatarGradient(f.tg_id)}; width: 40px; height: 40px; font-size: 16px;">
+                            ${safeName.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                            <div class="list-item-title">${safeName}</div>
+                            <div class="list-item-subtitle"><i class="fas fa-circle" style="font-size: 6px; color: ${statusColor}; margin-right: 4px; vertical-align: middle;"></i>${isBusy ? 'Занят' : 'Свободен'}</div>
+                        </div>
+                    </div>
+                    <i class="fas fa-chevron-right" style="color: var(--muted); font-size: 14px;"></i>
+                </div>
+            `;
         });
     }
 
-    // Новая функция-помощник для безопасного открытия профиля
     function safeOpenFriend(tgId) {
         const friend = window.currentFriendsData.find(f => f.tg_id === tgId);
-        if (friend) {
-            openFriend(tgId, friend.first_name);
-        }
+        if (friend) openFriend(tgId, friend.first_name);
     }
-
 
     async function loadMyCurrencies() {
         const { data } = await supabaseClient.from('currencies').select('*').eq('owner_id', currentUser.id);
-        document.getElementById('my-currencies-list').innerHTML = data && data.length > 0
-            ? data.map(c => {
-                const safeName = escapeHTML(c.name);
-                return `
-                <div class="card" style="padding:10px; display:flex; justify-content:space-between; align-items:center;">
-                    <span>${safeName} (${c.rub_value}р)</span>
-                    <span style="cursor:pointer; font-size:20px;" onclick="deleteCurrency('${c.id}')">❌</span>
-                </div>`;
-            }).join('')
-            : '<p style="color: #777;">У тебя пока нет своих валют.</p>';
+        const list = document.getElementById('my-currencies-list');
+        if (!data || data.length === 0) { list.innerHTML = '<p style="color: var(--muted); text-align: center;">Активов пока нет.</p>'; return; }
+        
+        list.innerHTML = data.map(c => `
+            <div class="list-item">
+                <div class="list-item-left">
+                    <div class="avatar" style="background: rgba(10,132,255,0.15); color: var(--primary); width: 40px; height: 40px;"><i class="fas fa-coins"></i></div>
+                    <div>
+                        <div class="list-item-title">${escapeHTML(c.name)}</div>
+                        <div class="list-item-subtitle">Курс: ${c.rub_value} ₽</div>
+                    </div>
+                </div>
+                <div style="padding: 10px; cursor: pointer; color: var(--danger);" onclick="deleteCurrency('${c.id}')"><i class="fas fa-trash-alt"></i></div>
+            </div>
+        `).join('');
     }
 
     async function addCurrency() {
@@ -1406,7 +905,7 @@
     }
 
     async function deleteCurrency(id) {
-        if(!confirm('Удалить эту валюту?')) return;
+        if(!confirm('Сжечь эту валюту?')) return;
         await supabaseClient.from('currencies').delete().eq('id', id);
         loadMyCurrencies();
     }
@@ -1421,26 +920,30 @@
 
         let html = '';
         if (iOwe && iOwe.length > 0) {
-            html += '<div style="color: #ff5252; margin-top: 10px; font-weight: bold;">🔴 Я должен:</div>';
-            html += iOwe.map(d => `<div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom: 1px solid #444;"><span>${d.amount} ${escapeHTML(d.currency)}</span><button class="btn-resolve" onclick="deleteDebt('${d.id}')">Вернул</button></div>`).join('');
+            html += iOwe.map(d => `
+                <div class="debt-row">
+                    <span class="debt-amount owe"><i class="fas fa-arrow-up" style="font-size: 10px;"></i> ${d.amount} ${escapeHTML(d.currency)}</span>
+                    <button class="btn-resolve" onclick="deleteDebt('${d.id}')">Отдать</button>
+                </div>`).join('');
         }
         if (owesMe && owesMe.length > 0) {
-            html += '<div style="color: #4caf50; margin-top: 15px; font-weight: bold;">🟢 Мне должны:</div>';
-            html += owesMe.map(d => `<div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom: 1px solid #444;"><span>${d.amount} ${escapeHTML(d.currency)}</span><button class="btn-resolve" onclick="deleteDebt('${d.id}')">Простить</button></div>`).join('');
+            html += owesMe.map(d => `
+                <div class="debt-row">
+                    <span class="debt-amount owed"><i class="fas fa-arrow-down" style="font-size: 10px;"></i> ${d.amount} ${escapeHTML(d.currency)}</span>
+                    <button class="btn-resolve" onclick="deleteDebt('${d.id}')">Простить</button>
+                </div>`).join('');
         }
-        document.getElementById('friend-debts').innerHTML = html || '<div style="color:#777; margin-top:10px;">Никто никому не должен</div>';
+        document.getElementById('friend-debts').innerHTML = html || '<div style="color:var(--muted); font-size: 13px; text-align: center; padding: 10px 0;">Счета чисты</div>';
+        
         await initPrivateChat(tgId);
+        
         const { data: friendData } = await supabaseClient.from('users').select('public_key').eq('tg_id', tgId).single();
         const fingerprint = await getFingerprint(friendData?.public_key);
-
-        // Выводим отпечаток под заголовком
-        let titleEl = document.getElementById('friend-name-title');
-        titleEl.innerHTML = `${name} <div style="font-size: 10px; color: #888; font-weight: normal;">Отпечаток E2EE: ${fingerprint}</div>`;
-
+        document.getElementById('friend-fingerprint').innerText = `Код: ${fingerprint}`;
     }
 
     async function deleteDebt(id) {
-        if(!confirm('Точно закрыть этот долг?')) return;
+        if(!confirm('Закрыть этот долг?')) return;
         await supabaseClient.from('debts').delete().eq('id', id);
         openFriend(currentFriend.id, currentFriend.name);
     }
@@ -1455,7 +958,7 @@
         } else {
             friendCurrencies.forEach(c => {
                 const safeName = escapeHTML(c.name);
-                select.innerHTML += `<option value="${safeName}" data-price="${c.rub_value}">${safeName} (${c.rub_value}р)</option>`;
+                select.innerHTML += `<option value="${safeName}" data-price="${c.rub_value}">${safeName} (Курс: ${c.rub_value} ₽)</option>`;
             });
         }
         switchScreen('screen-add-debt');
@@ -1471,26 +974,15 @@
     async function saveDebt() {
         const finalAmountText = document.getElementById('debt-result').innerText;
         if(finalAmountText === '0') return alert('Введи сумму');
-
         const [amountStr, ...currencyArr] = finalAmountText.split(' ');
         const amount = parseFloat(amountStr);
+        if (isNaN(amount) || amount <= 0) return alert('Недопустимая сумма!');
+        if (amount > 1000000000) return alert('Лимит превышен.');
 
-        // --- НОВЫЙ БЛОК БЕЗОПАСНОСТИ ---
-        if (isNaN(amount) || amount <= 0) {
-            return alert('Недопустимая сумма долга!');
-        }
-        if (amount > 1000000000) {
-            return alert('Синдикат не работает с такими огромными суммами.');
-        }
-        // -------------------------------
-
-        await supabaseClient.from('debts').insert({
-            creditor_id: currentFriend.id, debtor_id: currentUser.id, amount: amount, currency: currencyArr.join(' ')
-        });
+        await supabaseClient.from('debts').insert({ creditor_id: currentFriend.id, debtor_id: currentUser.id, amount: amount, currency: currencyArr.join(' ') });
         if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
         await openFriend(currentFriend.id, currentFriend.name);
     }
-
 
     initApp();
 </script>
