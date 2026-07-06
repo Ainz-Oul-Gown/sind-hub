@@ -1106,7 +1106,7 @@
         loadFriends(); 
         loadMyCurrencies();
         // Ленивая загрузка тяжелой ИИ-модели в фоне
-        ssetTimeout(() => {
+        setTimeout(() => {
             // Даем команду фоновому процессу начать загрузку модели
             aiWorker.postMessage({ type: 'init' });
         }, 1000);
