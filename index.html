@@ -71,6 +71,13 @@
         .back-btn { background: none; border: none; color: var(--primary); font-size: 18px; cursor: pointer; display: flex; align-items: center; gap: 8px; padding: 0; }
         .icon-btn { background: none; border: none; color: var(--primary); font-size: 20px; padding: 5px; cursor: pointer; display: flex; align-items: center; justify-content: center; aspect-ratio: 1/1; }
 
+
+        /* Обёртка для аватарки со статусом */
+        .avatar-wrap { position: relative; width: 40px; height: 40px; flex-shrink: 0; }
+        .avatar-wrap .avatar { width: 100%; height: 100%; font-size: 16px; }
+        .status-indicator { position: absolute; bottom: -2px; right: -2px; width: 14px; height: 14px; border-radius: 50%; border: 2.5px solid var(--surface); background: var(--success); z-index: 2; transition: 0.2s; }
+        .status-indicator.busy { background: var(--danger); }
+        
         /* ОСОБЫЙ ЛЕЙАУТ ДЛЯ ЧАТА */
         #screen-friend { display: flex; flex-direction: column; padding: 0; overflow: hidden; }
         .friend-header-wrap { padding: 16px 16px 0; flex-shrink: 0; border-bottom: 1px solid var(--border); background: var(--surface); z-index: 10;}
@@ -259,12 +266,15 @@
                 
                 <!-- Кнопка Микрофон/Отправка -->
                 <button class="btn-dynamic mode-mic" id="btn-input-action" 
+                        style="touch-action: none;"
                         ontouchstart="startVoiceHold(event)" 
                         ontouchmove="moveVoiceHold(event)" 
                         ontouchend="endVoiceHold(event)"
+                        ontouchcancel="endVoiceHold(event)"
                         onmousedown="startVoiceHold(event)" 
                         onmousemove="moveVoiceHold(event)" 
-                        onmouseup="endVoiceHold(event)">
+                        onmouseup="endVoiceHold(event)"
+                        onmouseleave="endVoiceHold(event)">
                     <i class="fas fa-microphone"></i>
                 </button>
             </div>
@@ -315,6 +325,59 @@
         }
     }
 
+
+    // --- ИИ: ЭМБЕДДИНГИ ДЛЯ ПОИСКА ---
+    let extractor = null;
+    let isAiLoading = false;
+    
+    async function initAI() {
+        if (extractor) return extractor;
+        if (isAiLoading) { 
+            while (isAiLoading) await new Promise(r => setTimeout(r, 100)); 
+            return extractor; 
+        }
+        
+        isAiLoading = true;
+        const { pipeline, env } = await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.14.0');
+        env.allowLocalModels = false;
+        extractor = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', { quantized: true });
+        isAiLoading = false;
+        return extractor;
+    }
+
+    // --- ПОТЕРЯННЫЕ ФУНКЦИИ ИИ И ПОИСКА ---
+    function toggleSlider() { 
+        document.getElementById('slider-container').style.display = document.getElementById('semantic-toggle').checked ? 'flex' : 'none'; 
+    }
+
+    function cosineSimilarity(vecA, vecB) {
+        let dotProduct = 0, normA = 0, normB = 0;
+        for (let i = 0; i < vecA.length; i++) { 
+            dotProduct += vecA[i] * vecB[i]; 
+            normA += vecA[i] * vecA[i]; 
+            normB += vecB[i] * vecB[i]; 
+        }
+        if (normA === 0 || normB === 0) return 0;
+        return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+    }
+
+    async function generateAndEncryptVector(text, aesKey) {
+        const ai = await initAI();
+        const output = await ai(text, { pooling: 'mean', normalize: true });
+        const arrayBuffer = output.data.buffer;
+        
+        const iv = window.crypto.getRandomValues(new Uint8Array(12));
+        const encryptedContent = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, aesKey, arrayBuffer);
+        
+        const encryptedBytes = new Uint8Array(encryptedContent);
+        const payload = new Uint8Array(iv.length + encryptedBytes.length);
+        payload.set(iv, 0); 
+        payload.set(encryptedBytes, iv.length);
+        
+        return btoa(String.fromCharCode.apply(null, payload));
+    }
+    // --------------------------------------
+    
     async function performSearch() {
         const query = document.getElementById('search-input').value.trim();
         const resultsDiv = document.getElementById('search-results');
@@ -532,18 +595,18 @@
 
     function moveVoiceHold(e) {
         if (!isRecording || isRecordingLocked) return;
-        e.preventDefault(); // БЛОКИРУЕМ СКРОЛЛ ЭКРАНА при свайпе!
+        e.preventDefault(); // Жестко блокируем скролл
 
         const currentY = e.touches ? e.touches[0].clientY : e.clientY;
         
-        // Если свайпнули вверх на 40 пикселей - ЛОК!
+        // Свайпнули вверх на 40px
         if (startY - currentY > 40) {
             isRecordingLocked = true;
             document.getElementById('record-hint').style.display = 'none';
             document.getElementById('record-locked-actions').classList.add('active');
             
             const btn = document.getElementById('btn-input-action');
-            btn.style.transform = 'scale(1)'; // Возвращаем размер
+            btn.style.transform = 'scale(1)'; 
             btn.innerHTML = '<i class="fas fa-lock"></i>';
             if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
         }
@@ -790,8 +853,20 @@
         autoResizeInput(); // Сброс размера поля и кнопки
         
         const encryptedPayload = await encryptText(text, currentAesKey);
-        // Отправляем без вектора для скорости (вектор сгенерируется потом, если надо)
-        await supabaseClient.from('messages').insert([ { chat_id: currentChatId, sender_id: currentUser.id, encrypted_text: encryptedPayload } ]);
+        
+        // ФИКС: Возвращаем генерацию вектора, иначе ИИ-поиск не найдет этот текст!
+        // На современных телефонах это занимает миллисекунды, так что задержки не будет.
+        let encryptedVector = null;
+        try {
+            encryptedVector = await generateAndEncryptVector(text, currentAesKey);
+        } catch(e) {
+            console.warn("Не удалось сгенерировать вектор, отправляем без него");
+        }
+        
+        await supabaseClient.from('messages').insert([ 
+            { chat_id: currentChatId, sender_id: currentUser.id, encrypted_text: encryptedPayload, encrypted_vector: encryptedVector } 
+        ]);
+        
         if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
     }
 
@@ -1038,17 +1113,19 @@
             if(f.tg_id === currentUser.id) return;
             const safeName = escapeHTML(f.first_name);
             const isBusy = f.status?.includes('Занят');
-            const statusColor = isBusy ? 'var(--danger)' : 'var(--success)';
             
             list.innerHTML += `
                 <div class="list-item" onclick="safeOpenFriend(${f.tg_id})">
                     <div class="list-item-left">
-                        <div class="avatar" style="background: ${getAvatarGradient(f.tg_id)}; width: 40px; height: 40px; font-size: 16px;">
-                            ${safeName.charAt(0).toUpperCase()}
+                        <div class="avatar-wrap">
+                            <div class="avatar" style="background: ${getAvatarGradient(f.tg_id)};">
+                                ${safeName.charAt(0).toUpperCase()}
+                            </div>
+                            <div class="status-indicator ${isBusy ? 'busy' : ''}"></div>
                         </div>
                         <div>
                             <div class="list-item-title">${safeName}</div>
-                            <div class="list-item-subtitle"><i class="fas fa-circle" style="font-size: 6px; color: ${statusColor}; margin-right: 4px; vertical-align: middle;"></i>${isBusy ? 'Занят' : 'Свободен'}</div>
+                            <div class="list-item-subtitle" style="color: var(--muted);">${isBusy ? 'Занят' : 'В сети'}</div>
                         </div>
                     </div>
                     <i class="fas fa-chevron-right" style="color: var(--muted); font-size: 14px;"></i>
@@ -1145,27 +1222,32 @@
     }
 
     async function openDebtModal() {
-        // Жестко прячем модалку чата (Сводку долгов)
+        // Сначала скрываем модалку и СРАЗУ переключаем экран!
         document.getElementById('modal-debts').classList.remove('active');
+        switchScreen('screen-add-debt');
         
+        // Очищаем поля
         document.getElementById('debt-rubles').value = ''; 
         document.getElementById('debt-result').innerText = '0';
         
-        // Подгружаем валюты друга
-        const { data: friendCurrencies } = await supabaseClient.from('currencies').select('*').eq('owner_id', currentFriend.id);
         const select = document.getElementById('debt-currency');
-        select.innerHTML = '';
-        if (!friendCurrencies || friendCurrencies.length === 0) {
-            select.innerHTML = `<option value="Руб." data-price="1">Рубли (1 к 1)</option>`;
-        } else {
-            friendCurrencies.forEach(c => {
-                const safeName = escapeHTML(c.name);
-                select.innerHTML += `<option value="${safeName}" data-price="${c.rub_value}">${safeName} (Курс: ${c.rub_value} ₽)</option>`;
-            });
-        }
+        select.innerHTML = '<option>Загрузка валют...</option>';
         
-        // Переходим на экран оформления долга
-        switchScreen('screen-add-debt');
+        // Теперь спокойно грузим валюты друга в фоне
+        try {
+            const { data: friendCurrencies } = await supabaseClient.from('currencies').select('*').eq('owner_id', currentFriend.id);
+            select.innerHTML = '';
+            if (!friendCurrencies || friendCurrencies.length === 0) {
+                select.innerHTML = `<option value="Руб." data-price="1">Рубли (1 к 1)</option>`;
+            } else {
+                friendCurrencies.forEach(c => {
+                    const safeName = escapeHTML(c.name);
+                    select.innerHTML += `<option value="${safeName}" data-price="${c.rub_value}">${safeName} (Курс: ${c.rub_value} ₽)</option>`;
+                });
+            }
+        } catch(e) {
+            select.innerHTML = `<option value="Руб." data-price="1">Рубли (1 к 1)</option>`;
+        }
     }
 
     function calculateDebt() {
