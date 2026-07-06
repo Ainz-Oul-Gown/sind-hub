@@ -958,26 +958,28 @@
         // Вариант 1: Мы внутри Телеграма
         if (tgInitData) {
             try {
-                // Используем встроенный метод Supabase вместо обычного fetch!
-                // Он сам добавит нужные CORS-заголовки и твой anon-ключ.
-                const { data: result, error: fetchErr } = await supabaseClient.functions.invoke('tg-auth', {
-                    body: { initData: tgInitData }
+                // Прямой запрос, чтобы увидеть РЕАЛЬНУЮ ошибку сервера
+                const res = await fetch('https://cqhndgtiqdjzzrqdzrfq.supabase.co/functions/v1/tg-auth', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ initData: tgInitData })
                 });
-
-                if (fetchErr) {
-                    alert("Блок от сервера: " + fetchErr.message);
-                    console.error("Ошибка:", fetchErr);
-                } else if (result && result.token) {
-                    currentUser = { id: result.id, first_name: result.first_name };
-                    localStorage.setItem('synd_token', result.token);
-                    setSupabaseToken(result.token); 
-                    isAuthorized = true;
-                } else {
-                    alert("Ошибка авторизации: Поддельные данные или сервер вернул пустоту");
+                
+                const rawText = await res.text(); // Читаем ответ как текст
+                
+                if (!res.ok) {
+                    alert(`СТАТУС: ${res.status}\nОШИБКА: ${rawText}`);
+                    return false;
                 }
+
+                const result = JSON.parse(rawText);
+                currentUser = { id: result.id, first_name: result.first_name };
+                localStorage.setItem('synd_token', result.token);
+                setSupabaseToken(result.token); 
+                isAuthorized = true;
+
             } catch(e) {
-                alert("Сбой сети: " + e.message); 
-                console.error("Сервер авторизации недоступен");
+                alert("Критический сбой сети: " + e.message); 
             }
         }
         // Вариант 2: Перешли по ссылке с токеном (PWA)
