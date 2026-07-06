@@ -1176,10 +1176,12 @@
 
     function subscribeToPrivateMessages() {
         // Отписываемся от предыдущего чата, если быстро переключили профиль
-        if (currentChatSubscription) supabaseClient.removeChannel(currentChatSubscription);
+        if (currentChatSubscription) {
+            supabaseClient.removeChannel(currentChatSubscription);
+        }
 
-        currentChatSubscription = supabaseClient.channel('private-chat')
-            // ФИКС: Слушаем ВСЕ события (и INSERT, и UPDATE)
+        // ФИКС: Делаем имя канала уникальным для текущей комнаты
+        currentChatSubscription = supabaseClient.channel(`chat-${currentChatId}`)
             .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `chat_id=eq.${currentChatId}` },
                 async (payload) => {
                     const newMsg = payload.new;
@@ -1199,12 +1201,12 @@
                     try {
                         const decryptedBuffer = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: iv }, currentAesKey, data);
                         const dec = new TextDecoder();
-                        const plainText = dec.decode(decryptedBuffer); // ВОТ ОНА, ПЕРЕМЕННАЯ
-
+                        const plainText = dec.decode(decryptedBuffer); 
+                        
                         // 1. Рендерим сообщение
                         renderMessage(plainText, newMsg.sender_id === currentUser.id, timeStr, newMsg.id);
 
-                        // 2. ДЕЦЕНТРАЛИЗОВАННАЯ ТРАНСКРИПЦИЯ (всё еще внутри try, поэтому plainText виден!)
+                        // 2. ДЕЦЕНТРАЛИЗОВАННАЯ ТРАНСКРИПЦИЯ
                         if (newMsg.sender_id !== currentUser.id) {
                             if (plainText.startsWith('[VOICE]:') && !plainText.includes('|')) {
                                 if (isAiReady) {
