@@ -958,24 +958,25 @@
         // Вариант 1: Мы внутри Телеграма
         if (tgInitData) {
             try {
-                // Обращаемся к нашей защищенной Edge Function
-                const response = await fetch('https://cqhndgtiqdjzzrqdzrfq.supabase.co/functions/v1/tg-auth', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ initData: tgInitData })
+                // Используем встроенный метод Supabase вместо обычного fetch!
+                // Он сам добавит нужные CORS-заголовки и твой anon-ключ.
+                const { data: result, error: fetchErr } = await supabaseClient.functions.invoke('tg-auth', {
+                    body: { initData: tgInitData }
                 });
 
-                const result = await response.json();
-
-                if (response.ok) {
+                if (fetchErr) {
+                    alert("Блок от сервера: " + fetchErr.message);
+                    console.error("Ошибка:", fetchErr);
+                } else if (result && result.token) {
                     currentUser = { id: result.id, first_name: result.first_name };
                     localStorage.setItem('synd_token', result.token);
-                    setSupabaseToken(result.token); // <--- ДОБАВИТЬ ЭТО
+                    setSupabaseToken(result.token); 
                     isAuthorized = true;
                 } else {
-                    console.error("Ошибка авторизации:", result.error);
+                    alert("Ошибка авторизации: Поддельные данные или сервер вернул пустоту");
                 }
             } catch(e) {
+                alert("Сбой сети: " + e.message); 
                 console.error("Сервер авторизации недоступен");
             }
         }
