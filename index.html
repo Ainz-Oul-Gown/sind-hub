@@ -42,7 +42,7 @@
         h2.brand-title { font-size: 28px; font-weight: 700; text-align: center; margin: 10px 0 24px; background: linear-gradient(135deg, var(--primary), #32D74B); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
         h3.section-title { font-size: 14px; text-transform: uppercase; color: var(--muted); letter-spacing: 0.5px; margin: 24px 0 12px 4px; font-weight: 600; }
 
-        .card { background: var(--surface); padding: 16px; border-radius: var(--radius-lg); margin-bottom: 16px; border: 1px solid var(--border); box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
+        .card { background: var(--surface); z-index:10; padding: 16px; border-radius: var(--radius-lg); margin-bottom: 16px; border: 1px solid var(--border); box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
         
         .profile-card { display: flex; align-items: center; justify-content: space-between; }
         .profile-info { display: flex; align-items: center; gap: 12px; }
@@ -539,31 +539,34 @@
     let isPointerDown = false; 
 
     async function startVoiceHold(e) {
-        // Добавляем продвинутые стили для меню паузы
+        // Добавляем стили один раз. Они изолированы и не сломают остальной дизайн
         if (!document.getElementById('voice-styles-tg')) {
             const style = document.createElement('style');
             style.id = 'voice-styles-tg';
             style.innerHTML = `
-                #voice-hold-ui { width: 100%; display: flex; align-items: center; justify-content: space-between; position: relative; padding-right: 50px; }
-                .tg-timer-box { display: flex; align-items: center; gap: 8px; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--text); }
-                .tg-red-dot { width: 8px; height: 8px; background: var(--danger); border-radius: 50%; animation: blink-dot 1s infinite; }
-                .tg-hint-cancel { flex-grow: 1; text-align: center; color: var(--muted); font-size: 15px; display: flex; align-items: center; justify-content: center; gap: 8px; animation: swipeLeftTg 1.5s infinite; pointer-events: none; user-select: none; margin-right: 20px;}
-                .tg-hint-lock { position: absolute; right: 0; bottom: 80px; width: 48px; height: 48px; background: var(--surface); border: 1px solid var(--border); border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--muted); pointer-events: none; user-select: none; box-shadow: 0 4px 15px rgba(0,0,0,0.3); animation: swipeUpTg 1.5s infinite; z-index: 100; }
+                .v-ui-layer { display: none; width: 100%; align-items: center; justify-content: space-between; position: absolute; left: 0; top: 0; height: 100%; padding: 0 16px; background: var(--surface); z-index: 20; border-radius: 20px;}
+                .v-ui-layer.active { display: flex; }
                 
-                /* Стили залоченного режима как на скринах */
-                .tg-locked-btn { background: transparent; color: var(--muted); border: none; font-size: 22px; cursor: pointer; padding: 5px 10px; }
-                .tg-locked-btn.send { background: var(--primary); color: white; border-radius: 50%; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; font-size: 16px; padding: 0; transform: rotate(-90deg); }
-                .tg-locked-pause-btn { background: transparent; color: var(--primary); border: none; font-size: 24px; cursor: pointer; padding: 5px; margin-right: auto; margin-left: 15px;}
-                
-                /* Тот самый мини-плеер при паузе */
-                .tg-locked-player { display: flex; align-items: center; gap: 8px; background: rgba(255,255,255,0.08); padding: 4px 12px; border-radius: 20px; flex-grow: 1; margin: 0 10px; }
-                .tg-locked-player button { background: var(--primary); color: white; border: none; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; cursor: pointer; }
-                .tg-locked-player span { font-size: 13px; font-variant-numeric: tabular-nums; color: white;}
-                .tg-fake-waveform { color: rgba(255,255,255,0.3); font-size: 10px; letter-spacing: 2px; flex-grow: 1; overflow: hidden; white-space: nowrap; user-select:none;}
+                /* Режим удержания */
+                .v-timer { display: flex; align-items: center; gap: 8px; font-variant-numeric: tabular-nums; font-weight: 500; font-size: 15px;}
+                .v-dot { width: 8px; height: 8px; background: var(--danger); border-radius: 50%; animation: v-blink 1s infinite; }
+                .v-cancel-hint { flex-grow: 1; text-align: center; color: var(--muted); font-size: 15px; display: flex; align-items: center; justify-content: center; gap: 8px; margin-right: 30px; animation: v-swipe-left 1.5s infinite; user-select: none; pointer-events: none;}
+                .v-lock-hint { position: absolute; right: -5px; bottom: 80px; width: 50px; height: 50px; background: var(--surface); border: 1px solid var(--border); border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--muted); animation: v-swipe-up 1.5s infinite; box-shadow: 0 4px 15px rgba(0,0,0,0.3); z-index: 100; user-select: none; pointer-events: none;}
 
-                @keyframes blink-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
-                @keyframes swipeLeftTg { 0%, 100% { transform: translateX(0); opacity: 0.5; } 50% { transform: translateX(-10px); opacity: 1; } }
-                @keyframes swipeUpTg { 0%, 100% { transform: translateY(0); opacity: 0.5; } 50% { transform: translateY(-10px); opacity: 1; } }
+                /* Залоченный режим (Идет запись) */
+                .v-trash { color: var(--muted); font-size: 20px; cursor: pointer; padding: 10px; margin-left: -8px;}
+                .v-pause { color: var(--primary); font-size: 26px; cursor: pointer; padding: 10px; margin-right: 15px;}
+                .v-send { background: var(--primary); color: white; width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 16px; cursor: pointer; flex-shrink:0; transform: rotate(-15deg); }
+
+                /* Залоченный режим (Пауза) - Та самая капсула */
+                .v-capsule { display: flex; align-items: center; gap: 10px; background: rgba(255,255,255,0.08); padding: 6px 12px; border-radius: 20px; flex-grow: 1; margin: 0 15px; overflow:hidden;}
+                .v-capsule .v-play { background: var(--primary); color: white; border: none; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; cursor: pointer; flex-shrink: 0;}
+                .v-capsule span { font-size: 13px; font-variant-numeric: tabular-nums; color: white;}
+                .v-wave { color: rgba(255,255,255,0.3); font-size: 10px; letter-spacing: 2px; white-space: nowrap; overflow:hidden; user-select:none; flex-grow:1;}
+
+                @keyframes v-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+                @keyframes v-swipe-left { 0%, 100% { transform: translateX(0); opacity: 0.5; } 50% { transform: translateX(-10px); opacity: 1; } }
+                @keyframes v-swipe-up { 0%, 100% { transform: translateY(0); opacity: 0.5; } 50% { transform: translateY(-10px); opacity: 1; } }
             `;
             document.head.appendChild(style);
         }
@@ -592,7 +595,11 @@
             
             mediaRecorder.onstop = async () => {
                 clearInterval(recTimerInterval);
-                document.getElementById('record-overlay').classList.remove('active');
+                
+                // ЖЕСТКАЯ ЗАЧИСТКА: Удаляем интерфейс вообще под ноль, чтобы ничего не наслаивалось
+                const overlay = document.getElementById('record-overlay');
+                overlay.innerHTML = ''; 
+                overlay.classList.remove('active');
                 
                 btn.innerHTML = '<i class="fas fa-microphone"></i>';
                 btn.style.transform = 'scale(1)'; 
@@ -619,30 +626,44 @@
             recStartTime = Date.now();
             
             const overlay = document.getElementById('record-overlay');
+            // Очищаем оверлей от старого говна из HTML файла
+            overlay.innerHTML = '';
             overlay.classList.add('active');
             
-            document.getElementById('record-hint').style.display = 'none';
-            document.getElementById('record-locked-actions').classList.remove('active');
-            
-            const oldUI = document.getElementById('voice-hold-ui');
-            if (oldUI) oldUI.remove();
-            
-            const holdUI = document.createElement('div');
-            holdUI.id = 'voice-hold-ui';
-            holdUI.innerHTML = `
-                <div class="tg-timer-box"><div class="tg-red-dot"></div><span id="tg-live-timer">0:00</span></div>
-                <div class="tg-hint-cancel"><i class="fas fa-chevron-left"></i> Влево — отмена</div>
-                <div class="tg-hint-lock"><i class="fas fa-lock" style="margin-bottom: 3px;"></i><i class="fas fa-chevron-up" style="font-size: 10px;"></i></div>
+            // СОЗДАЕМ ИДЕАЛЬНЫЙ HTML С НУЛЯ (3 слоя: Удержание, Лок-Запись, Лок-Пауза)
+            overlay.innerHTML = `
+                <!-- Слой 1: Держим палец -->
+                <div id="v-hold-ui" class="v-ui-layer active">
+                    <div class="v-timer"><div class="v-dot"></div> <span class="v-time-text">0:00</span></div>
+                    <div class="v-cancel-hint"><i class="fas fa-chevron-left"></i> Влево — отмена</div>
+                    <div class="v-lock-hint"><i class="fas fa-lock" style="margin-bottom: 3px;"></i><i class="fas fa-chevron-up" style="font-size: 10px;"></i></div>
+                </div>
+
+                <!-- Слой 2: Залочили (Запись идет) -->
+                <div id="v-locked-rec-ui" class="v-ui-layer">
+                    <i class="fas fa-trash-alt v-trash" onclick="cancelRecording()"></i>
+                    <div class="v-timer" style="margin: 0 auto;"><div class="v-dot"></div> <span class="v-time-text">0:00</span></div>
+                    <i class="fas fa-pause-circle v-pause" onclick="pauseRecording()"></i>
+                    <div class="v-send" onclick="stopAndSendRecording()"><i class="fas fa-paper-plane"></i></div>
+                </div>
+
+                <!-- Слой 3: Залочили (Пауза) - Та самая капсула -->
+                <div id="v-locked-pause-ui" class="v-ui-layer">
+                    <i class="fas fa-trash-alt v-trash" onclick="cancelRecording()"></i>
+                    <div class="v-capsule">
+                        <button class="v-play" onclick="resumeRecording()"><i class="fas fa-play" style="margin-left:2px;"></i></button>
+                        <span class="v-time-text">0:00</span>
+                        <div class="v-wave">||||||||||||||||</div>
+                    </div>
+                    <div class="v-send" onclick="stopAndSendRecording()"><i class="fas fa-paper-plane"></i></div>
+                </div>
             `;
-            overlay.appendChild(holdUI);
             
+            // Один таймер на все три слоя
             recTimerInterval = setInterval(() => {
                 if (!isPaused) {
                     const timeStr = formatTime(Date.now() - recStartTime);
-                    const liveTimer = document.getElementById('tg-live-timer');
-                    const lockedTimer = document.getElementById('locked-timer-span');
-                    if (liveTimer) liveTimer.innerText = timeStr;
-                    if (lockedTimer) lockedTimer.innerText = timeStr;
+                    document.querySelectorAll('.v-time-text').forEach(el => el.innerText = timeStr);
                 }
             }, 500);
 
@@ -659,7 +680,7 @@
         const deltaY = startY - e.clientY;
         const deltaX = startX - e.clientX;
 
-        // Отмена свайпом влево
+        // Отмена (свайп влево)
         if (deltaX > 40) {
             isCancelled = true;
             window.shouldSendVoice = false;
@@ -671,29 +692,15 @@
             return;
         }
 
-        // Блокировка свайпом вверх
+        // Блокировка (свайп вверх)
         if (deltaY > 50) {
             isRecordingLocked = true;
             
-            const holdUI = document.getElementById('voice-hold-ui');
-            if (holdUI) holdUI.style.display = 'none';
+            // Переключаем слои (прячем удержание, показываем лок)
+            document.getElementById('v-hold-ui').classList.remove('active');
+            document.getElementById('v-locked-rec-ui').classList.add('active');
             
-            const lockedActions = document.getElementById('record-locked-actions');
-            lockedActions.classList.add('active');
-            lockedActions.style.display = 'flex';
-            lockedActions.style.width = '100%';
-            
-            // Рисуем интерфейс активной залоченной записи
-            lockedActions.innerHTML = `
-                <button class="tg-locked-btn" onclick="cancelRecording()"><i class="fas fa-trash-alt"></i></button>
-                <div style="display:flex; align-items:center; gap:8px;">
-                    <div class="tg-red-dot"></div>
-                    <span id="locked-timer-span" style="font-variant-numeric: tabular-nums; font-weight: 500;">${formatTime(Date.now() - recStartTime)}</span>
-                </div>
-                <button class="tg-locked-pause-btn" onclick="pauseRecording()"><i class="fas fa-pause-circle"></i></button>
-                <button class="tg-locked-btn send" onclick="stopAndSendRecording()"><i class="fas fa-arrow-up"></i></button>
-            `;
-            
+            // Прячем центральную кнопку-микрофон
             document.getElementById('btn-input-action').style.display = 'none';
             if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
             
@@ -713,52 +720,33 @@
         mediaRecorder.stop();
     }
 
+    // --- Кнопки внутри залоченного режима ---
     function pauseRecording() {
         if (!isRecording || isPaused) return;
         mediaRecorder.pause();
         isPaused = true;
-
-        // Рисуем капсулу мини-плеера (как на 3-м скрине)
-        const lockedActions = document.getElementById('record-locked-actions');
-        lockedActions.innerHTML = `
-            <button class="tg-locked-btn" onclick="cancelRecording()"><i class="fas fa-trash-alt"></i></button>
-            <div class="tg-locked-player">
-                <button onclick="resumeRecording()"><i class="fas fa-play" style="margin-left:2px;"></i></button>
-                <span id="locked-timer-span">${formatTime(Date.now() - recStartTime)}</span>
-                <div class="tg-fake-waveform">||||||||||||||||</div>
-            </div>
-            <button class="tg-locked-btn send" onclick="stopAndSendRecording()"><i class="fas fa-arrow-up"></i></button>
-        `;
+        
+        document.getElementById('v-locked-rec-ui').classList.remove('active');
+        document.getElementById('v-locked-pause-ui').classList.add('active');
     }
 
     function resumeRecording() {
         if (!isRecording || !isPaused) return;
         mediaRecorder.resume();
         isPaused = false;
-
-        // Возвращаем стандартный лок-интерфейс
-        const lockedActions = document.getElementById('record-locked-actions');
-        lockedActions.innerHTML = `
-            <button class="tg-locked-btn" onclick="cancelRecording()"><i class="fas fa-trash-alt"></i></button>
-            <div style="display:flex; align-items:center; gap:8px;">
-                <div class="tg-red-dot"></div>
-                <span id="locked-timer-span" style="font-variant-numeric: tabular-nums; font-weight: 500;">${formatTime(Date.now() - recStartTime)}</span>
-            </div>
-            <button class="tg-locked-pause-btn" onclick="pauseRecording()"><i class="fas fa-pause-circle"></i></button>
-            <button class="tg-locked-btn send" onclick="stopAndSendRecording()"><i class="fas fa-arrow-up"></i></button>
-        `;
+        
+        document.getElementById('v-locked-pause-ui').classList.remove('active');
+        document.getElementById('v-locked-rec-ui').classList.add('active');
     }
 
     function cancelRecording() {
         isCancelled = true;
         window.shouldSendVoice = false;
-        document.getElementById('btn-input-action').style.display = 'flex'; 
         if (isRecording) mediaRecorder.stop();
     }
     
     function stopAndSendRecording() {
         window.shouldSendVoice = true;
-        document.getElementById('btn-input-action').style.display = 'flex'; 
         if (isRecording) mediaRecorder.stop();
     }
 
@@ -1411,11 +1399,10 @@
         
         if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
         
-        // Возвращаемся в чат и обновляем
+        // Просто возвращаемся в чат и обновляем долги в фоне. 
+        // Не пытаемся насильно открыть модалку, чтобы не багалась анимация
         switchScreen('screen-friend');
         await loadDebts(currentFriend.id);
-        const modal = document.getElementById('modal-debts');
-        if (modal) modal.classList.add('active'); 
     }
     
     function calculateDebt() {
