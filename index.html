@@ -627,12 +627,16 @@
                             // 2. Проверяем, что это голосовое БЕЗ текста (нет знака '|' разделителя)
                             if (plainText.startsWith('[VOICE]:') && !plainText.includes('|')) {
                                 // 3. Проверяем, что наш воркер готов взять работу
+                                // Вставь это в функцию subscribeToPrivateMessages перед вызовом helpFriendTranscribe
+                                console.log("Сообщение получено. Готовность ИИ:", isAiReady, "Отправитель:", newMsg.sender_id);
                                 if (isAiReady) {
                                     const fileName = plainText.replace('[VOICE]:', '');
                                     console.log("Обнаружено пустое чужое ГС. Беру расшифровку на себя...");
                                     
                                     // Запускаем фоновую помощь (не тормозя сокеты)
                                     helpFriendTranscribe(fileName, newMsg.id).catch(e => console.error("Сбой P2P расшифровки:", e));
+                                } else {
+                                    console.warn("ИИ не готов или сообщение от себя!");
                                 }
                             }
                         }
