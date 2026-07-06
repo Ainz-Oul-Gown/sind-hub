@@ -539,21 +539,32 @@
     let isPointerDown = false; 
 
     async function startVoiceHold(e) {
-        // Добавляем стили один раз. Отмена теперь АБСОЛЮТНО слева, замок АБСОЛЮТНО сверху
-        if (!document.getElementById('voice-styles')) {
+        // Добавляем стили один раз. Точь-в-точь как на скринах ТГ.
+        if (!document.getElementById('voice-styles-tg')) {
             const style = document.createElement('style');
-            style.id = 'voice-styles';
+            style.id = 'voice-styles-tg';
             style.innerHTML = `
-                .hint-cancel { position: absolute; left: 16px; bottom: 12px; display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 15px; user-select: none; pointer-events: none; animation: swipeLeft 2s infinite; z-index: 100;}
-                .hint-lock { position: absolute; right: 10px; bottom: 90px; background: var(--surface); border: 1px solid var(--border); border-radius: 50%; width: 56px; height: 56px; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--muted); font-size: 18px; user-select: none; pointer-events: none; box-shadow: 0 4px 15px rgba(0,0,0,0.5); z-index: 100; animation: swipeUp 2s infinite;}
-                @keyframes swipeLeft { 0%, 100% { transform: translateX(0); opacity: 0.5;} 50% { transform: translateX(-8px); opacity: 1;} }
-                @keyframes swipeUp { 0%, 100% { transform: translateY(0); opacity: 0.5;} 50% { transform: translateY(-8px); opacity: 1;} }
+                /* Контейнер для состояния удержания пальца */
+                #voice-hold-ui { width: 100%; display: flex; align-items: center; justify-content: space-between; position: relative; padding-right: 50px; }
+                
+                /* Красная мигающая точка + Таймер слева */
+                .tg-timer-box { display: flex; align-items: center; gap: 8px; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--text); }
+                .tg-red-dot { width: 8px; height: 8px; background: var(--danger); border-radius: 50%; animation: blink-dot 1s infinite; }
+                
+                /* Текст "Влево — отмена" по центру */
+                .tg-hint-cancel { flex-grow: 1; text-align: center; color: var(--muted); font-size: 15px; display: flex; align-items: center; justify-content: center; gap: 8px; animation: swipeLeftTg 1.5s ease-in-out infinite; pointer-events: none; user-select: none; margin-right: 20px;}
+                
+                /* Замок высоко справа над кнопкой */
+                .tg-hint-lock { position: absolute; right: 0; bottom: 80px; width: 48px; height: 48px; background: var(--surface); border: 1px solid var(--border); border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--muted); pointer-events: none; user-select: none; box-shadow: 0 4px 15px rgba(0,0,0,0.3); animation: swipeUpTg 1.5s ease-in-out infinite; z-index: 100; }
+                
+                @keyframes blink-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+                @keyframes swipeLeftTg { 0%, 100% { transform: translateX(0); opacity: 0.5; } 50% { transform: translateX(-10px); opacity: 1; } }
+                @keyframes swipeUpTg { 0%, 100% { transform: translateY(0); opacity: 0.5; } 50% { transform: translateY(-10px); opacity: 1; } }
             `;
             document.head.appendChild(style);
         }
 
         const btn = document.getElementById('btn-input-action');
-        
         if (btn.classList.contains('mode-send')) { sendPrivateMessage(); return; }
         if (isRecordingLocked || isRecording || isPointerDown) return;
         
@@ -578,12 +589,6 @@
             mediaRecorder.onstop = async () => {
                 clearInterval(recTimerInterval);
                 document.getElementById('record-overlay').classList.remove('active');
-                
-                // Прячем кастомные подсказки
-                const cHint = document.getElementById('dyn-cancel-hint');
-                const lHint = document.getElementById('dyn-lock-hint');
-                if (cHint) cHint.style.display = 'none';
-                if (lHint) lHint.style.display = 'none';
                 
                 btn.innerHTML = '<i class="fas fa-microphone"></i>';
                 btn.style.transform = 'scale(1)'; 
@@ -612,43 +617,44 @@
             const overlay = document.getElementById('record-overlay');
             overlay.classList.add('active');
             
-            // Прячем стандартную подсказку и меню залоченного ГС
+            // Очищаем старые элементы, чтобы не дублировались
             document.getElementById('record-hint').style.display = 'none';
             document.getElementById('record-locked-actions').classList.remove('active');
             
-            // Динамически создаем подсказки (чтобы не ломать HTML таймера)
-            let cancelHint = document.getElementById('dyn-cancel-hint');
-            if (!cancelHint) {
-                cancelHint = document.createElement('div');
-                cancelHint.id = 'dyn-cancel-hint';
-                cancelHint.className = 'hint-cancel';
-                cancelHint.innerHTML = '<i class="fas fa-chevron-left"></i> Отмена';
-                overlay.appendChild(cancelHint);
-            }
-            cancelHint.style.display = 'flex';
-
-            let lockHint = document.getElementById('dyn-lock-hint');
-            if (!lockHint) {
-                lockHint = document.createElement('div');
-                lockHint.id = 'dyn-lock-hint';
-                lockHint.className = 'hint-lock';
-                lockHint.innerHTML = '<i class="fas fa-lock"></i><i class="fas fa-chevron-up" style="margin-top:2px; font-size:12px;"></i>';
-                overlay.appendChild(lockHint);
-            }
-            lockHint.style.display = 'flex';
+            // Удаляем старый UI удержания, если он есть
+            const oldUI = document.getElementById('voice-hold-ui');
+            if (oldUI) oldUI.remove();
             
-            // Надежный таймер (напрямую меняем текст в спанах, не трогая HTML)
-            const liveTimerSpan = document.querySelector('#record-timer-live span');
+            // Внедряем новый UI удержания
+            const holdUI = document.createElement('div');
+            holdUI.id = 'voice-hold-ui';
+            holdUI.innerHTML = `
+                <div class="tg-timer-box">
+                    <div class="tg-red-dot"></div>
+                    <span id="tg-live-timer">0:00</span>
+                </div>
+                <div class="tg-hint-cancel">
+                    <i class="fas fa-chevron-left"></i> Влево — отмена
+                </div>
+                <div class="tg-hint-lock">
+                    <i class="fas fa-lock" style="margin-bottom: 3px;"></i>
+                    <i class="fas fa-chevron-up" style="font-size: 10px;"></i>
+                </div>
+            `;
+            overlay.appendChild(holdUI);
+            
+            // Таймер для залоченного режима тоже обнуляем
             const pausedTimerSpan = document.querySelector('#record-timer-paused span');
-            
-            if (liveTimerSpan) liveTimerSpan.innerText = '0:00';
             if (pausedTimerSpan) pausedTimerSpan.innerText = '0:00';
-            document.getElementById('record-timer-live').style.display = 'flex';
             
+            // Железный таймер
             recTimerInterval = setInterval(() => {
                 if (!isPaused) {
                     const timeStr = formatTime(Date.now() - recStartTime);
-                    if (liveTimerSpan) liveTimerSpan.innerText = timeStr;
+                    // Обновляем таймер в UI удержания
+                    const liveTimer = document.getElementById('tg-live-timer');
+                    if (liveTimer) liveTimer.innerText = timeStr;
+                    // Обновляем таймер в UI блокировки (на фоне)
                     if (pausedTimerSpan) pausedTimerSpan.innerText = timeStr;
                 }
             }, 500);
@@ -659,7 +665,6 @@
             
         } catch (err) { isPointerDown = false; }
     }
-
 
     function moveVoiceHold(e) {
         if (!isRecording || isRecordingLocked || !isPointerDown || isCancelled) return;
@@ -673,7 +678,7 @@
             window.shouldSendVoice = false;
             if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('warning');
             
-            mediaRecorder.stop(); // Остановка вызывает onstop и сбрасывает UI
+            mediaRecorder.stop(); 
             
             const btn = document.getElementById('btn-input-action');
             try { btn.releasePointerCapture(e.pointerId); } catch(err) {}
@@ -682,18 +687,24 @@
         }
 
         // 2. Свайп ВВЕРХ -> Лок записи
-        if (deltaY > 40) {
+        if (deltaY > 50) {
             isRecordingLocked = true;
             
-            document.getElementById('record-hint').style.display = 'none';
+            // ПРЯЧЕМ ВЕСЬ БЛОК С ОТМЕНОЙ И ЗАМКОМ!
+            const holdUI = document.getElementById('voice-hold-ui');
+            if (holdUI) holdUI.style.display = 'none';
+            
+            // ПОКАЗЫВАЕМ МЕНЮ (Корзина - Таймер - СТОП - Отправить)
             document.getElementById('record-locked-actions').classList.add('active');
             
+            // Кнопка в меню становится ПАУЗОЙ
             const actionBtn = document.querySelector('.btn-rec-resume');
             actionBtn.innerHTML = '<i class="fas fa-pause"></i>';
             actionBtn.setAttribute('onclick', 'pauseRecording()');
             
+            // Прячем гигантскую кнопку
             const btn = document.getElementById('btn-input-action');
-            btn.style.display = 'none'; // Прячем гигантскую кнопку
+            btn.style.display = 'none';
             
             if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
             
@@ -708,16 +719,12 @@
         try { if (e && e.pointerId) btn.releasePointerCapture(e.pointerId); } catch(err) {}
         
         if (!isRecording || isCancelled) return;
-        
-        // Если ГС залочено свайпом вверх, отпускание пальца ничего не делает (ждем кнопок меню)
         if (isRecordingLocked) return;
         
-        // Просто зажали и отпустили -> Отправляем
         window.shouldSendVoice = true;
         mediaRecorder.stop();
     }
 
-    // Для кнопки КОРЗИНЫ (в залоченном режиме)
     function cancelRecording() {
         isCancelled = true;
         window.shouldSendVoice = false;
@@ -725,7 +732,6 @@
         if (isRecording) mediaRecorder.stop();
     }
     
-    // Для кнопки ОТПРАВИТЬ (в залоченном режиме)
     function stopAndSendRecording() {
         window.shouldSendVoice = true;
         document.getElementById('btn-input-action').style.display = 'flex'; 
@@ -1316,20 +1322,20 @@
 
     // --- ЖЕЛЕЗОБЕТОННАЯ ЛОГИКА ДОЛГОВ ---
     async function openDebtModal() {
-        // 1. Чисто убираем класс active у модалки (закрываем её)
+        // 1. Прячем модалку (убираем класс active)
         const modal = document.getElementById('modal-debts');
         if (modal) modal.classList.remove('active');
         
-        // 2. Чисто переключаемся на экран добавления долга
+        // 2. Переключаемся на экран добавления долга (стандартной функцией)
         switchScreen('screen-add-debt');
         
-        // 3. Сбрасываем поля
+        // 3. Сбрасываем значения инпутов
         const rublesInput = document.getElementById('debt-rubles');
         const resultText = document.getElementById('debt-result');
         if (rublesInput) rublesInput.value = '';
         if (resultText) resultText.innerText = '0';
         
-        // 4. Грузим валюты
+        // 4. Подгружаем валюты друга
         const select = document.getElementById('debt-currency');
         if (!select) return;
         select.innerHTML = '<option value="Руб." data-price="1">Загрузка...</option>';
@@ -1356,6 +1362,7 @@
     }
 
     async function saveDebt() {
+        // Берем значения
         const rublesInput = document.getElementById('debt-rubles');
         const rubles = parseFloat(rublesInput.value);
         if (isNaN(rubles) || rubles <= 0) return alert('Введите корректную сумму!');
@@ -1374,22 +1381,23 @@
             currency: currencyName 
         };
 
+        // Записываем в базу
         const { data, error } = await supabaseClient.from('debts').insert(payload).select();
         
         if (error) { 
-            alert("Ошибка БД: " + error.message);
+            alert("Ошибка сохранения: " + error.message);
             return; 
         }
         
         if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
         
-        // 1. Возвращаемся на экран друга
+        // 1. Возвращаемся на экран чата
         switchScreen('screen-friend');
         
-        // 2. Подгружаем новые долги
+        // 2. Подгружаем новые долги, чтобы они появились в списке
         await loadDebts(currentFriend.id);
         
-        // 3. Открываем модалку заново (чистым методом)
+        // 3. Открываем модалку долгов обратно, чтобы юзер увидел свой новый долг
         const modal = document.getElementById('modal-debts');
         if (modal) modal.classList.add('active'); 
     }
