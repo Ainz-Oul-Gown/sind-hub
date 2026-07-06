@@ -1,0 +1,15 @@
+{
+  "name": "Синдикат Хаб",
+  "short_name": "Синдикат",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#181818",
+  "theme_color": "#2481cc",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/2111/2111646.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
