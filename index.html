@@ -549,11 +549,7 @@
         // 1. Текст
         if (btn.classList.contains('mode-send')) { sendPrivateMessage(); return; }
 
-        // 2. Если уже залочили запись — эта кнопка теперь работает как ПАУЗА (Стоп)
-        if (isRecordingLocked) {
-            pauseRecording();
-            return;
-        }
+        if (isRecordingLocked) return;
 
         // Блокируем двойные нажатия
         if (isRecording || isPointerDown) return;
@@ -580,9 +576,7 @@
                 // Сброс интерфейса
                 btn.innerHTML = '<i class="fas fa-microphone"></i>';
                 btn.style.transform = 'scale(1)'; 
-                btn.style.background = 'var(--surface)';
-                btn.style.color = 'var(--text)';
-                document.getElementById('record-timer').classList.remove('paused');
+                btn.style.display = 'flex'; // Гарантируем, что основная кнопка вернулась
                 
                 const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
                 isRecording = false;
@@ -601,22 +595,25 @@
             window.shouldSendVoice = false; 
             recStartTime = Date.now();
             
-            // UI
+            // Настройка UI при старте
             document.getElementById('record-overlay').classList.add('active');
             document.getElementById('record-hint').style.display = 'flex';
             document.getElementById('record-locked-actions').classList.remove('active');
-            document.getElementById('record-timer-live').querySelector('span').innerText = '0:00';
-            document.getElementById('record-timer-paused').querySelector('span').innerText = '0:00';
+            
+            // Готовим таймеры
+            document.getElementById('record-timer-live').innerHTML = '<i class="fas fa-microphone"></i> <span>0:00</span>';
+            const pausedTimer = document.getElementById('record-timer-paused');
+            pausedTimer.classList.remove('paused');
+            pausedTimer.innerHTML = '<i class="fas fa-microphone" style="margin-right:6px;"></i><span>0:00</span>';
             
             recTimerInterval = setInterval(() => {
                 if (!isPaused) {
                     const timeStr = formatTime(Date.now() - recStartTime);
-                    document.getElementById('record-timer-live').querySelector('span').innerText = timeStr;
-                    document.getElementById('record-timer-paused').querySelector('span').innerText = timeStr;
+                    document.querySelector('#record-timer-live span').innerText = timeStr;
+                    document.querySelector('#record-timer-paused span').innerText = timeStr;
                 }
             }, 500);
 
-            // Кнопка увеличивается при удержании
             btn.innerHTML = '<i class="fas fa-microphone"></i>';
             btn.style.transform = 'scale(1.4)'; 
             if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
@@ -631,53 +628,43 @@
         if (startY - e.clientY > 40) {
             isRecordingLocked = true;
             
-            // Меняем UI
+            // Прячем стандартную подсказку "Свайп для лока"
             document.getElementById('record-hint').style.display = 'none';
             
+            // ПОКАЗЫВАЕМ меню для залоченного ГС (корзина, таймер, пауза, отправка)
+            document.getElementById('record-locked-actions').classList.add('active');
+            
+            // Т.к. запись еще идет, центральная кнопка в меню должна быть ПАУЗОЙ
+            const actionBtn = document.querySelector('.btn-rec-resume');
+            actionBtn.innerHTML = '<i class="fas fa-pause"></i>';
+            actionBtn.setAttribute('onclick', 'pauseRecording()');
+            
+            // Прячем огромную центральную кнопку ввода
             const btn = document.getElementById('btn-input-action');
-            btn.style.transform = 'scale(1)'; // Возвращаем размер
-            btn.innerHTML = '<i class="fas fa-square"></i>'; // Кнопка СТОП
-            btn.style.background = 'var(--danger)';
-            btn.style.color = 'white';
+            btn.style.display = 'none';
             
             if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+            
+            // Снимаем фокус нажатия, чтобы при отпускании пальца запись не отправилась
+            try { btn.releasePointerCapture(e.pointerId); } catch(err) {}
+            isPointerDown = false;
         }
     }
 
-    function endVoiceHold(e) {
-        isPointerDown = false;
-        const btn = document.getElementById('btn-input-action');
-        try { if (e && e.pointerId) btn.releasePointerCapture(e.pointerId); } catch(err) {}
-        
-        if (!isRecording) return;
-        
-        // Если мы залочили ГС свайпом - просто оставляем всё как есть, ждем нажатия СТОП
-        if (isRecordingLocked) {
-            btn.style.transform = 'scale(1)';
-            return;
-        }
-        
-        // Если не залочили - просто отправляем!
-        window.shouldSendVoice = true;
-        mediaRecorder.stop();
-    }
-
-    // --- ЛОГИКА ЗАБЛОКИРОВАННОГО ГС ---
     function pauseRecording() {
         if (!isRecording || isPaused) return;
         mediaRecorder.pause();
         isPaused = true;
         
         // Обновляем таймер
-        const timer = document.getElementById('record-timer');
+        const timer = document.getElementById('record-timer-paused');
         timer.classList.add('paused');
-        timer.querySelector('i').className = 'fas fa-microphone-slash';
+        timer.innerHTML = '<i class="fas fa-microphone-slash" style="margin-right:6px;"></i><span>' + formatTime(Date.now() - recStartTime) + '</span>';
         
-        // Показываем кнопки "Корзина", "Микрофон", "Отправить"
-        document.getElementById('record-locked-actions').classList.add('active');
-        
-        // Прячем центральную кнопку ввода
-        document.getElementById('btn-input-action').style.display = 'none';
+        // Меняем кнопку на "Продолжить" (иконка микрофона)
+        const actionBtn = document.querySelector('.btn-rec-resume');
+        actionBtn.innerHTML = '<i class="fas fa-microphone"></i>';
+        actionBtn.setAttribute('onclick', 'resumeRecording()');
     }
 
     function resumeRecording() {
@@ -685,14 +672,15 @@
         mediaRecorder.resume();
         isPaused = false;
         
-        // Возвращаем таймер
-        const timer = document.getElementById('record-timer');
+        // Возвращаем таймер в режим записи
+        const timer = document.getElementById('record-timer-paused');
         timer.classList.remove('paused');
-        timer.querySelector('i').className = 'fas fa-microphone';
+        timer.innerHTML = '<i class="fas fa-microphone" style="margin-right:6px;"></i><span>' + formatTime(Date.now() - recStartTime) + '</span>';
         
-        // Прячем меню паузы, возвращаем центральную кнопку "СТОП"
-        document.getElementById('record-locked-actions').classList.remove('active');
-        document.getElementById('btn-input-action').style.display = 'flex';
+        // Меняем кнопку обратно на "Паузу"
+        const actionBtn = document.querySelector('.btn-rec-resume');
+        actionBtn.innerHTML = '<i class="fas fa-pause"></i>';
+        actionBtn.setAttribute('onclick', 'pauseRecording()');
     }
 
     function cancelRecording() {
@@ -1291,15 +1279,21 @@
 
     // --- ЖЕЛЕЗОБЕТОННАЯ ЛОГИКА ДОЛГОВ ---
     async function openDebtModal() {
-        // Жестко прячем модалку чата (Сводку долгов)
+        // СРАЗУ переключаем экран и закрываем модалку! 
+        // Это убирает эффект того, что "модалка просто закрылась"
+        switchScreen('screen-add-debt');
         document.getElementById('modal-debts').classList.remove('active');
         
         document.getElementById('debt-rubles').value = ''; 
         document.getElementById('debt-result').innerText = '0';
         
-        // Подгружаем валюты друга
-        const { data: friendCurrencies } = await supabaseClient.from('currencies').select('*').eq('owner_id', currentFriend.id);
+        // Ставим заглушку загрузки для визуального понимания
         const select = document.getElementById('debt-currency');
+        select.innerHTML = '<option value="Руб." data-price="1">Загрузка валют...</option>';
+        
+        // Подгружаем валюты друга (именно этот запрос и вызывал задержку)
+        const { data: friendCurrencies } = await supabaseClient.from('currencies').select('*').eq('owner_id', currentFriend.id);
+        
         select.innerHTML = '';
         if (!friendCurrencies || friendCurrencies.length === 0) {
             select.innerHTML = `<option value="Руб." data-price="1">Рубли (1 к 1)</option>`;
@@ -1309,9 +1303,6 @@
                 select.innerHTML += `<option value="${safeName}" data-price="${c.rub_value}">${safeName} (Курс: ${c.rub_value} ₽)</option>`;
             });
         }
-        
-        // Переходим на экран оформления долга
-        switchScreen('screen-add-debt');
     }
     
     function calculateDebt() {
