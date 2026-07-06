@@ -318,36 +318,47 @@
 
         await supabaseClient.storage.from('voice_messages').upload(fileName, payload, { contentType: 'application/octet-stream' });
 
-        // 2. ОТПРАВКА БЕЗ ТЕКСТА (чтобы ГС сразу появилось в чате)
+        // 2. ОТПРАВКА БЕЗ ТЕКСТА
         const textMarker = `[VOICE]:${fileName}`;
         const encryptedPayloadText = await encryptText(textMarker, currentAesKey);
         
-        // ВАЖНО: запрашиваем .select().single() чтобы БД вернула нам ID созданного сообщения!
-        const { data: insertedMsg } = await supabaseClient.from('messages').insert([
+        const { data: insertedMsg, error: insertErr } = await supabaseClient.from('messages').insert([
             { chat_id: currentChatId, sender_id: currentUser.id, encrypted_text: encryptedPayloadText }
         ]).select().single();
 
-        if (!insertedMsg) return; // Если не удалось создать — прерываем
+        if (!insertedMsg || insertErr) return;
 
-        // 3. ФОНОВАЯ ТРАНСКРИПЦИЯ
+        // 3. ФОНОВАЯ ТРАНСКРИПЦИЯ И АПДЕЙТ
         try {
             const transcribedText = await transcribeAudio(audioBlob);
-            if (!transcribedText || transcribedText.trim() === '') return;
+            if (!transcribedText || transcribedText.trim() === '') {
+                throw new Error("ИИ не услышал слов");
+            }
 
-            // 4. ГЕНЕРАЦИЯ И ШИФРОВАНИЕ ВЕКТОРА
             const encryptedVector = await generateAndEncryptVector(transcribedText, currentAesKey);
 
-            // 5. АПДЕЙТ СООБЩЕНИЯ В БД (Дописываем текст и вектор)
             const newMarker = `[VOICE]:${fileName}|${transcribedText.trim()}`;
             const newEncryptedText = await encryptText(newMarker, currentAesKey);
 
-            // Обновляем именно то сообщение, которое создали на Шаге 2
-            await supabaseClient.from('messages')
+            const { error: updateErr } = await supabaseClient.from('messages')
                 .update({ encrypted_text: newEncryptedText, encrypted_vector: encryptedVector })
                 .eq('id', insertedMsg.id);
                 
+            if (updateErr) throw new Error("БД заблокировала UPDATE (RLS)");
+
         } catch (e) {
-            console.error("Фоновый процесс транскрипции прерван:", e);
+            console.error("Фоновый процесс прерван:", e);
+            
+            // Если произошла ошибка, обновляем пузырь в чате, чтобы показать её
+            try {
+                const errorMarker = `[VOICE]:${fileName}|❌ Ошибка: ${e.message}`;
+                const errorEncryptedText = await encryptText(errorMarker, currentAesKey);
+                await supabaseClient.from('messages')
+                    .update({ encrypted_text: errorEncryptedText })
+                    .eq('id', insertedMsg.id);
+            } catch (fallbackErr) {
+                // Если даже отправить ошибку не вышло, значит точно проблема с правами БД
+            }
         }
     }
    
