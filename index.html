@@ -565,7 +565,7 @@
     // Функция, которая "включает" авторизацию для базы данных
     function setSupabaseToken(token) {
         // Мы используем токен как кастомный заголовок
-        supabaseClient.realtime.setAuth(token); // Для вебсокетов
+        //supabaseClient.realtime.setAuth(token); // Для вебсокетов
         supabaseClient.rest.headers['Authorization'] = `Bearer ${token}`; // Для обычных запросов
     }
 
@@ -1222,7 +1222,13 @@
                         renderMessage("🔒 [Ошибка расшифровки]", newMsg.sender_id === currentUser.id, timeStr, newMsg.id);
                     }
                 }
-            ).subscribe();
+            ).subscribe((status, err) => {
+                if (status === 'SUBSCRIBED') {
+                    console.log('✅ Канал связи успешно открыт!');
+                } else if (status === 'CHANNEL_ERROR') {
+                    console.error('❌ Ошибка вебсокетов:', err);
+                }
+            });
     }
 
 
