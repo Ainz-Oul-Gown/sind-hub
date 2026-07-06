@@ -523,10 +523,10 @@
             const decryptedBlob = new Blob([decryptedBuffer]);
             const audioUrl = URL.createObjectURL(decryptedBlob);
             
-            // 5. Превращаем кнопку в полноценный HTML5 плеер с автовоспроизведением
-            element.parentElement.innerHTML = `
+            // ФИКС: Заменяем только саму кнопку, оставляя текст и время нетронутыми!
+            element.outerHTML = `
                 <audio controls src="${audioUrl}" autoplay 
-                       style="height: 35px; width: 220px; outline: none;">
+                       style="height: 35px; width: 220px; outline: none; margin-bottom: 5px;">
                 </audio>`;
                 
         } catch (e) {
