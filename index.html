@@ -650,54 +650,70 @@
     }
 
     // --- ФУНКЦИЯ ВЗАИМОВЫРУЧКИ УСТРОЙСТВ ---
+    // --- ФУНКЦИЯ ВЗАИМОВЫРУЧКИ УСТРОЙСТВ (ДЕЦЕНТРАЛ) ---
     async function helpFriendTranscribe(fileName, msgId) {
-        if (!currentAesKey || !currentChatId) return;
-
+        console.log("🔍 [P2P] Запуск транскрипции для:", fileName, "ID сообщения:", msgId);
+        
+        if (!currentAesKey || !currentChatId) {
+            console.error("❌ [P2P] Нет ключа шифрования или ID чата, отмена");
+            return;
+        }
+    
         try {
-            // 1. Скачиваем зашифрованное аудио друга
-            const { data: fileData, error: downloadErr } = await supabaseClient.storage.from('voice_messages').download(fileName);
-            if (downloadErr || !fileData) throw new Error("Не удалось скачать файл из Storage");
-
-            // 2. Расшифровываем аудиофайл
+            console.log("📥 [P2P] Скачиваю файл из Storage...");
+            const { data: fileData, error: downloadErr } = await supabaseClient.storage
+                .from('voice_messages')
+                .download(fileName);
+            
+            if (downloadErr) throw new Error("Не удалось скачать файл: " + downloadErr.message);
+            console.log("✅ [P2P] Файл скачан, размер:", fileData.size, "байт");
+    
+            // Расшифровка
             const arrayBuffer = await fileData.arrayBuffer();
             const bytes = new Uint8Array(arrayBuffer);
             const iv = bytes.slice(0, 12);
             const encryptedData = bytes.slice(12);
-
+    
             const decryptedBuffer = await window.crypto.subtle.decrypt(
                 { name: "AES-GCM", iv: iv }, currentAesKey, encryptedData
             );
-
-            // 3. Подготавливаем математику для Web Worker
+    
+            // Подготовка аудио для Web Worker
             if (audioContext.state === 'suspended') await audioContext.resume();
-            
-            // ВАЖНО: Мы используем slice(0) для копирования буфера, так как 
-            // decryptedBuffer может быть заблокирован после дешифровки
-            const audioBuffer = await audioContext.decodeAudioData(decryptedBuffer.slice(0)); 
+            const audioBuffer = await audioContext.decodeAudioData(decryptedBuffer.slice(0));
             const audioFloat32 = audioBuffer.getChannelData(0);
-
-            // 4. Отправляем в наш фоновый ИИ-поток
+    
+            // Запуск транскрипции в фоновом потоке
+            console.log("🧠 [P2P] Передаю математику в ИИ-воркер...");
             const transcribedText = await transcribeViaWorker(audioFloat32);
-            if (!transcribedText || transcribedText.trim() === '') return;
-
-            // 5. Генерируем вектор и перешифровываем текст
+            
+            if (!transcribedText || transcribedText.trim() === '') {
+                throw new Error("ИИ не распознал речь");
+            }
+    
+            console.log("📝 [P2P] Транскрипция готова:", transcribedText);
+    
+            // Генерация и шифрование данных
             const encryptedVector = await generateAndEncryptVector(transcribedText, currentAesKey);
             const newMarker = `[VOICE]:${fileName}|${transcribedText.trim()}`;
             const newEncryptedText = await encryptText(newMarker, currentAesKey);
-
-            // 6. Обновляем ЧУЖОЕ сообщение в базе данных
+    
+            // АПДЕЙТ сообщения
+            console.log("💾 [P2P] Отправляю результат в БД...");
             const { error: updateErr } = await supabaseClient.from('messages')
-                .update({ encrypted_text: newEncryptedText, encrypted_vector: encryptedVector })
+                .update({ 
+                    encrypted_text: newEncryptedText, 
+                    encrypted_vector: encryptedVector 
+                })
                 .eq('id', msgId);
-
-            if (updateErr) {
-                console.error("Supabase заблокировал обновление чужого сообщения. Проверь RLS!", updateErr);
-            } else {
-                console.log(`P2P Транскрипция успешна! Друг спасен, текст добавлен.`);
-            }
-
+    
+            if (updateErr) throw new Error("Ошибка БД при апдейте: " + updateErr.message);
+            
+            console.log("🚀 [P2P] Успешно! Текст добавлен в сообщение", msgId);
+    
         } catch (e) {
-            console.error("Ошибка в конвейере взаимовыручки:", e);
+            console.error("❌ [P2P] Критическая ошибка:", e);
+            // Можно добавить здесь отправку ошибки в чат, если нужно
         }
     }
     
@@ -1120,6 +1136,21 @@
                         renderMessage(plainText, newMsg.sender_id === currentUser.id, timeStr, newMsg.id);
                     } catch (e) {
                         renderMessage("🔒 [Ошибка]", newMsg.sender_id === currentUser.id, timeStr, newMsg.id);
+                    }
+                    
+                    // --- ДЕЦЕНТРАЛИЗОВАННАЯ ТРАНСКРИПЦИЯ ---
+                    // 1. Проверяем, что это НЕ МОЕ сообщение
+                    if (newMsg.sender_id !== currentUser.id) {
+                        // 2. Проверяем, что это VOICE и в нем НЕТ текста (нет знака |)
+                        if (plainText.startsWith('[VOICE]:') && !plainText.includes('|')) {
+                            // 3. Если воркер готов — запускаем
+                            if (isAiReady) {
+                                const fileName = plainText.replace('[VOICE]:', '');
+                                helpFriendTranscribe(fileName, newMsg.id);
+                            } else {
+                                console.warn("⚠️ ИИ еще не готов, P2P транскрипция пропущена");
+                            }
+                        }
                     }
                 }
             ).subscribe();
