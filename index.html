@@ -107,9 +107,6 @@
         </div>
 
         <h3 style="color: #999;">Братва:</h3>
-        <button class="btn" style="background-color: #ff9800; margin-bottom: 15px;" onclick="setupTestRoom()">
-            🛠 Выковать ключ чата (Дебаг)
-        </button>
         <div id="friends-list">Загрузка...</div>
     </div>
 
@@ -367,52 +364,7 @@
     let currentUser = null; 
     let currentFriend = null; 
 
-    async function setupTestRoom() {
-        const testChatId = "00000000-0000-0000-0000-000000000001"; // Тот самый ID из SQL
-        let aesKey = await idbKeyval.get('current_chat_key');
     
-        // Если ключа еще нет (первый запуск), куем его локально
-        if (!aesKey) {
-            console.log("Генерируем тестовый AES-ключ чата...");
-            aesKey = await window.crypto.subtle.generateKey(
-                { name: "AES-GCM", length: 256 },
-                true,
-                ["encrypt", "decrypt"]
-            );
-            await idbKeyval.set('current_chat_key', aesKey);
-            alert("✅ Ключ успешно выкован!");
-        } else {
-            console.log("Ключ уже есть в памяти.");
-        }
-        
-        // Запускаем прослушку входящих сообщений
-        listenForMessages(testChatId, aesKey);
-    }
-        
-    async function setupTestRoom() {
-        const testChatId = "00000000-0000-0000-0000-000000000001"; // Тот самый ID из SQL
-        let aesKey = await idbKeyval.get('current_chat_key');
-    
-        // Если ключа еще нет (первый запуск), куем его локально
-        if (!aesKey) {
-            console.log("Генерируем тестовый AES-ключ чата...");
-            aesKey = await window.crypto.subtle.generateKey(
-                { name: "AES-GCM", length: 256 },
-                true,
-                ["encrypt", "decrypt"]
-            );
-            await idbKeyval.set('current_chat_key', aesKey);
-            console.log("Тестовый ключ готов и спрятан в IndexedDB.");
-        }
-    
-        console.log("Подключаемся к матрице... Слушаем сообщения.");
-        
-        // Запускаем функцию прослушки из предыдущего кода
-        listenForMessages(testChatId, aesKey);
-        
-        // ВАЖНО: Не забудь обновить testChatId в функции sendTextMessage
-        // const testChatId = "00000000-0000-0000-0000-000000000001";
-    }
 
     // Вспомогательная функция перевода строки в байты
     const enc = new TextEncoder();
