@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
+    <link rel="manifest" href="manifest.json">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Синдикат-Хаб</title>
@@ -33,7 +34,12 @@
             <div>Мой статус:<br><strong id="my-status" style="font-size: 18px;">...</strong></div>
             <button onclick="toggleStatus()" style="width: auto; padding: 8px 15px;">Сменить</button>
         </div>
-        <button onclick="switchScreen('screen-currencies')" style="margin-bottom: 20px; background: #555;">⚙️ Мои валюты</button>
+        
+        <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+            <button onclick="switchScreen('screen-currencies')" style="background: #555;">⚙️ Валюты</button>
+            <button onclick="openPWA()" style="background: #28a745;" id="btn-pwa">🌐 Открыть как PWA</button>
+        </div>
+
         <h3 style="color: #999;">Братва:</h3>
         <div id="friends-list">Загрузка...</div>
     </div>
@@ -78,155 +84,213 @@
     </div>
 
     <script>
-        const tg = window.Telegram.WebApp;
-        tg.expand(); 
+    const tg = window.Telegram.WebApp;
+    tg.expand(); 
 
-        const supabaseClient = supabase.createClient(
-            'https://cqhndgtiqdjzzrqdzrfq.supabase.co', 
-            'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaG5kZ3RpcWRqenpycWR6cmZxIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MzI4NzE3MCwiZXhwIjoyMDk4ODYzMTcwfQ.OMiry_4g_5Bn5VzjoA79V_MGnccm1x5D-Yne1Wc49Sw'
-        );
+    const supabaseClient = supabase.createClient(
+        'https://cqhndgtiqdjzzrqdzrfq.supabase.co', 
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaG5kZ3RpcWRqenpycWR6cmZxIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MzI4NzE3MCwiZXhwIjoyMDk4ODYzMTcwfQ.OMiry_4g_5Bn5VzjoA79V_MGnccm1x5D-Yne1Wc49Sw'
+    );
 
-        const user = tg.initDataUnsafe?.user;
-        let currentFriend = null; 
+    // Теперь юзер глобальный и может браться как из ТГ, так и из БД напрямую
+    let currentUser = null; 
+    let currentFriend = null; 
 
-        async function initApp() {
-            if (!user) return;
-            await supabaseClient.from('users').upsert({ tg_id: user.id, first_name: user.first_name }, { onConflict: 'tg_id' });
-            loadMyStatus(); loadFriends(); loadMyCurrencies();
-        }
+    // --- УМНАЯ АВТОРИЗАЦИЯ (ТГ + PWA) ---
+    async function authUser() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlToken = urlParams.get('token');
+        const tgUser = tg.initDataUnsafe?.user;
 
-        function switchScreen(screenId) {
-            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-            document.getElementById(screenId).classList.add('active');
-            tg.HapticFeedback.impactOccurred('light');
-        }
-
-        async function loadMyStatus() {
-            const { data } = await supabaseClient.from('users').select('status').eq('tg_id', user.id).single();
-            document.getElementById('my-status').innerText = data?.status || 'Свободен 🟢';
-        }
-
-        async function toggleStatus() {
-            const curr = document.getElementById('my-status').innerText;
-            const newStatus = curr.includes('Свободен') ? 'Занят 🔴' : 'Свободен 🟢';
-            document.getElementById('my-status').innerText = newStatus;
-            await supabaseClient.from('users').update({ status: newStatus }).eq('tg_id', user.id);
-            tg.HapticFeedback.impactOccurred('medium');
-        }
-
-        async function loadFriends() {
-            const { data } = await supabaseClient.from('users').select('*');
-            const list = document.getElementById('friends-list');
-            list.innerHTML = '';
-            data.forEach(f => {
-                if(f.tg_id === user.id) return;
-                list.innerHTML += `<div class="friend-item" onclick="openFriend(${f.tg_id}, '${f.first_name}')"><span>${f.first_name}</span><span>${f.status || 'Свободен 🟢'}</span></div>`;
-            });
-        }
-
-        // --- ВАЛЮТЫ ---
-        async function loadMyCurrencies() {
-            const { data } = await supabaseClient.from('currencies').select('*').eq('owner_id', user.id);
-            document.getElementById('my-currencies-list').innerHTML = data && data.length > 0 
-                ? data.map(c => `
-                    <div class="card" style="padding:10px; display:flex; justify-content:space-between; align-items:center;">
-                        <span>${c.name} (${c.rub_value}р)</span>
-                        <span style="cursor:pointer; font-size:20px;" onclick="deleteCurrency('${c.id}')">❌</span>
-                    </div>`).join('')
-                : '<p style="color: #777;">У тебя пока нет своих валют.</p>';
-        }
-
-        async function addCurrency() {
-            const name = document.getElementById('cur-name').value;
-            const price = parseFloat(document.getElementById('cur-price').value);
-            if(!name || !price) return alert('Заполни поля!');
-            await supabaseClient.from('currencies').insert({ owner_id: user.id, name: name, rub_value: price });
-            document.getElementById('cur-name').value = ''; document.getElementById('cur-price').value = '';
-            loadMyCurrencies();
-        }
-
-        async function deleteCurrency(id) {
-            if(!confirm('Удалить эту валюту?')) return;
-            await supabaseClient.from('currencies').delete().eq('id', id);
-            loadMyCurrencies();
-        }
-
-        // --- ПРОФИЛЬ ДРУГА И ДОЛГИ ---
-        async function openFriend(tgId, name) {
-            currentFriend = { id: tgId, name: name };
-            document.getElementById('friend-name-title').innerText = name;
-            switchScreen('screen-friend');
+        // Вариант 1: Мы внутри Телеграма
+        if (tgUser) {
+            currentUser = { id: tgUser.id, first_name: tgUser.first_name };
             
-            // 1. Ищем, где Я ДОЛЖЕН (Я debtor, Друг creditor)
-            const { data: iOwe } = await supabaseClient.from('debts').select('*').eq('creditor_id', tgId).eq('debtor_id', user.id);
+            // Генерируем токен, если его нет
+            const myToken = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
             
-            // 2. Ищем, где МНЕ ДОЛЖНЫ (Я creditor, Друг debtor)
-            const { data: owesMe } = await supabaseClient.from('debts').select('*').eq('creditor_id', user.id).eq('debtor_id', tgId);
-            
-            let html = '';
-            
-            // Отрисовка "Я должен"
-            if (iOwe && iOwe.length > 0) {
-                html += '<div style="color: #ff5252; margin-top: 10px; font-weight: bold;">🔴 Я должен:</div>';
-                html += iOwe.map(d => `
-                    <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom: 1px solid #444;">
-                        <span>${d.amount} ${d.currency}</span>
-                        <button class="btn-resolve" onclick="deleteDebt('${d.id}')">Вернул</button>
-                    </div>`).join('');
+            // Запрашиваем из базы текущий токен (если есть)
+            const { data } = await supabaseClient.from('users').select('auth_token').eq('tg_id', currentUser.id).single();
+            let finalToken = data?.auth_token;
+
+            if (!finalToken) {
+                finalToken = myToken; // Если токена не было, берем новый
             }
 
-            // Отрисовка "Мне должны"
-            if (owesMe && owesMe.length > 0) {
-                html += '<div style="color: #4caf50; margin-top: 15px; font-weight: bold;">🟢 Мне должны:</div>';
-                html += owesMe.map(d => `
-                    <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom: 1px solid #444;">
-                        <span>${d.amount} ${d.currency}</span>
-                        <button class="btn-resolve" onclick="deleteDebt('${d.id}')">Простить</button>
-                    </div>`).join('');
-            }
+            // Обновляем/Создаем юзера
+            await supabaseClient.from('users').upsert({ 
+                tg_id: currentUser.id, 
+                first_name: currentUser.first_name,
+                auth_token: finalToken
+            }, { onConflict: 'tg_id' });
 
-            document.getElementById('friend-debts').innerHTML = html || '<div style="color:#777; margin-top:10px;">Никто никому не должен</div>';
+            localStorage.setItem('synd_token', finalToken); // Сохраняем в память
+            return true;
+        } 
+        // Вариант 2: Перешли по ссылке с токеном (Настраиваем PWA)
+        else if (urlToken) {
+            localStorage.setItem('synd_token', urlToken);
+            window.history.replaceState({}, document.title, window.location.pathname); // Прячем токен из URL для красоты
+            return await fetchUserByToken(urlToken);
+        }
+        // Вариант 3: Просто открыли PWA (Токен уже в памяти)
+        else if (localStorage.getItem('synd_token')) {
+            return await fetchUserByToken(localStorage.getItem('synd_token'));
         }
 
-        async function deleteDebt(id) {
-            if(!confirm('Точно закрыть этот долг?')) return;
-            await supabaseClient.from('debts').delete().eq('id', id);
-            openFriend(currentFriend.id, currentFriend.name); // Перезагружаем профиль
+        return false; // Не авторизован
+    }
+
+    async function fetchUserByToken(token) {
+        const { data } = await supabaseClient.from('users').select('tg_id, first_name').eq('auth_token', token).single();
+        if (data) {
+            currentUser = { id: data.tg_id, first_name: data.first_name };
+            document.getElementById('btn-pwa').style.display = 'none'; // В PWA прячем кнопку PWA
+            return true;
+        }
+        return false;
+    }
+
+    // --- ФУНКЦИЯ ДЛЯ ПЕРЕХОДА В PWA ---
+    function openPWA() {
+        const token = localStorage.getItem('synd_token');
+        if (!token) return alert('Ошибка токена!');
+        
+        // Формируем ссылку на твой гитхаб с токеном
+        const baseUrl = window.location.href.split('?')[0]; 
+        const pwaUrl = `${baseUrl}?token=${token}`;
+        
+        // Заставляем Телеграм открыть ссылку во внешнем браузере (Safari/Chrome)
+        tg.openLink(pwaUrl);
+    }
+
+    async function initApp() {
+        const isAuth = await authUser();
+        
+        if (!isAuth) {
+            document.body.innerHTML = '<h2 style="text-align:center; margin-top: 50px;">❌ Доступ запрещен. Открой Хаб через Telegram-бота!</h2>';
+            return;
         }
 
-        // --- ЗАПИСЬ НОВОГО ДОЛГА ---
-        async function openDebtModal() {
-            document.getElementById('debt-rubles').value = ''; document.getElementById('debt-result').innerText = '0';
-            const { data: friendCurrencies } = await supabaseClient.from('currencies').select('*').eq('owner_id', currentFriend.id);
-            const select = document.getElementById('debt-currency');
-            select.innerHTML = '';
-            if (!friendCurrencies || friendCurrencies.length === 0) {
-                select.innerHTML = `<option value="Руб." data-price="1">Рубли (1 к 1)</option>`;
-            } else {
-                friendCurrencies.forEach(c => select.innerHTML += `<option value="${c.name}" data-price="${c.rub_value}">${c.name} (${c.rub_value}р)</option>`);
-            }
-            switchScreen('screen-add-debt');
-        }
+        loadMyStatus(); 
+        loadFriends(); 
+        loadMyCurrencies();
+    }
 
-        function calculateDebt() {
-            const rubles = parseFloat(document.getElementById('debt-rubles').value) || 0;
-            const select = document.getElementById('debt-currency');
-            const price = parseFloat(select.options[select.selectedIndex]?.getAttribute('data-price')) || 1;
-            document.getElementById('debt-result').innerText = rubles === 0 ? '0' : `${(rubles / price).toFixed(1)} ${select.value}`;
-        }
 
-        async function saveDebt() {
-            const finalAmountText = document.getElementById('debt-result').innerText; 
-            if(finalAmountText === '0') return alert('Введи сумму');
-            const [amountStr, ...currencyArr] = finalAmountText.split(' ');
-            await supabaseClient.from('debts').insert({
-                creditor_id: currentFriend.id, debtor_id: user.id, amount: parseFloat(amountStr), currency: currencyArr.join(' ')
-            });
-            tg.HapticFeedback.notificationOccurred('success');
-            openFriend(currentFriend.id, currentFriend.name); 
-        }
+    function switchScreen(screenId) {
+        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+        document.getElementById(screenId).classList.add('active');
+        if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+    }
 
-        initApp();
-    </script>
+    async function loadMyStatus() {
+        const { data } = await supabaseClient.from('users').select('status').eq('tg_id', currentUser.id).single();
+        document.getElementById('my-status').innerText = data?.status || 'Свободен 🟢';
+    }
+
+    async function toggleStatus() {
+        const curr = document.getElementById('my-status').innerText;
+        const newStatus = curr.includes('Свободен') ? 'Занят 🔴' : 'Свободен 🟢';
+        document.getElementById('my-status').innerText = newStatus;
+        await supabaseClient.from('users').update({ status: newStatus }).eq('tg_id', currentUser.id);
+        if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
+    }
+
+    async function loadFriends() {
+        const { data } = await supabaseClient.from('users').select('*');
+        const list = document.getElementById('friends-list');
+        list.innerHTML = '';
+        data.forEach(f => {
+            if(f.tg_id === currentUser.id) return;
+            list.innerHTML += `<div class="friend-item" onclick="openFriend(${f.tg_id}, '${f.first_name}')"><span>${f.first_name}</span><span>${f.status || 'Свободен 🟢'}</span></div>`;
+        });
+    }
+
+    async function loadMyCurrencies() {
+        const { data } = await supabaseClient.from('currencies').select('*').eq('owner_id', currentUser.id);
+        document.getElementById('my-currencies-list').innerHTML = data && data.length > 0 
+            ? data.map(c => `
+                <div class="card" style="padding:10px; display:flex; justify-content:space-between; align-items:center;">
+                    <span>${c.name} (${c.rub_value}р)</span>
+                    <span style="cursor:pointer; font-size:20px;" onclick="deleteCurrency('${c.id}')">❌</span>
+                </div>`).join('')
+            : '<p style="color: #777;">У тебя пока нет своих валют.</p>';
+    }
+
+    async function addCurrency() {
+        const name = document.getElementById('cur-name').value;
+        const price = parseFloat(document.getElementById('cur-price').value);
+        if(!name || !price) return alert('Заполни поля!');
+        await supabaseClient.from('currencies').insert({ owner_id: currentUser.id, name: name, rub_value: price });
+        document.getElementById('cur-name').value = ''; document.getElementById('cur-price').value = '';
+        loadMyCurrencies();
+    }
+
+    async function deleteCurrency(id) {
+        if(!confirm('Удалить эту валюту?')) return;
+        await supabaseClient.from('currencies').delete().eq('id', id);
+        loadMyCurrencies();
+    }
+
+    async function openFriend(tgId, name) {
+        currentFriend = { id: tgId, name: name };
+        document.getElementById('friend-name-title').innerText = name;
+        switchScreen('screen-friend');
+        
+        const { data: iOwe } = await supabaseClient.from('debts').select('*').eq('creditor_id', tgId).eq('debtor_id', currentUser.id);
+        const { data: owesMe } = await supabaseClient.from('debts').select('*').eq('creditor_id', currentUser.id).eq('debtor_id', tgId);
+        
+        let html = '';
+        if (iOwe && iOwe.length > 0) {
+            html += '<div style="color: #ff5252; margin-top: 10px; font-weight: bold;">🔴 Я должен:</div>';
+            html += iOwe.map(d => `<div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom: 1px solid #444;"><span>${d.amount} ${d.currency}</span><button class="btn-resolve" onclick="deleteDebt('${d.id}')">Вернул</button></div>`).join('');
+        }
+        if (owesMe && owesMe.length > 0) {
+            html += '<div style="color: #4caf50; margin-top: 15px; font-weight: bold;">🟢 Мне должны:</div>';
+            html += owesMe.map(d => `<div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom: 1px solid #444;"><span>${d.amount} ${d.currency}</span><button class="btn-resolve" onclick="deleteDebt('${d.id}')">Простить</button></div>`).join('');
+        }
+        document.getElementById('friend-debts').innerHTML = html || '<div style="color:#777; margin-top:10px;">Никто никому не должен</div>';
+    }
+
+    async function deleteDebt(id) {
+        if(!confirm('Точно закрыть этот долг?')) return;
+        await supabaseClient.from('debts').delete().eq('id', id);
+        openFriend(currentFriend.id, currentFriend.name); 
+    }
+
+    async function openDebtModal() {
+        document.getElementById('debt-rubles').value = ''; document.getElementById('debt-result').innerText = '0';
+        const { data: friendCurrencies } = await supabaseClient.from('currencies').select('*').eq('owner_id', currentFriend.id);
+        const select = document.getElementById('debt-currency');
+        select.innerHTML = '';
+        if (!friendCurrencies || friendCurrencies.length === 0) {
+            select.innerHTML = `<option value="Руб." data-price="1">Рубли (1 к 1)</option>`;
+        } else {
+            friendCurrencies.forEach(c => select.innerHTML += `<option value="${c.name}" data-price="${c.rub_value}">${c.name} (${c.rub_value}р)</option>`);
+        }
+        switchScreen('screen-add-debt');
+    }
+
+    function calculateDebt() {
+        const rubles = parseFloat(document.getElementById('debt-rubles').value) || 0;
+        const select = document.getElementById('debt-currency');
+        const price = parseFloat(select.options[select.selectedIndex]?.getAttribute('data-price')) || 1;
+        document.getElementById('debt-result').innerText = rubles === 0 ? '0' : `${(rubles / price).toFixed(1)} ${select.value}`;
+    }
+
+    async function saveDebt() {
+        const finalAmountText = document.getElementById('debt-result').innerText; 
+        if(finalAmountText === '0') return alert('Введи сумму');
+        const [amountStr, ...currencyArr] = finalAmountText.split(' ');
+        await supabaseClient.from('debts').insert({
+            creditor_id: currentFriend.id, debtor_id: currentUser.id, amount: parseFloat(amountStr), currency: currencyArr.join(' ')
+        });
+        if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+        openFriend(currentFriend.id, currentFriend.name); 
+    }
+
+    initApp();
+</script>
 </body>
 </html>
