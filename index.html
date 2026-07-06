@@ -7,15 +7,8 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
-        body {
-            font-family: -apple-system, sans-serif;
-            background-color: var(--tg-theme-bg-color, #181818);
-            color: var(--tg-theme-text-color, #ffffff);
-            margin: 0; padding: 15px;
-        }
-        .screen { display: none; }
-        .screen.active { display: block; }
-        
+        body { font-family: -apple-system, sans-serif; background-color: var(--tg-theme-bg-color, #181818); color: var(--tg-theme-text-color, #ffffff); margin: 0; padding: 15px; }
+        .screen { display: none; } .screen.active { display: block; }
         .card { background: var(--tg-theme-secondary-bg-color, #2c2c2c); padding: 15px; border-radius: 12px; margin-bottom: 15px; }
         .friend-item { display: flex; justify-content: space-between; padding: 15px; background: var(--tg-theme-secondary-bg-color, #2c2c2c); border-radius: 12px; margin-bottom: 10px; cursor: pointer; }
         
@@ -24,79 +17,62 @@
         
         .header-nav { display: flex; align-items: center; margin-bottom: 20px; font-weight: bold;}
         .back-btn { margin-right: 15px; cursor: pointer; font-size: 20px; color: var(--tg-theme-button-color, #2481cc); }
-        
         .money-btn { background: #4caf50; border-radius: 50%; width: 55px; height: 55px; display: flex; align-items: center; justify-content: center; font-size: 24px; position: fixed; bottom: 20px; right: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); z-index: 100; cursor: pointer;}
+        .chat-placeholder { background: #1a1a1a; border: 1px dashed #555; border-radius: 12px; height: 100px; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #777; margin-top: 15px; }
         
-        /* Стили для заглушки чата */
-        .chat-placeholder { background: #1a1a1a; border: 1px dashed #555; border-radius: 12px; height: 150px; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #777; margin-top: 15px; }
+        /* Кнопка закрытия долга */
+        .btn-resolve { background: #444; color: #fff; font-size: 12px; padding: 4px 10px; border-radius: 6px; cursor: pointer; border: none; width: auto; font-weight: normal; }
     </style>
 </head>
 <body>
 
-    <!-- ЭКРАН 1: ГЛАВНАЯ (Список друзей) -->
+    <!-- ЭКРАН 1: ГЛАВНАЯ -->
     <div id="screen-main" class="screen active">
         <h2 style="text-align: center; margin-top: 0;">Синдикат</h2>
-        
-        <div class="card" style="display: flex; justify-content: space-between;">
-            <div>Мой статус: <strong id="my-status">...</strong></div>
-            <button onclick="toggleStatus()" style="width: auto; padding: 5px 15px;">Сменить</button>
+        <div class="card" style="display: flex; justify-content: space-between; align-items: center;">
+            <div>Мой статус:<br><strong id="my-status" style="font-size: 18px;">...</strong></div>
+            <button onclick="toggleStatus()" style="width: auto; padding: 8px 15px;">Сменить</button>
         </div>
-
-        <button onclick="switchScreen('screen-currencies')" style="margin-bottom: 20px; background: #555;">⚙️ Мои валюты (Что должны мне)</button>
-
+        <button onclick="switchScreen('screen-currencies')" style="margin-bottom: 20px; background: #555;">⚙️ Мои валюты</button>
         <h3 style="color: #999;">Братва:</h3>
         <div id="friends-list">Загрузка...</div>
     </div>
 
-    <!-- ЭКРАН 2: МОИ ВАЛЮТЫ -->
+    <!-- ЭКРАН 2: ВАЛЮТЫ -->
     <div id="screen-currencies" class="screen">
-        <div class="header-nav"><span class="back-btn" onclick="switchScreen('screen-main')">⬅ Назад</span> Настройки моих валют</div>
+        <div class="header-nav"><span class="back-btn" onclick="switchScreen('screen-main')">⬅</span> Настройки моих валют</div>
         <div class="card">
-            <p style="font-size: 14px; color: #aaa;">Укажи, в чем тебе отдавать долги. Когда кто-то запишет, что должен тебе денег, они переведутся в эту валюту.</p>
             <input type="text" id="cur-name" placeholder="Название (напр. Адреналин)">
             <input type="number" id="cur-price" placeholder="Цена в рублях (напр. 150)">
             <button onclick="addCurrency()">Добавить валюту</button>
         </div>
-        <h3 style="color: #999;">Мои валюты:</h3>
         <div id="my-currencies-list"></div>
     </div>
 
     <!-- ЭКРАН 3: ПРОФИЛЬ ДРУГА -->
     <div id="screen-friend" class="screen">
-        <div class="header-nav"><span class="back-btn" onclick="switchScreen('screen-main')">⬅ Назад</span> <span id="friend-name-title">Друг</span></div>
+        <div class="header-nav"><span class="back-btn" onclick="switchScreen('screen-main')">⬅</span> <span id="friend-name-title">Друг</span></div>
         
         <div class="card">
-            <h3 style="margin-top:0;">Я должен ему/ей:</h3>
-            <div id="friend-debts">Нет долгов</div>
+            <h3 style="margin-top:0; margin-bottom: 5px;">Сводка долгов</h3>
+            <div id="friend-debts">Загрузка...</div>
         </div>
 
-        <!-- ЗАГЛУШКА ЧАТА -->
-        <h3 style="color: #999;">Личные сообщения (В разработке)</h3>
-        <div class="chat-placeholder">
-            <div>💬 Чат появится позже</div>
-            <button style="width: 80%; margin-top: 10px; background: #333;" disabled>Написать сообщение</button>
-        </div>
-
-        <!-- Кнопка $ (Добавить долг Ире) -->
+        <div class="chat-placeholder">💬 Чат в разработке</div>
+        
+        <!-- Кнопка $ (Добавить мой долг) -->
         <div class="money-btn" onclick="openDebtModal()">💰</div>
     </div>
 
     <!-- ЭКРАН 4: ОФОРМИТЬ ДОЛГ -->
     <div id="screen-add-debt" class="screen">
-        <div class="header-nav"><span class="back-btn" onclick="switchScreen('screen-friend')">⬅ Отмена</span> Я должен</div>
+        <div class="header-nav"><span class="back-btn" onclick="switchScreen('screen-friend')">⬅</span> Я должен</div>
         <div class="card">
             <label>Сумма в рублях:</label>
             <input type="number" id="debt-rubles" placeholder="Напр. 300" oninput="calculateDebt()">
-            
-            <label id="debt-currency-label">Валюта друга:</label>
-            <select id="debt-currency" onchange="calculateDebt()">
-                <!-- Опции загрузятся из базы друга -->
-            </select>
-
-            <div style="margin: 20px 0; font-size: 18px; text-align: center;">
-                Итог: <strong id="debt-result" style="color: #4caf50;">0</strong>
-            </div>
-
+            <label id="debt-currency-label">В чем принимает друг:</label>
+            <select id="debt-currency" onchange="calculateDebt()"></select>
+            <div style="margin: 20px 0; font-size: 18px; text-align: center;">Итог: <strong id="debt-result" style="color: #4caf50;">0</strong></div>
             <button onclick="saveDebt()">Записать долг</button>
         </div>
     </div>
@@ -105,7 +81,6 @@
         const tg = window.Telegram.WebApp;
         tg.expand(); 
 
-        // ИСПРАВЛЕНО ТУТ: назвал supabaseClient
         const supabaseClient = supabase.createClient(
             'https://cqhndgtiqdjzzrqdzrfq.supabase.co', 
             'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaG5kZ3RpcWRqenpycWR6cmZxIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MzI4NzE3MCwiZXhwIjoyMDk4ODYzMTcwfQ.OMiry_4g_5Bn5VzjoA79V_MGnccm1x5D-Yne1Wc49Sw'
@@ -117,9 +92,7 @@
         async function initApp() {
             if (!user) return;
             await supabaseClient.from('users').upsert({ tg_id: user.id, first_name: user.first_name }, { onConflict: 'tg_id' });
-            loadMyStatus();
-            loadFriends();
-            loadMyCurrencies();
+            loadMyStatus(); loadFriends(); loadMyCurrencies();
         }
 
         function switchScreen(screenId) {
@@ -147,38 +120,19 @@
             list.innerHTML = '';
             data.forEach(f => {
                 if(f.tg_id === user.id) return;
-                list.innerHTML += `
-                    <div class="friend-item" onclick="openFriend(${f.tg_id}, '${f.first_name}')">
-                        <span>${f.first_name}</span>
-                        <span>${f.status || 'Свободен 🟢'}</span>
-                    </div>`;
+                list.innerHTML += `<div class="friend-item" onclick="openFriend(${f.tg_id}, '${f.first_name}')"><span>${f.first_name}</span><span>${f.status || 'Свободен 🟢'}</span></div>`;
             });
         }
 
-        // --- ПРОФИЛЬ ДРУГА ---
-        async function openFriend(tgId, name) {
-            currentFriend = { id: tgId, name: name };
-            document.getElementById('friend-name-title').innerText = name;
-            switchScreen('screen-friend');
-            
-            const { data: debts } = await supabaseClient.from('debts')
-                .select('*')
-                .eq('creditor_id', tgId)
-                .eq('debtor_id', user.id);
-            
-            const debtsContainer = document.getElementById('friend-debts');
-            if(!debts || debts.length === 0) {
-                debtsContainer.innerHTML = 'Я ничего не должен';
-            } else {
-                debtsContainer.innerHTML = debts.map(d => `<div style="padding:5px 0; border-bottom: 1px solid #444;">Должен: <b style="color: #ff5252;">${d.amount} ${d.currency}</b></div>`).join('');
-            }
-        }
-
-        // --- МОИ НАСТРОЙКИ ВАЛЮТ ---
+        // --- ВАЛЮТЫ ---
         async function loadMyCurrencies() {
             const { data } = await supabaseClient.from('currencies').select('*').eq('owner_id', user.id);
             document.getElementById('my-currencies-list').innerHTML = data && data.length > 0 
-                ? data.map(c => `<div class="card" style="padding:10px;">${c.name} — ${c.rub_value} руб.</div>`).join('')
+                ? data.map(c => `
+                    <div class="card" style="padding:10px; display:flex; justify-content:space-between; align-items:center;">
+                        <span>${c.name} (${c.rub_value}р)</span>
+                        <span style="cursor:pointer; font-size:20px;" onclick="deleteCurrency('${c.id}')">❌</span>
+                    </div>`).join('')
                 : '<p style="color: #777;">У тебя пока нет своих валют.</p>';
         }
 
@@ -191,60 +145,83 @@
             loadMyCurrencies();
         }
 
-        // --- ЗАПИСЬ ДОЛГА ДРУГУ ---
-        async function openDebtModal() {
-            document.getElementById('debt-rubles').value = '';
-            document.getElementById('debt-result').innerText = '0';
-            document.getElementById('debt-currency-label').innerText = `В чем принимает ${currentFriend.name}:`;
-            
-            // ВАЖНО: Ищем валюты ДРУГА
-            const { data: friendCurrencies } = await supabaseClient.from('currencies').select('*').eq('owner_id', currentFriend.id);
-            
-            const select = document.getElementById('debt-currency');
-            select.innerHTML = '';
+        async function deleteCurrency(id) {
+            if(!confirm('Удалить эту валюту?')) return;
+            await supabaseClient.from('currencies').delete().eq('id', id);
+            loadMyCurrencies();
+        }
 
-            if (!friendCurrencies || friendCurrencies.length === 0) {
-                select.innerHTML = `<option value="Рубли" data-price="1">Рубли (1 к 1)</option>`;
-            } else {
-                friendCurrencies.forEach(c => {
-                    select.innerHTML += `<option value="${c.name}" data-price="${c.rub_value}">${c.name} (${c.rub_value}р)</option>`;
-                });
+        // --- ПРОФИЛЬ ДРУГА И ДОЛГИ ---
+        async function openFriend(tgId, name) {
+            currentFriend = { id: tgId, name: name };
+            document.getElementById('friend-name-title').innerText = name;
+            switchScreen('screen-friend');
+            
+            // 1. Ищем, где Я ДОЛЖЕН (Я debtor, Друг creditor)
+            const { data: iOwe } = await supabaseClient.from('debts').select('*').eq('creditor_id', tgId).eq('debtor_id', user.id);
+            
+            // 2. Ищем, где МНЕ ДОЛЖНЫ (Я creditor, Друг debtor)
+            const { data: owesMe } = await supabaseClient.from('debts').select('*').eq('creditor_id', user.id).eq('debtor_id', tgId);
+            
+            let html = '';
+            
+            // Отрисовка "Я должен"
+            if (iOwe && iOwe.length > 0) {
+                html += '<div style="color: #ff5252; margin-top: 10px; font-weight: bold;">🔴 Я должен:</div>';
+                html += iOwe.map(d => `
+                    <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom: 1px solid #444;">
+                        <span>${d.amount} ${d.currency}</span>
+                        <button class="btn-resolve" onclick="deleteDebt('${d.id}')">Вернул</button>
+                    </div>`).join('');
             }
 
+            // Отрисовка "Мне должны"
+            if (owesMe && owesMe.length > 0) {
+                html += '<div style="color: #4caf50; margin-top: 15px; font-weight: bold;">🟢 Мне должны:</div>';
+                html += owesMe.map(d => `
+                    <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom: 1px solid #444;">
+                        <span>${d.amount} ${d.currency}</span>
+                        <button class="btn-resolve" onclick="deleteDebt('${d.id}')">Простить</button>
+                    </div>`).join('');
+            }
+
+            document.getElementById('friend-debts').innerHTML = html || '<div style="color:#777; margin-top:10px;">Никто никому не должен</div>';
+        }
+
+        async function deleteDebt(id) {
+            if(!confirm('Точно закрыть этот долг?')) return;
+            await supabaseClient.from('debts').delete().eq('id', id);
+            openFriend(currentFriend.id, currentFriend.name); // Перезагружаем профиль
+        }
+
+        // --- ЗАПИСЬ НОВОГО ДОЛГА ---
+        async function openDebtModal() {
+            document.getElementById('debt-rubles').value = ''; document.getElementById('debt-result').innerText = '0';
+            const { data: friendCurrencies } = await supabaseClient.from('currencies').select('*').eq('owner_id', currentFriend.id);
+            const select = document.getElementById('debt-currency');
+            select.innerHTML = '';
+            if (!friendCurrencies || friendCurrencies.length === 0) {
+                select.innerHTML = `<option value="Руб." data-price="1">Рубли (1 к 1)</option>`;
+            } else {
+                friendCurrencies.forEach(c => select.innerHTML += `<option value="${c.name}" data-price="${c.rub_value}">${c.name} (${c.rub_value}р)</option>`);
+            }
             switchScreen('screen-add-debt');
         }
 
         function calculateDebt() {
             const rubles = parseFloat(document.getElementById('debt-rubles').value) || 0;
             const select = document.getElementById('debt-currency');
-            const selectedOption = select.options[select.selectedIndex];
-            
-            if(!selectedOption || rubles === 0) {
-                document.getElementById('debt-result').innerText = '0';
-                return;
-            }
-
-            const price = parseFloat(selectedOption.getAttribute('data-price'));
-            const result = rubles / price;
-            
-            document.getElementById('debt-result').innerText = `${result.toFixed(1)} ${selectedOption.value}`;
+            const price = parseFloat(select.options[select.selectedIndex]?.getAttribute('data-price')) || 1;
+            document.getElementById('debt-result').innerText = rubles === 0 ? '0' : `${(rubles / price).toFixed(1)} ${select.value}`;
         }
 
         async function saveDebt() {
             const finalAmountText = document.getElementById('debt-result').innerText; 
             if(finalAmountText === '0') return alert('Введи сумму');
-
             const [amountStr, ...currencyArr] = finalAmountText.split(' ');
-            const amount = parseFloat(amountStr);
-            const currencyName = currencyArr.join(' ');
-
             await supabaseClient.from('debts').insert({
-                creditor_id: currentFriend.id,
-                debtor_id: user.id,
-                amount: amount,
-                currency: currencyName
+                creditor_id: currentFriend.id, debtor_id: user.id, amount: parseFloat(amountStr), currency: currencyArr.join(' ')
             });
-
             tg.HapticFeedback.notificationOccurred('success');
             openFriend(currentFriend.id, currentFriend.name); 
         }
