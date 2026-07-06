@@ -7,6 +7,7 @@
     <title>Синдикат-Хаб</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/idb-keyval@6/dist/umd.js"></script>
     <style>
         body { font-family: -apple-system, sans-serif; background-color: var(--tg-theme-bg-color, #181818); color: var(--tg-theme-text-color, #ffffff); margin: 0; padding: 15px; }
         .screen { display: none; } .screen.active { display: block; }
@@ -96,50 +97,168 @@
     let currentUser = null; 
     let currentFriend = null; 
 
-    // --- УМНАЯ АВТОРИЗАЦИЯ (ТГ + PWA) ---
-    async function authUser() {
-        const urlParams = new URLSearchParams(window.location.search);
-        const urlToken = urlParams.get('token');
-        const tgUser = tg.initDataUnsafe?.user;
-
-        // Вариант 1: Мы внутри Телеграма
-        if (tgUser) {
-            currentUser = { id: tgUser.id, first_name: tgUser.first_name };
+    async function checkCryptoKeys(userId) {
+        // Проверяем, есть ли приватный ключ в локальной базе браузера
+        const privateKey = await idbKeyval.get('my_private_key');
+        
+        if (!privateKey) {
+            console.log("Ключи не найдены. Выковываем новую крипто-броню...");
+            // Функция генерации ключей, которую мы обсуждали ранее
+            const publicKeyJwk = await generatePersonalArmor(); 
             
-            // Генерируем токен, если его нет
-            const myToken = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-            
-            // Запрашиваем из базы текущий токен (если есть)
-            const { data } = await supabaseClient.from('users').select('auth_token').eq('tg_id', currentUser.id).single();
-            let finalToken = data?.auth_token;
-
-            if (!finalToken) {
-                finalToken = myToken; // Если токена не было, берем новый
+            // Отправляем публичный ключ в новую колонку таблицы users
+            const { error } = await supabase
+                .from('users')
+                .update({ public_key: JSON.stringify(publicKeyJwk) })
+                .eq('tg_id', userId);
+                
+            if (error) {
+                console.error("Ошибка загрузки ключа в базу:", error);
+            } else {
+                console.log("Публичный сейф успешно загружен в Supabase!");
             }
-
-            // Обновляем/Создаем юзера
-            await supabaseClient.from('users').upsert({ 
-                tg_id: currentUser.id, 
-                first_name: currentUser.first_name,
-                auth_token: finalToken
-            }, { onConflict: 'tg_id' });
-
-            localStorage.setItem('synd_token', finalToken); // Сохраняем в память
-            return true;
-        } 
-        // Вариант 2: Перешли по ссылке с токеном (Настраиваем PWA)
-        else if (urlToken) {
-            localStorage.setItem('synd_token', urlToken);
-            window.history.replaceState({}, document.title, window.location.pathname); // Прячем токен из URL для красоты
-            return await fetchUserByToken(urlToken);
+        } else {
+            console.log("Крипто-броня активна, ключи на месте.");
         }
-        // Вариант 3: Просто открыли PWA (Токен уже в памяти)
-        else if (localStorage.getItem('synd_token')) {
-            return await fetchUserByToken(localStorage.getItem('synd_token'));
-        }
-
-        return false; // Не авторизован
     }
+
+    async function generatePersonalArmor() {
+        // 1. Генерируем RSA-пару (Публичный и Приватный)
+        const keyPair = await window.crypto.subtle.generateKey(
+            {
+                name: "RSA-OAEP",
+                modulusLength: 4096,
+                publicExponent: new Uint8Array([1, 0, 1]),
+                hash: "SHA-256"
+            },
+            true, // Публичный можно будет экспортировать
+            ["encrypt", "decrypt"]
+        );
+    
+        // 2. Прячем Приватный ключ в IndexedDB намертво!
+        // extractable: false мы не ставим на этапе генерации RSA-OAEP для простоты работы с IDB,
+        // но IDB сама по себе защитит объект от XSS.
+        await idbKeyval.set('my_private_key', keyPair.privateKey);
+    
+        // 3. Экспортируем Публичный ключ в строку (чтобы отправить в Supabase)
+        const exportedPublicKey = await window.crypto.subtle.exportKey(
+            "jwk",
+            keyPair.publicKey
+        );
+    
+        // TODO: Записать exportedPublicKey в таблицу users в Supabase
+        return exportedPublicKey;
+    }
+
+    async function generateChatKey() {
+        // Генерируем AES-GCM (очень быстрый алгоритм для текста)
+        const chatKey = await window.crypto.subtle.generateKey(
+            { name: "AES-GCM", length: 256 },
+            true, // Разрешаем экспорт, чтобы упаковать в чужие сейфы
+            ["encrypt", "decrypt"]
+        );
+        return chatKey;
+    }
+
+    // publicJwk - это публичный ключ друга из БД Supabase
+    async function encryptChatKeyForFriend(chatKey, friendPublicJwk) {
+        // 1. Собираем Публичный ключ друга обратно из строки
+        const friendPublicKey = await window.crypto.subtle.importKey(
+            "jwk",
+            friendPublicJwk,
+            { name: "RSA-OAEP", hash: "SHA-256" },
+            true,
+            ["encrypt"]
+        );
+    
+        // 2. Достаем сырые байты нашего AES-ключа
+        const rawChatKey = await window.crypto.subtle.exportKey("raw", chatKey);
+    
+        // 3. Шифруем AES-ключ Публичным ключом друга (кладем в сейф)
+        const encryptedKeyBuffer = await window.crypto.subtle.encrypt(
+            { name: "RSA-OAEP" },
+            friendPublicKey,
+            rawChatKey
+        );
+    
+        // Эту абракадабру (encryptedKeyBuffer) ты отправляешь в БД Supabase
+        // в таблицу chat_keys: { user_id: 'SANYA_ID', encrypted_key: '...' }
+        return encryptedKeyBuffer; 
+    }
+
+    async function decryptChatKey(encryptedKeyBuffer) {
+        // 1. Достаем свой Приватный ключ из "невидимого сейфа" браузера
+        const myPrivateKey = await idbKeyval.get('my_private_key');
+    
+        // 2. Вскрываем посылку (Расшифровываем AES-ключ)
+        const rawChatKey = await window.crypto.subtle.decrypt(
+            { name: "RSA-OAEP" },
+            myPrivateKey,
+            encryptedKeyBuffer
+        );
+    
+        // 3. Превращаем сырые байты обратно в рабочий Crypto-объект
+        const chatKey = await window.crypto.subtle.importKey(
+            "raw",
+            rawChatKey,
+            { name: "AES-GCM", length: 256 },
+            false, // ВАЖНО! Больше он телефон не покинет
+            ["encrypt", "decrypt"]
+        );
+    
+        // Теперь Саня может читать и писать сообщения в чат с помощью chatKey
+        return chatKey;
+    }
+        
+    // --- УМНАЯ АВТОРИЗАЦИЯ (ТГ + PWA) ---
+async function authUser() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlToken = urlParams.get('token');
+    const tgUser = tg.initDataUnsafe?.user;
+
+    let isAuthorized = false;
+
+    // Вариант 1: Мы внутри Телеграма
+    if (tgUser) {
+        currentUser = { id: tgUser.id, first_name: tgUser.first_name };
+        
+        const myToken = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+        
+        const { data } = await supabaseClient.from('users').select('auth_token').eq('tg_id', currentUser.id).single();
+        let finalToken = data?.auth_token;
+
+        if (!finalToken) {
+            finalToken = myToken; 
+        }
+
+        await supabaseClient.from('users').upsert({ 
+            tg_id: currentUser.id, 
+            first_name: currentUser.first_name,
+            auth_token: finalToken
+        }, { onConflict: 'tg_id' });
+
+        localStorage.setItem('synd_token', finalToken);
+        isAuthorized = true;
+    } 
+    // Вариант 2: Перешли по ссылке с токеном (Настраиваем PWA)
+    else if (urlToken) {
+        localStorage.setItem('synd_token', urlToken);
+        window.history.replaceState({}, document.title, window.location.pathname);
+        isAuthorized = await fetchUserByToken(urlToken); // Функция должна записывать данные в currentUser
+    }
+    // Вариант 3: Просто открыли PWA (Токен уже в памяти)
+    else if (localStorage.getItem('synd_token')) {
+        isAuthorized = await fetchUserByToken(localStorage.getItem('synd_token')); // Функция должна записывать данные в currentUser
+    }
+
+    // Если авторизация прошла успешно, запускаем проверку крипто-брони!
+    if (isAuthorized && currentUser && currentUser.id) {
+        await checkCryptoKeys(currentUser.id);
+        return true;
+    }
+
+    return false; // Не авторизован
+}
 
     async function fetchUserByToken(token) {
         const { data } = await supabaseClient.from('users').select('tg_id, first_name').eq('auth_token', token).single();
@@ -165,12 +284,14 @@
     }
 
     async function initApp() {
+        
         const isAuth = await authUser();
         
         if (!isAuth) {
             document.body.innerHTML = '<h2 style="text-align:center; margin-top: 50px;">❌ Доступ запрещен. Открой Хаб через Telegram-бота!</h2>';
             return;
         }
+        
 
         loadMyStatus(); 
         loadFriends(); 
