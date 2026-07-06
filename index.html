@@ -116,19 +116,27 @@
         <div id="my-currencies-list"></div>
     </div>
 
-    <!-- ЭКРАН 3: ПРОФИЛЬ ДРУГА -->
+    <!-- ЭКРАН 3: ПРОФИЛЬ ДРУГА И ЛС -->
     <div id="screen-friend" class="screen">
         <div class="header-nav"><span class="back-btn" onclick="switchScreen('screen-main')">⬅</span> <span id="friend-name-title">Друг</span></div>
         
         <div class="card">
             <h3 style="margin-top:0; margin-bottom: 5px;">Сводка долгов</h3>
             <div id="friend-debts">Загрузка...</div>
+            <button onclick="openDebtModal()" style="margin-top: 10px; background: #4caf50;">💰 Добавить долг</button>
         </div>
 
-        <div class="chat-placeholder">💬 Чат в разработке</div>
-        
-        <!-- Кнопка $ (Добавить мой долг) -->
-        <div class="money-btn" onclick="openDebtModal()">💰</div>
+        <!-- ЧАТ С ДРУГОМ -->
+        <div class="chat-container">
+            <div class="messages-area" id="messages-area">
+                <div style="text-align:center; color:#777; margin-top: 20px;">Подключение к защищенному каналу...</div>
+            </div>
+            <div class="chat-input-area">
+                <button class="btn-mic" id="btn-mic" onclick="recordVoice()">🎤</button>
+                <input type="text" id="chat-input" placeholder="Сообщение..." onkeypress="handleEnter(event)">
+                <button class="btn-send" onclick="sendPrivateMessage()">✈️</button>
+            </div>
+        </div>
     </div>
 
     <!-- ЭКРАН 4: ОФОРМИТЬ ДОЛГ -->
@@ -141,18 +149,6 @@
             <select id="debt-currency" onchange="calculateDebt()"></select>
             <div style="margin: 20px 0; font-size: 18px; text-align: center;">Итог: <strong id="debt-result" style="color: #4caf50;">0</strong></div>
             <button onclick="saveDebt()">Записать долг</button>
-        </div>
-    </div>
-
-    <!-- Разметка чата -->
-    <div class="chat-container">
-        <div class="messages-area" id="messages-area">
-            <!-- Сообщения будут появляться здесь -->
-        </div>
-        <div class="chat-input-area">
-            <button class="btn-mic" id="btn-mic" onclick="recordVoice()">🎤</button>
-            <input type="text" id="chat-input" placeholder="Сообщение..." onkeypress="handleEnter(event)">
-            <button class="btn-send" onclick="sendTextMessage()">✈️</button>
         </div>
     </div>
 
@@ -429,58 +425,58 @@
     }
         
     // --- УМНАЯ АВТОРИЗАЦИЯ (ТГ + PWA) ---
-async function authUser() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const urlToken = urlParams.get('token');
-    const tgUser = tg.initDataUnsafe?.user;
-
-    let isAuthorized = false;
-
-    // Вариант 1: Мы внутри Телеграма
-    if (tgUser) {
-        currentUser = { id: tgUser.id, first_name: tgUser.first_name };
-        
-        const myToken = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-        
-        const { data } = await supabaseClient.from('users').select('auth_token').eq('tg_id', currentUser.id).single();
-        let finalToken = data?.auth_token;
-
-        if (!finalToken) {
-            finalToken = myToken; 
+    async function authUser() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlToken = urlParams.get('token');
+        const tgUser = tg.initDataUnsafe?.user;
+    
+        let isAuthorized = false;
+    
+        // Вариант 1: Мы внутри Телеграма
+        if (tgUser) {
+            currentUser = { id: tgUser.id, first_name: tgUser.first_name };
+            
+            const myToken = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+            
+            const { data } = await supabaseClient.from('users').select('auth_token').eq('tg_id', currentUser.id).single();
+            let finalToken = data?.auth_token;
+    
+            if (!finalToken) {
+                finalToken = myToken; 
+            }
+    
+            await supabaseClient.from('users').upsert({ 
+                tg_id: currentUser.id, 
+                first_name: currentUser.first_name,
+                auth_token: finalToken
+            }, { onConflict: 'tg_id' });
+    
+            localStorage.setItem('synd_token', finalToken);
+            isAuthorized = true;
+        } 
+        // Вариант 2: Перешли по ссылке с токеном (Настраиваем PWA)
+        else if (urlToken) {
+            localStorage.setItem('synd_token', urlToken);
+            window.history.replaceState({}, document.title, window.location.pathname);
+            isAuthorized = await fetchUserByToken(urlToken); // Функция должна записывать данные в currentUser
         }
-
-        await supabaseClient.from('users').upsert({ 
-            tg_id: currentUser.id, 
-            first_name: currentUser.first_name,
-            auth_token: finalToken
-        }, { onConflict: 'tg_id' });
-
-        localStorage.setItem('synd_token', finalToken);
-        isAuthorized = true;
-    } 
-    // Вариант 2: Перешли по ссылке с токеном (Настраиваем PWA)
-    else if (urlToken) {
-        localStorage.setItem('synd_token', urlToken);
-        window.history.replaceState({}, document.title, window.location.pathname);
-        isAuthorized = await fetchUserByToken(urlToken); // Функция должна записывать данные в currentUser
+        // Вариант 3: Просто открыли PWA (Токен уже в памяти)
+        else if (localStorage.getItem('synd_token')) {
+            isAuthorized = await fetchUserByToken(localStorage.getItem('synd_token')); // Функция должна записывать данные в currentUser
+        }
+    
+        // Если авторизация прошла успешно, запускаем проверку крипто-брони!
+        if (isAuthorized && currentUser && currentUser.id) {
+            // 1. Проверяем личную броню (RSA)
+            await checkCryptoKeys(currentUser.id);
+            
+            // 2. Генерируем ключ от чата (AES) и слушаем новые сообщения
+            await setupTestRoom(); // <--- ДОБАВЬ ЭТУ СТРОЧКУ!
+            return true;
+        }
+    
+        return false; // Не авторизован
     }
-    // Вариант 3: Просто открыли PWA (Токен уже в памяти)
-    else if (localStorage.getItem('synd_token')) {
-        isAuthorized = await fetchUserByToken(localStorage.getItem('synd_token')); // Функция должна записывать данные в currentUser
-    }
-
-    // Если авторизация прошла успешно, запускаем проверку крипто-брони!
-    if (isAuthorized && currentUser && currentUser.id) {
-        // 1. Проверяем личную броню (RSA)
-        await checkCryptoKeys(currentUser.id);
-        
-        // 2. Генерируем ключ от чата (AES) и слушаем новые сообщения
-        await setupTestRoom(); // <--- ДОБАВЬ ЭТУ СТРОЧКУ!
-        return true;
-    }
-
-    return false; // Не авторизован
-}
 
     async function fetchUserByToken(token) {
         const { data } = await supabaseClient.from('users').select('tg_id, first_name').eq('auth_token', token).single();
@@ -503,6 +499,122 @@ async function authUser() {
         
         // Заставляем Телеграм открыть ссылку во внешнем браузере (Safari/Chrome)
         tg.openLink(pwaUrl);
+    }
+
+
+    let currentChatId = null;
+    let currentAesKey = null;
+    let currentChatSubscription = null;
+
+    // Вызывается автоматически при открытии профиля друга
+    async function initPrivateChat(friendId) {
+        document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:#777;">Проверка крипто-ключей...</div>';
+        
+        // 1. Ищем общую комнату через SQL-функцию
+        const { data: existingChatId, error } = await supabaseClient.rpc('get_private_chat', { 
+            user1_id: currentUser.id, 
+            user2_id: friendId 
+        });
+
+        if (existingChatId) {
+            currentChatId = existingChatId;
+            await loadExistingChat();
+        } else {
+            await createNewPrivateChat(friendId);
+        }
+    }
+
+    async function createNewPrivateChat(friendId) {
+        // Достаем публичный ключ друга из базы
+        const { data: friendData } = await supabaseClient.from('users').select('public_key').eq('tg_id', friendId).single();
+        const { data: myData } = await supabaseClient.from('users').select('public_key').eq('tg_id', currentUser.id).single();
+
+        if (!friendData?.public_key) {
+            document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:#ff5252;">Пользователь еще не создал крипто-броню. Чат невозможен.</div>';
+            return;
+        }
+
+        document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:#ff9800;">Генерация безопасного канала...</div>';
+
+        // 1. Генерируем новый AES ключ для этой комнаты
+        currentAesKey = await generateChatKey();
+
+        // 2. Создаем комнату
+        const { data: newChat } = await supabaseClient.from('chats').insert({ name: 'private' }).select().single();
+        currentChatId = newChat.id;
+
+        // 3. Шифруем AES ключ публичным ключом друга и СВОИМ публичным ключом (чтобы ты тоже мог читать историю)
+        const encKeyForFriend = await encryptChatKeyForFriend(currentAesKey, JSON.parse(friendData.public_key));
+        const encKeyForMe = await encryptChatKeyForFriend(currentAesKey, JSON.parse(myData.public_key));
+
+        // 4. Раскладываем зашифрованные ключи по сейфам
+        await supabaseClient.from('chat_keys').insert([
+            { chat_id: currentChatId, user_id: friendId, encrypted_key: encKeyForFriend },
+            { chat_id: currentChatId, user_id: currentUser.id, encrypted_key: encKeyForMe }
+        ]);
+
+        document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:#4caf50;">Канал защищен. E2EE активно 🔒</div>';
+        subscribeToPrivateMessages();
+    }
+
+    async function loadExistingChat() {
+        // Достаем НАШ зашифрованный экземпляр ключа от этой комнаты
+        const { data: keyData } = await supabaseClient.from('chat_keys')
+            .select('encrypted_key').eq('chat_id', currentChatId).eq('user_id', currentUser.id).single();
+
+        // Вскрываем его своим приватным ключом из IndexedDB
+        currentAesKey = await decryptChatKey(keyData.encrypted_key);
+        
+        document.getElementById('messages-area').innerHTML = ''; // Очищаем статус
+        
+        // TODO: Здесь можно добавить подгрузку старых сообщений из БД (decryptText)
+
+        subscribeToPrivateMessages();
+    }
+
+    async function sendPrivateMessage() {
+        const input = document.getElementById('chat-input');
+        const text = input.value.trim();
+        if (!text || !currentAesKey || !currentChatId) return;
+
+        input.value = ""; // Сразу очищаем для удобства
+
+        const encryptedPayload = await encryptText(text, currentAesKey);
+
+        await supabaseClient.from('messages').insert([
+            { chat_id: currentChatId, sender_id: currentUser.id, encrypted_text: encryptedPayload }
+        ]);
+        if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+    }
+
+    function handleEnter(e) { if (e.key === 'Enter') sendPrivateMessage(); }
+
+    function subscribeToPrivateMessages() {
+        // Отписываемся от предыдущего чата, если быстро переключили профиль
+        if (currentChatSubscription) supabaseClient.removeChannel(currentChatSubscription);
+
+        currentChatSubscription = supabaseClient.channel('private-chat')
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `chat_id=eq.${currentChatId}` },
+                async (payload) => {
+                    const newMsg = payload.new;
+                    
+                    // РАСШИФРОВКА
+                    const rawData = atob(newMsg.encrypted_text);
+                    const bytes = new Uint8Array(rawData.length);
+                    for (let i = 0; i < rawData.length; i++) bytes[i] = rawData.charCodeAt(i);
+
+                    const iv = bytes.slice(0, 12);
+                    const data = bytes.slice(12);
+
+                    try {
+                        const decryptedBuffer = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: iv }, currentAesKey, data);
+                        const plainText = dec.decode(decryptedBuffer);
+                        renderMessage(plainText, newMsg.sender_id === currentUser.id);
+                    } catch (e) {
+                        renderMessage("🔒 [Ошибка]", newMsg.sender_id === currentUser.id);
+                    }
+                }
+            ).subscribe();
     }
 
     async function initApp() {
@@ -594,6 +706,7 @@ async function authUser() {
             html += owesMe.map(d => `<div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom: 1px solid #444;"><span>${d.amount} ${d.currency}</span><button class="btn-resolve" onclick="deleteDebt('${d.id}')">Простить</button></div>`).join('');
         }
         document.getElementById('friend-debts').innerHTML = html || '<div style="color:#777; margin-top:10px;">Никто никому не должен</div>';
+        await initPrivateChat(tgId);
     }
 
     async function deleteDebt(id) {
