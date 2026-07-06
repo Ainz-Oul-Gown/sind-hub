@@ -180,6 +180,47 @@
 
     <script>
 
+
+    // --- ИИ: РАСПОЗНАВАНИЕ ГОЛОСА (WHISPER) ---
+    let whisperModel = null;
+    let isWhisperLoading = false;
+
+    async function initWhisper() {
+        if (whisperModel) return whisperModel;
+        if (isWhisperLoading) {
+            while (isWhisperLoading) await new Promise(r => setTimeout(r, 100));
+            return whisperModel;
+        }
+        isWhisperLoading = true;
+        console.log("Загрузка Whisper-tiny (~40MB)...");
+        
+        const { pipeline, env } = await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.14.0');
+        env.allowLocalModels = false;
+        
+        whisperModel = await pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny', { quantized: true });
+        console.log("Whisper готов!");
+        
+        isWhisperLoading = false;
+        return whisperModel;
+    }
+
+    // Нейросеть требует аудио в формате 16kHz
+    async function transcribeAudio(audioBlob) {
+        const whisper = await initWhisper();
+        
+        // 1. Распаковываем бинарный Blob в сырые аудио-данные
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+        const arrayBuffer = await audioBlob.arrayBuffer();
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+        
+        // 2. Вытаскиваем моно-канал
+        const audioData = audioBuffer.getChannelData(0);
+        
+        // 3. Запускаем магию OpenAI
+        const output = await whisper(audioData, { language: 'russian', task: 'transcribe' });
+        return output.text;
+    }
+        
     // Вычисление сходства векторов (от -1 до 1, где 1 — идеальное совпадение)
     function cosineSimilarity(vecA, vecB) {
         let dotProduct = 0, normA = 0, normB = 0;
@@ -875,16 +916,10 @@
     let mediaRecorder;
     let audioChunks = [];
     let isRecording = false;
-    let speechRecognition = null;
-    let currentTranscription = "";
-    let interimTranscription = "";
 
     async function recordVoice() {
         if (isRecording) {
             mediaRecorder.stop();
-            setTimeout(() => {
-                if (speechRecognition) speechRecognition.stop();
-            }, 500);
             return;
         }
 
@@ -892,61 +927,48 @@
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             mediaRecorder = new MediaRecorder(stream);
             audioChunks = [];
-            currentTranscription = "";
-            interimTranscription = "";
-
-            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-            if (SpeechRecognition) {
-                speechRecognition = new SpeechRecognition();
-                speechRecognition.lang = 'ru-RU';
-                speechRecognition.interimResults = true;
-                speechRecognition.continuous = true;
-                
-                speechRecognition.onresult = (event) => {
-                    interimTranscription = ""; 
-                    for (let i = event.resultIndex; i < event.results.length; ++i) {
-                        const result = event.results[i];
-                        
-                        // Защита от битых эвентов браузера
-                        if (!result || !result[0] || !result[0].transcript) continue;
-                        
-                        if (result.isFinal) {
-                            currentTranscription += result[0].transcript + ' ';
-                        } else {
-                            interimTranscription += result[0].transcript;
-                        }
-                    }
-                };
-
-                speechRecognition.onend = () => {
-                    if (isRecording) speechRecognition.start();
-                };
-
-                speechRecognition.start();
-            }
 
             mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
             
             mediaRecorder.onstop = async () => {
+                // Отключаем микрофон
                 stream.getTracks().forEach(track => track.stop());
                 const audioBlob = new Blob(audioChunks);
                 isRecording = false;
                 
-                document.getElementById('btn-mic').innerText = '🎤';
+                const micBtn = document.getElementById('btn-mic');
+                micBtn.innerText = '⏳'; // Показываем часики, пока ИИ думает
+                micBtn.style.color = '#ff9800';
                 
-                const finalText = (currentTranscription + interimTranscription).trim();
-                await uploadAndSendVoice(audioBlob, finalText);
+                try {
+                    // Прогоняем запись через нашу локальную нейросеть
+                    const transcribedText = await transcribeAudio(audioBlob);
+                    console.log("Whisper распознал:", transcribedText);
+                    
+                    // Отправляем в БД аудио и готовый текст
+                    await uploadAndSendVoice(audioBlob, transcribedText.trim());
+                } catch (e) {
+                    console.error("Ошибка ИИ-транскрипции:", e);
+                    // Если что-то пошло не так, все равно отправляем ГС, но без текста
+                    await uploadAndSendVoice(audioBlob, "");
+                }
+                
+                // Возвращаем иконку микрофона
+                micBtn.innerText = '🎤';
+                micBtn.style.color = '';
             };
 
             mediaRecorder.start();
             isRecording = true;
-            document.getElementById('btn-mic').innerText = '🛑';
+            
+            const micBtn = document.getElementById('btn-mic');
+            micBtn.innerText = '🛑';
+            micBtn.style.color = '#ff5252';
             
             if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
 
         } catch (err) {
             alert('Синдикату нужен доступ к микрофону!');
-            console.error(err);
         }
     }
 
