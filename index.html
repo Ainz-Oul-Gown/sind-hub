@@ -259,12 +259,12 @@
                 
                 <!-- Кнопка Микрофон/Отправка -->
                 <button class="btn-dynamic mode-mic" id="btn-input-action" 
-                        ontouchstart="window.isPointerDown=true; startVoiceHold(event)" 
+                        ontouchstart="startVoiceHold(event)" 
                         ontouchmove="moveVoiceHold(event)" 
-                        ontouchend="window.isPointerDown=false; endVoiceHold(event)"
-                        onmousedown="window.isPointerDown=true; startVoiceHold(event)" 
+                        ontouchend="endVoiceHold(event)"
+                        onmousedown="startVoiceHold(event)" 
                         onmousemove="moveVoiceHold(event)" 
-                        onmouseup="window.isPointerDown=false; endVoiceHold(event)">
+                        onmouseup="endVoiceHold(event)">
                     <i class="fas fa-microphone"></i>
                 </button>
             </div>
@@ -338,7 +338,9 @@
                 const output = await ai(query, { pooling: 'mean', normalize: true });
                 queryVector = output.data; 
             } catch(e) {
-                resultsDiv.innerHTML = '<div style="color: var(--danger); text-align:center;">Ошибка загрузки ИИ. Проверь интернет.</div>'; return;
+                // ФИКС: Выводим ТОЧНЫЙ текст ошибки, чтобы понять, что блокирует загрузку
+                resultsDiv.innerHTML = `<div style="color: var(--danger); text-align:center; padding: 10px;">Ошибка ИИ: ${e.message}<br><span style="font-size: 12px; color: var(--muted);">Попробуй убрать галочку для обычного поиска</span></div>`; 
+                return;
             }
         }
 
@@ -368,11 +370,12 @@
                     if (displayText.toLowerCase().includes(query.toLowerCase())) results.push({ text: displayText, score: 1, time: msg.created_at });
                 }
             } catch (e) {
-                // Если не получилось расшифровать одно сообщение - просто идем дальше, не ломая весь поиск
+                // Игнорируем битые сообщения
             }
         }
 
         if (results.length === 0) { resultsDiv.innerHTML = '<div style="color: var(--muted); text-align: center; padding: 20px;"><i class="fas fa-ghost fa-2x"></i><br>Ничего не найдено.</div>'; return; }
+        
         if (isSemantic) results.sort((a, b) => b.score - a.score);
         else results.sort((a, b) => new Date(b.time) - new Date(a.time));
 
@@ -448,6 +451,7 @@
     let startY = 0;
     let recStartTime = 0;
     let recTimerInterval = null;
+    let isHolding = false; // Защита от двойных нажатий
 
     function formatTime(ms) {
         const totalSec = Math.floor(ms / 1000);
@@ -456,24 +460,32 @@
         return `${min}:${sec.toString().padStart(2, '0')}`;
     }
 
-    // ФИКС: Глобально следим, убрал ли юзер палец
-    document.addEventListener('mouseup', () => window.isPointerDown = false);
-    document.addEventListener('touchend', () => window.isPointerDown = false);
-
     async function startVoiceHold(e) {
-        if (document.getElementById('btn-input-action').classList.contains('mode-send')) {
-            if (e.type === 'mousedown' || e.type === 'touchstart') sendPrivateMessage();
+        e.preventDefault(); // ЖЕСТКО БЛОКИРУЕМ двойные срабатывания сенсора
+
+        const btn = document.getElementById('btn-input-action');
+        
+        // 1. Если это кнопка отправки текста — просто отправляем и выходим!
+        if (btn.classList.contains('mode-send')) {
+            sendPrivateMessage();
             return;
         }
 
-        e.preventDefault(); 
-        if (isRecording) return;
+        // 2. Если уже пишем или держим — игнорим
+        if (isRecording || isHolding) return;
+        isHolding = true;
         
-        // ФИКС: Жесткая проверка. Если прав на микрофон еще нет, мы не начинаем интерфейс записи!
+        // 3. Запрашиваем микрофон (если еще нет)
         if (!globalAudioStream) {
-            alert("Пожалуйста, разрешите доступ к микрофону!");
-            requestMicrophoneAccess(); // Пытаемся попросить еще раз
-            return;
+            try {
+                globalAudioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            } catch (err) {
+                alert("Нет доступа к микрофону!");
+                isHolding = false;
+                return;
+            }
+            // Если юзер отпустил палец, пока вылезало системное окно
+            if (!isHolding) return;
         }
         
         startY = e.touches ? e.touches[0].clientY : e.clientY;
@@ -482,7 +494,7 @@
         try {
             mediaRecorder = new MediaRecorder(globalAudioStream);
             audioChunks = [];
-            mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+            mediaRecorder.ondataavailable = event => { if (event.data.size > 0) audioChunks.push(event.data); };
             
             mediaRecorder.onstop = async () => {
                 clearInterval(recTimerInterval);
@@ -494,7 +506,7 @@
                 if (Date.now() - recStartTime < 1000 || !window.shouldSendVoice) return;
                 if (audioBlob.size > 15 * 1024 * 1024) return alert('Сообщение больше 15 МБ');
                 
-                processBackgroundVoice(audioBlob).catch(e => console.error("Ошибка:", e));
+                processBackgroundVoice(audioBlob).catch(err => console.error("Ошибка:", err));
             };
             
             mediaRecorder.start();
@@ -511,21 +523,21 @@
                 document.getElementById('record-timer').querySelector('span').innerText = formatTime(Date.now() - recStartTime);
             }, 500);
 
-            const btn = document.getElementById('btn-input-action');
             btn.innerHTML = '<i class="fas fa-microphone"></i>';
             btn.style.transform = 'scale(1.3)'; 
 
             if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
-        } catch (err) { alert('Критическая ошибка микрофона!'); }
+        } catch (err) { alert('Ошибка запуска микрофона!'); isHolding = false; }
     }
 
-    // ТЯНЕМ ПАЛЕЦ ВВЕРХ
     function moveVoiceHold(e) {
         if (!isRecording || isRecordingLocked) return;
+        e.preventDefault(); // БЛОКИРУЕМ СКРОЛЛ ЭКРАНА при свайпе!
+
         const currentY = e.touches ? e.touches[0].clientY : e.clientY;
         
-        // Если свайпнули вверх на 50 пикселей - ЛОК!
-        if (startY - currentY > 50) {
+        // Если свайпнули вверх на 40 пикселей - ЛОК!
+        if (startY - currentY > 40) {
             isRecordingLocked = true;
             document.getElementById('record-hint').style.display = 'none';
             document.getElementById('record-locked-actions').classList.add('active');
@@ -537,12 +549,14 @@
         }
     }
 
-    // ОТПУСТИЛИ
     function endVoiceHold(e) {
+        isHolding = false;
+        if (e) e.preventDefault();
+        
         if (!isRecording) return;
         document.getElementById('btn-input-action').style.transform = 'scale(1)';
         
-        // Если залочили - просто ждем пока юзер нажмет кнопку Отмена/Отправить
+        // Если залочили - ждем пока юзер нажмет кнопку Отмена/Отправить
         if (isRecordingLocked) return; 
         
         // Если не залочили - останавливаем и отправляем
@@ -550,7 +564,6 @@
         mediaRecorder.stop();
     }
 
-    // Кнопки для режима Lock
     function cancelRecording() {
         window.shouldSendVoice = false;
         mediaRecorder.stop();
