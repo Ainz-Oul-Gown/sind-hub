@@ -180,86 +180,43 @@
 
     <script>
 
-
-    // --- ИИ: РАСПОЗНАВАНИЕ ГОЛОСА (WHISPER) ---
-    // --- ИИ: РАСПОЗНАВАНИЕ ГОЛОСА (WHISPER) ---
-    let whisperModel = null;
-    let isWhisperLoading = false;
+    // --- ИИ: СВЯЗЬ С ФОНОВЫМ ПОТОКОМ (WEB WORKER) ---
+    // Обязательно указываем type: 'module', так как внутри воркера есть import
+    const aiWorker = new Worker('ai-worker.js', { type: 'module' });
     const audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
 
-    async function initWhisper() {
-        if (whisperModel) return whisperModel;
-        if (isWhisperLoading) {
-            while (isWhisperLoading) await new Promise(r => setTimeout(r, 100));
-            return whisperModel;
-        }
-        isWhisperLoading = true;
-        
-        const { pipeline, env } = await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.14.0');
-        env.allowLocalModels = false;
-        env.useBrowserCache = true;
-        env.backends.onnx.wasm.numThreads = 1;
-        
+    aiWorker.onmessage = (event) => {
+        const msg = event.data;
         const micBtn = document.getElementById('btn-mic');
         
-        // Хранилище для подсчета общего веса всех файлов
-        const downloadTracker = {};
+        if (msg.type === 'progress' && micBtn) {
+            micBtn.innerText = `⬇️ ${msg.percent}%`;
+            micBtn.style.fontSize = '14px';
+        } else if (msg.type === 'ready' && micBtn && micBtn.innerText.includes('⬇️')) {
+            micBtn.innerText = '🎤';
+            micBtn.style.fontSize = '';
+        }
+    };
 
-        whisperModel = await pipeline('automatic-speech-recognition', 'Xenova/whisper-base', { 
-            quantized: true,
-            progress_callback: (data) => {
-                // Если идет скачивание...
-                if (data.status === 'progress') {
-                    // Записываем, сколько байт скачалось для конкретного файла
-                    downloadTracker[data.file] = {
-                        loaded: data.loaded,
-                        total: data.total
-                    };
-                    
-                    // Считаем общую сумму скачанного и общую сумму всего веса
-                    let totalLoaded = 0;
-                    let totalExpected = 0;
-                    
-                    for (const key in downloadTracker) {
-                        totalLoaded += downloadTracker[key].loaded || 0;
-                        totalExpected += downloadTracker[key].total || 0;
-                    }
-                    
-                    // Высчитываем честный общий процент
-                    if (totalExpected > 0) {
-                        const percent = Math.round((totalLoaded / totalExpected) * 100);
-                        // Показываем на кнопке!
-                        micBtn.innerText = `⬇️ ${percent}%`;
-                        micBtn.style.fontSize = '14px';
-                    }
+    // Обертка-промис, которая отправляет звук в воркер и ждет текст
+    function transcribeViaWorker(audioFloat32Array) {
+        return new Promise((resolve, reject) => {
+            const taskId = Date.now();
+            
+            const handler = (event) => {
+                const msg = event.data;
+                if (msg.id === taskId) {
+                    aiWorker.removeEventListener('message', handler);
+                    if (msg.type === 'result') resolve(msg.text);
+                    else if (msg.type === 'error') reject(new Error(msg.error));
                 }
-            }
+            };
+            
+            aiWorker.addEventListener('message', handler);
+            aiWorker.postMessage({ type: 'transcribe', id: taskId, audioData: audioFloat32Array });
         });
-        
-        // Возвращаем кнопку в норму, когда всё скачалось
-        micBtn.innerText = '🎤';
-        micBtn.style.fontSize = ''; 
-        micBtn.style.color = '';
-        
-        isWhisperLoading = false;
-        return whisperModel;
     }
-
-    // Эта функция переводит аудио-файл в сырые данные и скармливает нейросети
-    async function transcribeAudio(audioBlob) {
-        const whisper = await initWhisper();
-        
-        // Будим аудио-движок, если браузер усыпил его
-        if (audioContext.state === 'suspended') await audioContext.resume();
-        
-        const arrayBuffer = await audioBlob.arrayBuffer();
-        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-        const audioData = audioBuffer.getChannelData(0);
-        
-        // Запускаем расшифровку
-        const output = await whisper(audioData, { language: 'russian', task: 'transcribe' });
-        return output.text;
-    }
+    
 
     // --- МОДУЛЬ ЗАПИСИ ---
     let mediaRecorder;
@@ -1141,9 +1098,10 @@
         loadFriends(); 
         loadMyCurrencies();
         // Ленивая загрузка тяжелой ИИ-модели в фоне
-        setTimeout(() => {
-            initWhisper().catch(e => console.log("Фоновая загрузка Whisper провалена:", e));
-        }, 2000); // Ждем 2 секунды после отрисовки интерфейса, чтобы не лагало
+        ssetTimeout(() => {
+            // Даем команду фоновому процессу начать загрузку модели
+            aiWorker.postMessage({ type: 'init' });
+        }, 1000);
     }
 
 
