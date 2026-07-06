@@ -658,14 +658,21 @@
             mediaRecorder.onstop = async () => {
                 clearInterval(recTimerInterval);
                 
-                // ЖЕСТКАЯ ЗАЧИСТКА: Удаляем интерфейс вообще под ноль, чтобы ничего не наслаивалось
+                // ЖЕСТКАЯ ЗАЧИСТКА: Удаляем интерфейс вообще под ноль
                 const overlay = document.getElementById('record-overlay');
                 overlay.innerHTML = ''; 
                 overlay.classList.remove('active');
                 
-                btn.innerHTML = '<i class="fas fa-microphone"></i>';
+                // Возвращаем главной кнопке стандартные стили
+                btn.style.position = '';
+                btn.style.zIndex = '';
                 btn.style.transform = 'scale(1)'; 
                 btn.style.display = 'flex'; 
+                
+                // Функция авторазмера сама вернет микрофон, либо оставит самолетик, если в поле введен текст
+                btn.className = 'btn-dynamic mode-mic';
+                autoResizeInput(); 
+
                 
                 const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
                 const wasCancelled = isCancelled;
@@ -721,6 +728,17 @@
                 </div>
             `;
 
+            btn.style.position = 'relative';
+            btn.style.zIndex = '50';
+            
+            // Превращаем её в синий самолетик (как ты просил)
+            btn.innerHTML = '<i class="fas fa-paper-plane" style="margin-right: 2px; margin-top: 2px;"></i>';
+            btn.className = 'btn-dynamic mode-send'; 
+            
+            // Задаем начальное увеличение
+            btn.style.transform = 'scale(1.4)'; 
+            if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
+
             // === НОВЫЙ БЛОК: АНАЛИЗАТОР ГРОМКОСТИ ===
             volumeHistory = [];
             lastVolumeSampleTime = Date.now();
@@ -736,32 +754,43 @@
                 const dataArray = new Uint8Array(vAnalyser.frequencyBinCount);
                 
                 function trackVolume() {
-                    if (!isRecording) return; // Останавливаем луп, если запись окончена
+                    if (!isRecording) return; 
                     
                     if (!isPaused) {
                         vAnalyser.getByteFrequencyData(dataArray);
                         let sum = 0;
                         for(let i=0; i<dataArray.length; i++) sum += dataArray[i];
-                        let avgVolume = sum / dataArray.length; // Значение от 0 до 255
+                        let avgVolume = sum / dataArray.length; 
                         
-                        // 1. Анимация самолетика (пульсация)
-                        const planes = document.querySelectorAll('.v-send');
-                        // Базовый размер 1, увеличивается до 1.3 в зависимости от громкости
-                        let scale = 1 + (avgVolume / 255) * 0.3; 
-                        planes.forEach(plane => {
-                            plane.style.transform = `scale(${scale}) rotate(-15deg)`;
-                        });
+                        // --- ИСПРАВЛЕНИЕ: Усиливаем чувствительность ---
+                        // Обычный голос выдает 15-30. Делим на 40, чтобы получить сильный буст (до +40% к размеру)
+                        let scaleBoost = Math.min(0.4, avgVolume / 40); 
                         
-                        // 2. Сбор истории для вейвформы
+                        if (!isRecordingLocked) {
+                            // 1. МЫ ДЕРЖИМ ПАЛЕЦ: пульсирует главная кнопка
+                            const mainBtn = document.getElementById('btn-input-action');
+                            if (mainBtn) {
+                                // Базовый размер при удержании 1.4, плюс пульсация
+                                mainBtn.style.transform = `scale(${1.4 + scaleBoost})`;
+                            }
+                        } else {
+                            // 2. ЗАМОК АКТИВЕН: пульсирует самолетик в меню блокировки
+                            const planes = document.querySelectorAll('.v-send');
+                            planes.forEach(plane => {
+                                plane.style.transform = `scale(${1 + scaleBoost}) rotate(-15deg)`;
+                            });
+                        }
+                        
+                        // Сбор истории для вейвформы (без изменений)
                         const now = Date.now();
-                        if (now - lastVolumeSampleTime > 100) { // Пишем точку каждые 100мс
+                        if (now - lastVolumeSampleTime > 100) {
                             volumeHistory.push(avgVolume);
                             lastVolumeSampleTime = now;
                         }
                     }
                     requestAnimationFrame(trackVolume);
                 }
-                trackVolume(); // Запускаем петлю
+                trackVolume();
             } catch(e) { console.warn("Аудио анализатор не запустился:", e); }
             // =========================================
             
@@ -772,10 +801,6 @@
                     document.querySelectorAll('.v-time-text').forEach(el => el.innerText = timeStr);
                 }
             }, 500);
-
-            btn.innerHTML = '<i class="fas fa-microphone"></i>';
-            btn.style.transform = 'scale(1.4)'; 
-            if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
             
         } catch (err) { isPointerDown = false; }
     }
