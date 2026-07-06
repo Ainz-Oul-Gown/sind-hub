@@ -539,16 +539,23 @@
     let isPointerDown = false; 
 
     async function startVoiceHold(e) {
+        // Динамически добавляем стили как в ТГ, чтобы текст нельзя было выделить (pointer-events: none)
+        if (!document.getElementById('voice-styles')) {
+            const style = document.createElement('style');
+            style.id = 'voice-styles';
+            style.innerHTML = `
+                .hint-cancel { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 15px; user-select: none; pointer-events: none; animation: swipeLeft 1.5s infinite; margin-left: auto; margin-right: 20px; }
+                .hint-lock { position: absolute; right: 16px; top: -60px; background: var(--surface); border: 1px solid var(--border); border-radius: 50%; width: 42px; height: 42px; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--muted); font-size: 14px; user-select: none; pointer-events: none; animation: swipeUp 1.5s infinite; box-shadow: 0 4px 10px rgba(0,0,0,0.5); z-index: 100;}
+                @keyframes swipeLeft { 0% { transform: translateX(0); opacity: 0.5;} 50% { transform: translateX(-10px); opacity: 1;} 100% { transform: translateX(0); opacity: 0.5;} }
+                @keyframes swipeUp { 0% { transform: translateY(0); opacity: 0.5;} 50% { transform: translateY(-10px); opacity: 1;} 100% { transform: translateY(0); opacity: 0.5;} }
+            `;
+            document.head.appendChild(style);
+        }
+
         const btn = document.getElementById('btn-input-action');
         
-        // Если кнопка в режиме отправки текста
         if (btn.classList.contains('mode-send')) { sendPrivateMessage(); return; }
-        
-        // Игнорируем, если уже залочили запись (там свои кнопки)
-        if (isRecordingLocked) return;
-
-        // Блокировка двойного нажатия
-        if (isRecording || isPointerDown) return;
+        if (isRecordingLocked || isRecording || isPointerDown) return;
         
         isPointerDown = true;
         isCancelled = false;
@@ -572,7 +579,6 @@
                 clearInterval(recTimerInterval);
                 document.getElementById('record-overlay').classList.remove('active');
                 
-                // Возврат интерфейса кнопки
                 btn.innerHTML = '<i class="fas fa-microphone"></i>';
                 btn.style.transform = 'scale(1)'; 
                 btn.style.display = 'flex'; 
@@ -585,10 +591,10 @@
                 isPaused = false;
                 isRecordingLocked = false;
                 
-                // Если отменили свайпом, сняли палец слишком быстро или нажали корзину
+                // Если отменили или записали меньше 0.8 секунд - отбрасываем
                 if (wasCancelled || !window.shouldSendVoice || duration < 800) return; 
                 
-                if (audioBlob.size > 15 * 1024 * 1024) return alert('Сообщение слишком большое (Макс 15 МБ)');
+                if (audioBlob.size > 15 * 1024 * 1024) return alert('Сообщение слишком большое');
                 
                 processBackgroundVoice(audioBlob).catch(err => console.error("Ошибка ГС:", err));
             };
@@ -599,18 +605,16 @@
             window.shouldSendVoice = false; 
             recStartTime = Date.now();
             
-            // Настройка UI
             document.getElementById('record-overlay').classList.add('active');
             
-            // Добавляем подсказки свайпов динамически
+            // Вставляем наш крутой UI
             const hintDiv = document.getElementById('record-hint');
             hintDiv.style.display = 'flex';
+            hintDiv.style.width = '100%';
             hintDiv.innerHTML = `
-                <div class="record-timer" id="record-timer-live"><i class="fas fa-microphone"></i> <span>0:00</span></div>
-                <div style="display: flex; gap: 15px; align-items: center; margin-right: 15px;">
-                    <span style="font-size: 13px; color: var(--muted);"><i class="fas fa-chevron-left"></i> Отмена</span>
-                    <span style="font-size: 13px; color: var(--muted);">Лок <i class="fas fa-chevron-up"></i></span>
-                </div>
+                <div class="record-timer" id="record-timer-live" style="user-select:none; pointer-events:none;"><i class="fas fa-microphone"></i> <span>0:00</span></div>
+                <div class="hint-cancel"><i class="fas fa-chevron-left"></i> Отмена</div>
+                <div class="hint-lock"><i class="fas fa-lock"></i><i class="fas fa-chevron-up" style="margin-top:2px; font-size:10px;"></i></div>
             `;
             
             document.getElementById('record-locked-actions').classList.remove('active');
@@ -1291,29 +1295,93 @@
 
     // --- ЖЕЛЕЗОБЕТОННАЯ ЛОГИКА ДОЛГОВ ---
     async function openDebtModal() {
-        // СРАЗУ переключаем экран и закрываем модалку! 
-        // Это убирает эффект того, что "модалка просто закрылась"
-        switchScreen('screen-add-debt');
-        document.getElementById('modal-debts').classList.remove('active');
-        
-        document.getElementById('debt-rubles').value = ''; 
-        document.getElementById('debt-result').innerText = '0';
-        
-        // Ставим заглушку загрузки для визуального понимания
-        const select = document.getElementById('debt-currency');
-        select.innerHTML = '<option value="Руб." data-price="1">Загрузка валют...</option>';
-        
-        // Подгружаем валюты друга (именно этот запрос и вызывал задержку)
-        const { data: friendCurrencies } = await supabaseClient.from('currencies').select('*').eq('owner_id', currentFriend.id);
-        
-        select.innerHTML = '';
-        if (!friendCurrencies || friendCurrencies.length === 0) {
-            select.innerHTML = `<option value="Руб." data-price="1">Рубли (1 к 1)</option>`;
-        } else {
-            friendCurrencies.forEach(c => {
-                const safeName = escapeHTML(c.name);
-                select.innerHTML += `<option value="${safeName}" data-price="${c.rub_value}">${safeName} (Курс: ${c.rub_value} ₽)</option>`;
-            });
+        try {
+            // 1. Сразу переключаем экраны
+            switchScreen('screen-add-debt');
+            
+            // 2. Жестко закрываем модалку, чтобы она не висела прозрачным фоном
+            const modal = document.getElementById('modal-debts');
+            if (modal) modal.classList.remove('active');
+            
+            // 3. Обнуляем значения
+            const rublesInput = document.getElementById('debt-rubles');
+            const resultText = document.getElementById('debt-result');
+            if (rublesInput) rublesInput.value = '';
+            if (resultText) resultText.innerText = '0';
+            
+            // 4. Подгружаем валюты
+            const select = document.getElementById('debt-currency');
+            if (!select) return alert('Ошибка HTML: не найден список валют (debt-currency)');
+            select.innerHTML = '<option value="Руб." data-price="1">Загрузка валют...</option>';
+            
+            const { data: friendCurrencies, error } = await supabaseClient
+                .from('currencies')
+                .select('*')
+                .eq('owner_id', currentFriend.id);
+                
+            if (error) {
+                alert('Ошибка загрузки валют из БД Supabase: ' + error.message);
+                return;
+            }
+            
+            select.innerHTML = '';
+            if (!friendCurrencies || friendCurrencies.length === 0) {
+                select.innerHTML = `<option value="Руб." data-price="1">Рубли (1 к 1)</option>`;
+            } else {
+                friendCurrencies.forEach(c => {
+                    const safeName = escapeHTML(c.name);
+                    select.innerHTML += `<option value="${safeName}" data-price="${c.rub_value}">${safeName} (Курс: ${c.rub_value} ₽)</option>`;
+                });
+            }
+        } catch(e) {
+            alert("Критическая ошибка JS при открытии окна: " + e.message);
+        }
+    }
+
+    async function saveDebt() {
+        try {
+            const rublesInput = document.getElementById('debt-rubles');
+            if (!rublesInput) return alert('Ошибка HTML: поле ввода суммы не найдено!');
+            
+            const rubles = parseFloat(rublesInput.value);
+            if (isNaN(rubles) || rubles <= 0) return alert('Введите корректную сумму больше нуля!');
+            
+            const select = document.getElementById('debt-currency');
+            const price = parseFloat(select.options[select.selectedIndex]?.getAttribute('data-price')) || 1;
+            const currencyName = select.value || 'Руб.';
+            
+            const finalAmount = parseFloat((rubles / price).toFixed(2));
+            if (finalAmount > 1000000000) return alert('Сумма превышает лимиты Синдиката.');
+
+            const payload = { 
+                creditor_id: currentFriend.id, 
+                debtor_id: currentUser.id, 
+                amount: finalAmount, 
+                currency: currencyName 
+            };
+
+            // Записываем долг в БД
+            const { data, error } = await supabaseClient.from('debts').insert(payload).select();
+            
+            if (error) { 
+                alert("Ошибка сохранения в БД Supabase (Проверьте RLS политики таблицы debts): " + error.message); 
+                return; 
+            }
+
+            if (!data || data.length === 0) {
+                alert("Запрос ушел, но база данных ничего не сохранила. Возможна блокировка RLS.");
+                return;
+            }
+            
+            if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+            
+            // Если все успешно - возвращаемся и подгружаем свежий список долгов
+            switchScreen('screen-friend');
+            await loadDebts(currentFriend.id);
+            document.getElementById('modal-debts').classList.add('active'); 
+
+        } catch (e) {
+            alert("Критическая ошибка JS при сохранении долга: " + e.message);
         }
     }
     
@@ -1322,52 +1390,6 @@
         const select = document.getElementById('debt-currency');
         const price = parseFloat(select.options[select.selectedIndex]?.getAttribute('data-price')) || 1;
         document.getElementById('debt-result').innerText = rubles === 0 ? '0' : `${(rubles / price).toFixed(2)} ${select.value}`;
-    }
-
-    async function saveDebt() {
-        try {
-            const rubles = parseFloat(document.getElementById('debt-rubles').value);
-            if (!rubles || rubles <= 0) return alert('Введите корректную сумму в рублях!');
-            
-            const select = document.getElementById('debt-currency');
-            // Защита от пустых значений
-            const price = parseFloat(select.options[select.selectedIndex]?.getAttribute('data-price')) || 1;
-            const currencyName = select.value || 'Руб.';
-            
-            const finalAmount = parseFloat((rubles / price).toFixed(2));
-            if (finalAmount > 1000000000) return alert('Сумма превышает лимиты Синдиката.');
-
-            // Явно подготавливаем данные
-            const payload = { 
-                creditor_id: currentFriend.id, 
-                debtor_id: currentUser.id, 
-                amount: finalAmount, 
-                currency: currencyName 
-            };
-
-            // .select() заставит БД вернуть ответ. Если его нет — значит данные не записались!
-            const { data, error } = await supabaseClient.from('debts').insert(payload).select();
-            
-            if (error) { 
-                alert("Ошибка базы данных: " + error.message); 
-                return; 
-            }
-
-            if (!data || data.length === 0) {
-                alert("Долг не сохранился. Вероятно, база данных Supabase отклонила запрос (Проверьте правила RLS для таблицы debts).");
-                return;
-            }
-            
-            if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
-            
-            // Если всё успешно: возвращаемся назад, обновляем список долгов и показываем окно
-            switchScreen('screen-friend');
-            await loadDebts(currentFriend.id);
-            document.getElementById('modal-debts').classList.add('active'); 
-
-        } catch (e) {
-            alert("Критическая ошибка JS: " + e.message);
-        }
     }
 
     initApp();
