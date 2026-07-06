@@ -529,34 +529,33 @@
     let isRecording = false;
     let isRecordingLocked = false;
     let isPaused = false;
+    let isCancelled = false; // Флаг отмены
     let globalAudioStream = null;
     
-    let startY = 0;
+    let startX = 0; // Для свайпа влево
+    let startY = 0; // Для свайпа вверх
     let recStartTime = 0;
     let recTimerInterval = null;
     let isPointerDown = false; 
 
-    function formatTime(ms) {
-        const totalSec = Math.floor(ms / 1000);
-        const min = Math.floor(totalSec / 60);
-        const sec = totalSec % 60;
-        return `${min}:${sec.toString().padStart(2, '0')}`;
-    }
-
     async function startVoiceHold(e) {
         const btn = document.getElementById('btn-input-action');
         
-        // 1. Текст
+        // Если кнопка в режиме отправки текста
         if (btn.classList.contains('mode-send')) { sendPrivateMessage(); return; }
-
+        
+        // Игнорируем, если уже залочили запись (там свои кнопки)
         if (isRecordingLocked) return;
 
-        // Блокируем двойные нажатия
+        // Блокировка двойного нажатия
         if (isRecording || isPointerDown) return;
-        isPointerDown = true;
         
-        btn.setPointerCapture(e.pointerId);
+        isPointerDown = true;
+        isCancelled = false;
+        startX = e.clientX;
         startY = e.clientY;
+        
+        try { btn.setPointerCapture(e.pointerId); } catch(err){}
         
         if (!globalAudioStream) {
             try { globalAudioStream = await navigator.mediaDevices.getUserMedia({ audio: true }); } 
@@ -573,17 +572,22 @@
                 clearInterval(recTimerInterval);
                 document.getElementById('record-overlay').classList.remove('active');
                 
-                // Сброс интерфейса
+                // Возврат интерфейса кнопки
                 btn.innerHTML = '<i class="fas fa-microphone"></i>';
                 btn.style.transform = 'scale(1)'; 
-                btn.style.display = 'flex'; // Гарантируем, что основная кнопка вернулась
+                btn.style.display = 'flex'; 
                 
                 const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
+                const wasCancelled = isCancelled;
+                const duration = Date.now() - recStartTime;
+                
                 isRecording = false;
                 isPaused = false;
                 isRecordingLocked = false;
                 
-                if (Date.now() - recStartTime < 1000 || !window.shouldSendVoice) return;
+                // Если отменили свайпом, сняли палец слишком быстро или нажали корзину
+                if (wasCancelled || !window.shouldSendVoice || duration < 800) return; 
+                
                 if (audioBlob.size > 15 * 1024 * 1024) return alert('Сообщение слишком большое (Макс 15 МБ)');
                 
                 processBackgroundVoice(audioBlob).catch(err => console.error("Ошибка ГС:", err));
@@ -595,13 +599,22 @@
             window.shouldSendVoice = false; 
             recStartTime = Date.now();
             
-            // Настройка UI при старте
+            // Настройка UI
             document.getElementById('record-overlay').classList.add('active');
-            document.getElementById('record-hint').style.display = 'flex';
+            
+            // Добавляем подсказки свайпов динамически
+            const hintDiv = document.getElementById('record-hint');
+            hintDiv.style.display = 'flex';
+            hintDiv.innerHTML = `
+                <div class="record-timer" id="record-timer-live"><i class="fas fa-microphone"></i> <span>0:00</span></div>
+                <div style="display: flex; gap: 15px; align-items: center; margin-right: 15px;">
+                    <span style="font-size: 13px; color: var(--muted);"><i class="fas fa-chevron-left"></i> Отмена</span>
+                    <span style="font-size: 13px; color: var(--muted);">Лок <i class="fas fa-chevron-up"></i></span>
+                </div>
+            `;
+            
             document.getElementById('record-locked-actions').classList.remove('active');
             
-            // Готовим таймеры
-            document.getElementById('record-timer-live').innerHTML = '<i class="fas fa-microphone"></i> <span>0:00</span>';
             const pausedTimer = document.getElementById('record-timer-paused');
             pausedTimer.classList.remove('paused');
             pausedTimer.innerHTML = '<i class="fas fa-microphone" style="margin-right:6px;"></i><span>0:00</span>';
@@ -609,8 +622,10 @@
             recTimerInterval = setInterval(() => {
                 if (!isPaused) {
                     const timeStr = formatTime(Date.now() - recStartTime);
-                    document.querySelector('#record-timer-live span').innerText = timeStr;
-                    document.querySelector('#record-timer-paused span').innerText = timeStr;
+                    const liveSpan = document.querySelector('#record-timer-live span');
+                    if(liveSpan) liveSpan.innerText = timeStr;
+                    const pausedSpan = document.querySelector('#record-timer-paused span');
+                    if(pausedSpan) pausedSpan.innerText = timeStr;
                 }
             }, 500);
 
@@ -622,76 +637,73 @@
     }
 
     function moveVoiceHold(e) {
-        if (!isRecording || isRecordingLocked || !isPointerDown) return;
+        if (!isRecording || isRecordingLocked || !isPointerDown || isCancelled) return;
 
-        // Свайп вверх на 40px
-        if (startY - e.clientY > 40) {
+        const deltaY = startY - e.clientY;
+        const deltaX = startX - e.clientX;
+
+        // 1. Свайп ВЛЕВО -> Отмена записи
+        if (deltaX > 40) {
+            isCancelled = true;
+            window.shouldSendVoice = false;
+            if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('warning');
+            
+            mediaRecorder.stop(); // Остановка вызывает onstop и сбрасывает UI
+            
+            const btn = document.getElementById('btn-input-action');
+            try { btn.releasePointerCapture(e.pointerId); } catch(err) {}
+            isPointerDown = false;
+            return;
+        }
+
+        // 2. Свайп ВВЕРХ -> Лок записи
+        if (deltaY > 40) {
             isRecordingLocked = true;
             
-            // Прячем стандартную подсказку "Свайп для лока"
             document.getElementById('record-hint').style.display = 'none';
-            
-            // ПОКАЗЫВАЕМ меню для залоченного ГС (корзина, таймер, пауза, отправка)
             document.getElementById('record-locked-actions').classList.add('active');
             
-            // Т.к. запись еще идет, центральная кнопка в меню должна быть ПАУЗОЙ
             const actionBtn = document.querySelector('.btn-rec-resume');
             actionBtn.innerHTML = '<i class="fas fa-pause"></i>';
             actionBtn.setAttribute('onclick', 'pauseRecording()');
             
-            // Прячем огромную центральную кнопку ввода
             const btn = document.getElementById('btn-input-action');
-            btn.style.display = 'none';
+            btn.style.display = 'none'; // Прячем гигантскую кнопку
             
             if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
             
-            // Снимаем фокус нажатия, чтобы при отпускании пальца запись не отправилась
             try { btn.releasePointerCapture(e.pointerId); } catch(err) {}
             isPointerDown = false;
         }
     }
 
-    function pauseRecording() {
-        if (!isRecording || isPaused) return;
-        mediaRecorder.pause();
-        isPaused = true;
+    function endVoiceHold(e) {
+        isPointerDown = false;
+        const btn = document.getElementById('btn-input-action');
+        try { if (e && e.pointerId) btn.releasePointerCapture(e.pointerId); } catch(err) {}
         
-        // Обновляем таймер
-        const timer = document.getElementById('record-timer-paused');
-        timer.classList.add('paused');
-        timer.innerHTML = '<i class="fas fa-microphone-slash" style="margin-right:6px;"></i><span>' + formatTime(Date.now() - recStartTime) + '</span>';
+        if (!isRecording || isCancelled) return;
         
-        // Меняем кнопку на "Продолжить" (иконка микрофона)
-        const actionBtn = document.querySelector('.btn-rec-resume');
-        actionBtn.innerHTML = '<i class="fas fa-microphone"></i>';
-        actionBtn.setAttribute('onclick', 'resumeRecording()');
+        // Если ГС залочено свайпом вверх, отпускание пальца ничего не делает (ждем кнопок меню)
+        if (isRecordingLocked) return;
+        
+        // Просто зажали и отпустили -> Отправляем
+        window.shouldSendVoice = true;
+        mediaRecorder.stop();
     }
 
-    function resumeRecording() {
-        if (!isRecording || !isPaused) return;
-        mediaRecorder.resume();
-        isPaused = false;
-        
-        // Возвращаем таймер в режим записи
-        const timer = document.getElementById('record-timer-paused');
-        timer.classList.remove('paused');
-        timer.innerHTML = '<i class="fas fa-microphone" style="margin-right:6px;"></i><span>' + formatTime(Date.now() - recStartTime) + '</span>';
-        
-        // Меняем кнопку обратно на "Паузу"
-        const actionBtn = document.querySelector('.btn-rec-resume');
-        actionBtn.innerHTML = '<i class="fas fa-pause"></i>';
-        actionBtn.setAttribute('onclick', 'pauseRecording()');
-    }
-
+    // Для кнопки КОРЗИНЫ (в залоченном режиме)
     function cancelRecording() {
+        isCancelled = true;
         window.shouldSendVoice = false;
-        document.getElementById('btn-input-action').style.display = 'flex'; // Возвращаем кнопку на место
+        document.getElementById('btn-input-action').style.display = 'flex'; 
         if (isRecording) mediaRecorder.stop();
     }
     
+    // Для кнопки ОТПРАВИТЬ (в залоченном режиме)
     function stopAndSendRecording() {
         window.shouldSendVoice = true;
-        document.getElementById('btn-input-action').style.display = 'flex'; // Возвращаем кнопку на место
+        document.getElementById('btn-input-action').style.display = 'flex'; 
         if (isRecording) mediaRecorder.stop();
     }
 
@@ -1313,33 +1325,49 @@
     }
 
     async function saveDebt() {
-        const rubles = parseFloat(document.getElementById('debt-rubles').value);
-        if (!rubles || rubles <= 0) return alert('Введите корректную сумму в рублях!');
-        
-        // Берем значения напрямую из селекта (без сложных парсингов текста)
-        const select = document.getElementById('debt-currency');
-        const price = parseFloat(select.options[select.selectedIndex]?.getAttribute('data-price')) || 1;
-        const currencyName = select.value;
-        
-        const finalAmount = parseFloat((rubles / price).toFixed(2));
-        if (finalAmount > 1000000000) return alert('Сумма превышает лимиты Синдиката.');
+        try {
+            const rubles = parseFloat(document.getElementById('debt-rubles').value);
+            if (!rubles || rubles <= 0) return alert('Введите корректную сумму в рублях!');
+            
+            const select = document.getElementById('debt-currency');
+            // Защита от пустых значений
+            const price = parseFloat(select.options[select.selectedIndex]?.getAttribute('data-price')) || 1;
+            const currencyName = select.value || 'Руб.';
+            
+            const finalAmount = parseFloat((rubles / price).toFixed(2));
+            if (finalAmount > 1000000000) return alert('Сумма превышает лимиты Синдиката.');
 
-        // Записываем в базу и ждем ответа (.select() гарантирует, что мы получим результат)
-        const { error } = await supabaseClient.from('debts').insert({ 
-            creditor_id: currentFriend.id, 
-            debtor_id: currentUser.id, 
-            amount: finalAmount, 
-            currency: currencyName 
-        }).select();
-        
-        if (error) { alert("Ошибка сохранения в БД: " + error.message); return; }
-        
-        if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
-        
-        // Возвращаемся в чат, подгружаем свежие долги и показываем модалку
-        switchScreen('screen-friend');
-        await loadDebts(currentFriend.id);
-        document.getElementById('modal-debts').classList.add('active'); 
+            // Явно подготавливаем данные
+            const payload = { 
+                creditor_id: currentFriend.id, 
+                debtor_id: currentUser.id, 
+                amount: finalAmount, 
+                currency: currencyName 
+            };
+
+            // .select() заставит БД вернуть ответ. Если его нет — значит данные не записались!
+            const { data, error } = await supabaseClient.from('debts').insert(payload).select();
+            
+            if (error) { 
+                alert("Ошибка базы данных: " + error.message); 
+                return; 
+            }
+
+            if (!data || data.length === 0) {
+                alert("Долг не сохранился. Вероятно, база данных Supabase отклонила запрос (Проверьте правила RLS для таблицы debts).");
+                return;
+            }
+            
+            if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+            
+            // Если всё успешно: возвращаемся назад, обновляем список долгов и показываем окно
+            switchScreen('screen-friend');
+            await loadDebts(currentFriend.id);
+            document.getElementById('modal-debts').classList.add('active'); 
+
+        } catch (e) {
+            alert("Критическая ошибка JS: " + e.message);
+        }
     }
 
     initApp();
