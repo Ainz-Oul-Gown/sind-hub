@@ -315,9 +315,61 @@
         const area = document.getElementById('messages-area');
         const div = document.createElement('div');
         div.className = `msg-bubble ${isMine ? 'msg-mine' : 'msg-other'}`;
-        div.innerText = text;
+        
+        // Проверяем, текст это или маркер голосового сообщения
+        if (text.startsWith('[VOICE]:')) {
+            const fileName = text.replace('[VOICE]:', '');
+            // Рисуем кнопку для расшифровки
+            div.innerHTML = `
+                <div style="cursor:pointer; display:flex; align-items:center; gap:8px; padding: 5px;" 
+                     onclick="loadAndPlayVoice('${fileName}', this)">
+                    <span style="font-size: 24px;">▶️</span>
+                    <span class="voice-status">Зашифрованное ГС</span>
+                </div>`;
+        } else {
+            div.innerText = text;
+        }
+        
         area.appendChild(div);
-        area.scrollTop = area.scrollHeight; // Скролл вниз
+        area.scrollTop = area.scrollHeight; 
+    }
+
+
+    async function loadAndPlayVoice(fileName, element) {
+        const statusSpan = element.querySelector('.voice-status');
+        statusSpan.innerText = 'Взлом файла...';
+        
+        // 1. Скачиваем шифр из бакета
+        const { data, error } = await supabaseClient.storage.from('voice_messages').download(fileName);
+        if (error) { statusSpan.innerText = 'Ошибка сети'; return; }
+
+        // 2. Достаем байты
+        const arrayBuffer = await data.arrayBuffer();
+        const bytes = new Uint8Array(arrayBuffer);
+        const iv = bytes.slice(0, 12);
+        const encryptedData = bytes.slice(12);
+
+        try {
+            // 3. Расшифровываем аудио
+            const decryptedBuffer = await window.crypto.subtle.decrypt(
+                { name: "AES-GCM", iv: iv },
+                currentAesKey,
+                encryptedData
+            );
+
+            // 4. Собираем аудиофайл и создаем локальную ссылку
+            const decryptedBlob = new Blob([decryptedBuffer]);
+            const audioUrl = URL.createObjectURL(decryptedBlob);
+            
+            // 5. Превращаем кнопку в полноценный HTML5 плеер с автовоспроизведением
+            element.parentElement.innerHTML = `
+                <audio controls src="${audioUrl}" autoplay 
+                       style="height: 35px; width: 220px; outline: none;">
+                </audio>`;
+                
+        } catch (e) {
+            statusSpan.innerText = 'Ошибка ключа 🔒';
+        }
     }
 
     
@@ -641,6 +693,99 @@
             ).subscribe();
     }
 
+    // --- МОДУЛЬ ЗАПИСИ И ШИФРОВАНИЯ ГОЛОСА ---
+    let mediaRecorder;
+    let audioChunks = [];
+    let isRecording = false;
+
+    async function recordVoice() {
+        if (isRecording) {
+            mediaRecorder.stop(); // Остановка записи
+            return;
+        }
+
+        try {
+            // Запрашиваем доступ к микрофону
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream);
+            audioChunks = [];
+
+            mediaRecorder.ondataavailable = e => {
+                if (e.data.size > 0) audioChunks.push(e.data);
+            };
+            
+            mediaRecorder.onstop = async () => {
+                // Выключаем микрофон, чтобы не горел индикатор в браузере/iOS
+                stream.getTracks().forEach(track => track.stop());
+                
+                const audioBlob = new Blob(audioChunks);
+                isRecording = false;
+                
+                const micBtn = document.getElementById('btn-mic');
+                micBtn.innerText = '🎤';
+                micBtn.style.color = '';
+                
+                // Передаем файл на шифровку
+                await uploadAndSendVoice(audioBlob);
+            };
+
+            mediaRecorder.start();
+            isRecording = true;
+            
+            // Визуально показываем процесс записи
+            const micBtn = document.getElementById('btn-mic');
+            micBtn.innerText = '🛑';
+            micBtn.style.color = '#ff5252';
+            
+            if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
+
+        } catch (err) {
+            alert('Синдикату нужен доступ к микрофону!');
+            console.error(err);
+        }
+    }
+
+    async function uploadAndSendVoice(audioBlob) {
+        if (!currentAesKey || !currentChatId) return;
+
+        // 1. Превращаем аудио в сырые байты
+        const arrayBuffer = await audioBlob.arrayBuffer();
+
+        // 2. Шифруем байты нашим ключом от комнаты (AES-GCM)
+        const iv = window.crypto.getRandomValues(new Uint8Array(12));
+        const encryptedContent = await window.crypto.subtle.encrypt(
+            { name: "AES-GCM", iv: iv },
+            currentAesKey,
+            arrayBuffer
+        );
+
+        // 3. Склеиваем IV (соль) и зашифрованный файл
+        const encryptedBytes = new Uint8Array(encryptedContent);
+        const payload = new Uint8Array(iv.length + encryptedBytes.length);
+        payload.set(iv, 0);
+        payload.set(encryptedBytes, iv.length);
+
+        // 4. Отправляем этот нечитаемый мусор в Supabase Storage
+        const fileName = `voice_${Date.now()}_${currentUser.id}.bin`;
+        
+        const { error } = await supabaseClient.storage
+            .from('voice_messages')
+            .upload(fileName, payload, { contentType: 'application/octet-stream' });
+
+        if (error) {
+            console.error(error);
+            return alert('Ошибка загрузки ГС на сервер');
+        }
+
+        // 5. Отправляем в текстовый чат секретный маркер
+        const textMarker = `[VOICE]:${fileName}`;
+        const encryptedPayloadText = await encryptText(textMarker, currentAesKey);
+
+        await supabaseClient.from('messages').insert([
+            { chat_id: currentChatId, sender_id: currentUser.id, encrypted_text: encryptedPayloadText }
+        ]);
+    }
+        
     async function initApp() {
         
         const isAuth = await authUser();
