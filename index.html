@@ -877,11 +877,15 @@
     let isRecording = false;
     let speechRecognition = null;
     let currentTranscription = "";
+    let interimTranscription = ""; // ФИКС: Храним слова, которые еще "в обработке"
 
     async function recordVoice() {
         if (isRecording) {
             mediaRecorder.stop();
-            if (speechRecognition) speechRecognition.stop(); // Останавливаем распознавание
+            // Даем движку полсекунды дожевать последние слова перед отключением
+            setTimeout(() => {
+                if (speechRecognition) speechRecognition.stop();
+            }, 500);
             return;
         }
 
@@ -890,22 +894,33 @@
             mediaRecorder = new MediaRecorder(stream);
             audioChunks = [];
             currentTranscription = "";
+            interimTranscription = "";
 
-            // Включаем встроенный "дешифровщик" голоса в текст
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
             if (SpeechRecognition) {
                 speechRecognition = new SpeechRecognition();
-                speechRecognition.lang = 'ru-RU'; // Русский язык
-                speechRecognition.interimResults = true;
+                speechRecognition.lang = 'ru-RU';
+                speechRecognition.interimResults = true; // Разрешаем брать слова "на лету"
                 speechRecognition.continuous = true;
                 
                 speechRecognition.onresult = (event) => {
-                    let finalTranscript = '';
+                    interimTranscription = ""; // Сбрасываем старый промежуточный итог
                     for (let i = event.resultIndex; i < event.results.length; ++i) {
-                        if (event.results[i].isFinal) finalTranscript += event.results[i][0].transcript;
+                        if (event.results[i].isFinal) {
+                            // Если слово распознано точно — кидаем в копилку
+                            currentTranscription += event.results[i][0].transcript + ' ';
+                        } else {
+                            // Если движок еще думает над словом — держим в буфере
+                            interimTranscription += event.results[i][0].transcript;
+                        }
                     }
-                    if (finalTranscript) currentTranscription += finalTranscript + ' ';
                 };
+
+                // ФИКС: Если ты сделал паузу, API может уснуть. Мы его будим!
+                speechRecognition.onend = () => {
+                    if (isRecording) speechRecognition.start();
+                };
+
                 speechRecognition.start();
             }
 
@@ -918,8 +933,11 @@
                 
                 document.getElementById('btn-mic').innerText = '🎤';
                 
+                // ФИКС: Склеиваем финальный текст и то, что висело в буфере при нажатии Стоп
+                const finalText = (currentTranscription + interimTranscription).trim();
+                
                 // Передаем файл И текст на шифровку
-                await uploadAndSendVoice(audioBlob, currentTranscription.trim());
+                await uploadAndSendVoice(audioBlob, finalText);
             };
 
             mediaRecorder.start();
