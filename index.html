@@ -196,43 +196,111 @@
         
         const { pipeline, env } = await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.14.0');
         env.allowLocalModels = false;
-        
-        // ФИКС 1: Жестко отключаем многопоточность WASM, чтобы избежать краша на GitHub Pages
         env.backends.onnx.wasm.numThreads = 1;
         
-        const micBtn = document.getElementById('btn-mic');
+        // Перешли на base для отличного качества
+        whisperModel = await pipeline('automatic-speech-recognition', 'Xenova/whisper-base', { quantized: true });
         
-        // ФИКС 2: Добавляем отслеживание прогресса скачивания
-        whisperModel = await pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny', { 
-            quantized: true,
-            progress_callback: (data) => {
-                if (data.status === 'progress') {
-                    // Показываем проценты прямо на кнопке (например: ⬇️ 45%)
-                    micBtn.innerText = `⬇️ ${Math.round(data.progress)}%`;
-                    micBtn.style.fontSize = '14px';
-                }
-            }
-        });
-        
-        micBtn.style.fontSize = ''; // Сбрасываем размер шрифта обратно в норму
         isWhisperLoading = false;
         return whisperModel;
     }
 
-    async function transcribeAudio(audioBlob) {
-        const whisper = await initWhisper();
-        
-        if (audioContext.state === 'suspended') await audioContext.resume();
-        
+    let mediaRecorder;
+    let audioChunks = [];
+    let isRecording = false;
+
+    async function recordVoice() {
+        if (isRecording) {
+            mediaRecorder.stop();
+            return;
+        }
+
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream);
+            audioChunks = [];
+
+            mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+            
+            mediaRecorder.onstop = async () => {
+                stream.getTracks().forEach(track => track.stop());
+                const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
+                isRecording = false;
+                
+                // Возвращаем иконку сразу! Не заставляем юзера ждать.
+                const micBtn = document.getElementById('btn-mic');
+                micBtn.innerText = '🎤';
+                micBtn.style.color = '';
+                
+                // Запускаем фоновый конвейер (без await, чтобы не блочить интерфейс)
+                processBackgroundVoice(audioBlob).catch(e => console.error("Ошибка конвейера ГС:", e));
+            };
+
+            mediaRecorder.start();
+            isRecording = true;
+            
+            const micBtn = document.getElementById('btn-mic');
+            micBtn.innerText = '🛑';
+            micBtn.style.color = '#ff5252';
+            
+            if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
+
+        } catch (err) {
+            alert('Синдикату нужен доступ к микрофону!');
+        }
+    }
+
+    // --- ФОНОВЫЙ КОНВЕЙЕР (Отправка -> Транскрипция -> Вектор -> Апдейт) ---
+    async function processBackgroundVoice(audioBlob) {
+        if (!currentAesKey || !currentChatId) return;
+
+        const fileName = `voice_${Date.now()}_${currentUser.id}.bin`;
+
+        // 1. Шифруем и загружаем аудио-файл
         const arrayBuffer = await audioBlob.arrayBuffer();
-        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-        const audioData = audioBuffer.getChannelData(0);
+        const iv = window.crypto.getRandomValues(new Uint8Array(12));
+        const encryptedContent = await window.crypto.subtle.encrypt(
+            { name: "AES-GCM", iv: iv }, currentAesKey, arrayBuffer
+        );
         
-        const micBtn = document.getElementById('btn-mic');
-        micBtn.innerText = '🧠'; // Показываем мозг, когда идет сам процесс перевода голоса в текст
+        const encryptedBytes = new Uint8Array(encryptedContent);
+        const payload = new Uint8Array(iv.length + encryptedBytes.length);
+        payload.set(iv, 0);
+        payload.set(encryptedBytes, iv.length);
+
+        await supabaseClient.storage.from('voice_messages').upload(fileName, payload, { contentType: 'application/octet-stream' });
+
+        // 2. ОТПРАВКА БЕЗ ТЕКСТА (чтобы ГС сразу появилось в чате)
+        const textMarker = `[VOICE]:${fileName}`;
+        const encryptedPayloadText = await encryptText(textMarker, currentAesKey);
         
-        const output = await whisper(audioData, { language: 'russian', task: 'transcribe' });
-        return output.text;
+        // ВАЖНО: запрашиваем .select().single() чтобы БД вернула нам ID созданного сообщения!
+        const { data: insertedMsg } = await supabaseClient.from('messages').insert([
+            { chat_id: currentChatId, sender_id: currentUser.id, encrypted_text: encryptedPayloadText }
+        ]).select().single();
+
+        if (!insertedMsg) return; // Если не удалось создать — прерываем
+
+        // 3. ФОНОВАЯ ТРАНСКРИПЦИЯ
+        try {
+            const transcribedText = await transcribeAudio(audioBlob);
+            if (!transcribedText || transcribedText.trim() === '') return;
+
+            // 4. ГЕНЕРАЦИЯ И ШИФРОВАНИЕ ВЕКТОРА
+            const encryptedVector = await generateAndEncryptVector(transcribedText, currentAesKey);
+
+            // 5. АПДЕЙТ СООБЩЕНИЯ В БД (Дописываем текст и вектор)
+            const newMarker = `[VOICE]:${fileName}|${transcribedText.trim()}`;
+            const newEncryptedText = await encryptText(newMarker, currentAesKey);
+
+            // Обновляем именно то сообщение, которое создали на Шаге 2
+            await supabaseClient.from('messages')
+                .update({ encrypted_text: newEncryptedText, encrypted_vector: encryptedVector })
+                .eq('id', insertedMsg.id);
+                
+        } catch (e) {
+            console.error("Фоновый процесс транскрипции прерван:", e);
+        }
     }
    
         
@@ -517,16 +585,27 @@
             .subscribe();
     }
     
-    function renderMessage(text, isMine, timeString = "") {
+    // ФИКС: Теперь мы передаем msgId (ID из базы), чтобы уметь обновлять пузырь чата
+    function renderMessage(text, isMine, timeString = "", msgId = null) {
         const area = document.getElementById('messages-area');
-        const div = document.createElement('div');
-        div.className = `msg-bubble ${isMine ? 'msg-mine' : 'msg-other'}`;
+        
+        // Ищем, есть ли уже такое сообщение на экране (для апдейта ГС)
+        let div = msgId ? document.getElementById(`msg-${msgId}`) : null;
+        let isNew = false;
+        
+        if (!div) {
+            div = document.createElement('div');
+            if (msgId) div.id = `msg-${msgId}`;
+            div.className = `msg-bubble ${isMine ? 'msg-mine' : 'msg-other'}`;
+            isNew = true;
+        }
         
         if (text.startsWith('[VOICE]:')) {
-            // Разбиваем маркер: [VOICE]:имя_файла|расшифрованный_текст
             const parts = text.replace('[VOICE]:', '').split('|');
             const fileName = parts[0];
-            const transcription = parts[1] ? `<i>"${parts[1]}"</i>` : '<i style="color:#777">ГС (без текста)</i>';
+            
+            // Если текста еще нет, показываем часики или статус
+            const transcription = parts[1] ? `<i>"${parts[1]}"</i>` : '<i style="color:#777">Анализ голоса... ⏳</i>';
             
             div.innerHTML = `
                 <div style="cursor:pointer; display:flex; align-items:center; gap:8px; padding: 5px; background: rgba(0,0,0,0.15); border-radius: 8px;" 
@@ -548,8 +627,10 @@
             div.appendChild(timeDiv);
         }
         
-        area.appendChild(div);
-        area.scrollTop = area.scrollHeight; 
+        if (isNew) {
+            area.appendChild(div);
+            area.scrollTop = area.scrollHeight; 
+        }
     }
 
 
@@ -857,7 +938,7 @@
                     const plainText = dec.decode(decryptedBuffer);
                     
                     // Рисуем на экране
-                    renderMessage(plainText, msg.sender_id === currentUser.id, timeStr);
+                    renderMessage(plainText, msg.sender_id === currentUser.id, timeStr, msg.id);
                 } catch (e) {
                     renderMessage("🔒 [Ошибка расшифровки истории]", msg.sender_id === currentUser.id);
                 }
@@ -900,15 +981,15 @@
         if (currentChatSubscription) supabaseClient.removeChannel(currentChatSubscription);
 
         currentChatSubscription = supabaseClient.channel('private-chat')
-            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `chat_id=eq.${currentChatId}` },
+            // ФИКС: Слушаем ВСЕ события (и INSERT, и UPDATE)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `chat_id=eq.${currentChatId}` },
                 async (payload) => {
                     const newMsg = payload.new;
-
-                    // Берем время прямо из свежего сообщения
+                    if (!newMsg || !newMsg.encrypted_text) return; // Защита от эвента DELETE
+                    
                     const msgDate = new Date(newMsg.created_at);
                     const timeStr = msgDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                     
-                    // РАСШИФРОВКА
                     const rawData = atob(newMsg.encrypted_text);
                     const bytes = new Uint8Array(rawData.length);
                     for (let i = 0; i < rawData.length; i++) bytes[i] = rawData.charCodeAt(i);
@@ -919,9 +1000,10 @@
                     try {
                         const decryptedBuffer = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: iv }, currentAesKey, data);
                         const plainText = dec.decode(decryptedBuffer);
-                        renderMessage(plainText, newMsg.sender_id === currentUser.id, timeStr);
+                        // Передаем newMsg.id для апдейта на лету
+                        renderMessage(plainText, newMsg.sender_id === currentUser.id, timeStr, newMsg.id);
                     } catch (e) {
-                        renderMessage("🔒 [Ошибка]", newMsg.sender_id === currentUser.id);
+                        renderMessage("🔒 [Ошибка]", newMsg.sender_id === currentUser.id, timeStr, newMsg.id);
                     }
                 }
             ).subscribe();
@@ -1041,6 +1123,10 @@
         loadMyStatus(); 
         loadFriends(); 
         loadMyCurrencies();
+        // Ленивая загрузка тяжелой ИИ-модели в фоне
+        setTimeout(() => {
+            initWhisper().catch(e => console.log("Фоновая загрузка Whisper провалена:", e));
+        }, 2000); // Ждем 2 секунды после отрисовки интерфейса, чтобы не лагало
     }
 
 
