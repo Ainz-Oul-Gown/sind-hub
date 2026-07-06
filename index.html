@@ -1111,18 +1111,53 @@
         try {
             // Пробуем разобрать как словарь устройств
             const keysDict = JSON.parse(keyData.encrypted_key);
-            // Ищем ключ конкретно для нашего устройства (или легаси ключ, если чат старый)
+            // Ищем ключ конкретно для нашего устройства
             myEncryptedKey = keysDict[deviceId] || keysDict["legacy_dev"] || keysDict["legacy"];
         } catch (e) {
-            // Если в базе лежит просто старая строка Base64 (старые чаты до обновы)
+            // Поддержка старых чатов
             myEncryptedKey = keyData.encrypted_key;
         }
 
+        // --- ИСПРАВЛЕННЫЙ БЛОК: СМЕНА КЛЮЧЕЙ ДЛЯ НОВОГО УСТРОЙСТВА ---
         if (!myEncryptedKey) {
-            document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:#ff5252; padding: 20px;">🔒 История скрыта.<br>Этот чат был создан до того, как ты подключил это устройство.</div>';
+            document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:#ff9800; padding: 20px;">🔒 История скрыта для этого устройства.<br><span style="font-size:12px; color:#aaa;">Генерация новых ключей для продолжения общения...</span></div>';
+            
+            // 1. Создаем НОВЫЙ ключ для этой комнаты
+            currentAesKey = await generateChatKey();
+
+            // 2. Скачиваем ВСЕ публичные ключи (мои и друга)
+            const { data: friendData } = await supabaseClient.from('users').select('public_key').eq('tg_id', currentFriend.id).single();
+            const { data: myData } = await supabaseClient.from('users').select('public_key').eq('tg_id', currentUser.id).single();
+
+            // 3. Шифруем новый ключ для всех устройств друга
+            let friendKeys = JSON.parse(friendData.public_key);
+            if (friendKeys.kty) friendKeys = { "legacy": friendKeys };
+            let encKeysForFriend = {};
+            for (const [devId, pubJwk] of Object.entries(friendKeys)) {
+                encKeysForFriend[devId] = await encryptChatKeyForFriend(currentAesKey, pubJwk);
+            }
+
+            // 4. Шифруем новый ключ для всех МОИХ устройств (включая это новое)
+            let myKeys = JSON.parse(myData.public_key);
+            if (myKeys.kty) myKeys = { "legacy": myKeys };
+            let encKeysForMe = {};
+            for (const [devId, pubJwk] of Object.entries(myKeys)) {
+                encKeysForMe[devId] = await encryptChatKeyForFriend(currentAesKey, pubJwk);
+            }
+
+            // 5. Перезаписываем ключи в базе (Смена эпохи)
+            await supabaseClient.from('chat_keys').update({ encrypted_key: JSON.stringify(encKeysForFriend) }).eq('chat_id', currentChatId).eq('user_id', currentFriend.id);
+            await supabaseClient.from('chat_keys').update({ encrypted_key: JSON.stringify(encKeysForMe) }).eq('chat_id', currentChatId).eq('user_id', currentUser.id);
+
+            document.getElementById('messages-area').innerHTML += '<div style="text-align:center; color:#4caf50; margin-top: 10px;">✅ Канал обновлен. Можно писать!</div>';
+            
+            // Запускаем вебсокеты (раньше они тут обрывались)
+            subscribeToPrivateMessages();
             return;
         }
+        // -------------------------------------------------------------
 
+        // Если ключ найден - расшифровываем как обычно
         currentAesKey = await decryptChatKey(myEncryptedKey);
         document.getElementById('messages-area').innerHTML = '';
 
@@ -1140,10 +1175,11 @@
                     const decryptedBuffer = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.slice(0, 12) }, currentAesKey, bytes.slice(12));
                     renderMessage(dec.decode(decryptedBuffer), msg.sender_id === currentUser.id, timeStr, msg.id);
                 } catch (e) {
-                    renderMessage("🔒 [Ошибка расшифровки]", msg.sender_id === currentUser.id);
+                    renderMessage("🔒 [История скрыта]", msg.sender_id === currentUser.id, timeStr, msg.id);
                 }
             }
         }
+        
         subscribeToPrivateMessages();
     }
 
