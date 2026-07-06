@@ -545,8 +545,9 @@
     let startX = 0; 
     let startY = 0; 
     let recStartTime = 0;
+    let pauseStartTime = 0; // <--- ДОБАВИТЬ ЭТУ СТРОКУ
     let recTimerInterval = null;
-    let isPointerDown = false; 
+    let isPointerDown = false;
 
     async function startVoiceHold(e) {
         // Добавляем стили один раз. Они изолированы и не сломают остальной дизайн
@@ -736,6 +737,9 @@
         mediaRecorder.pause();
         isPaused = true;
         
+        // Запоминаем точное время, когда мы ушли на паузу
+        pauseStartTime = Date.now(); 
+        
         document.getElementById('v-locked-rec-ui').classList.remove('active');
         document.getElementById('v-locked-pause-ui').classList.add('active');
     }
@@ -745,10 +749,17 @@
         mediaRecorder.resume();
         isPaused = false;
         
+        // Вычисляем, сколько миллисекунд мы простояли на паузе, 
+        // и сдвигаем время старта записи вперед на это значение.
+        if (pauseStartTime > 0) {
+            recStartTime += (Date.now() - pauseStartTime);
+            pauseStartTime = 0; // Сбрасываем для будущих пауз
+        }
+        
         document.getElementById('v-locked-pause-ui').classList.remove('active');
         document.getElementById('v-locked-rec-ui').classList.add('active');
     }
-
+    
     function cancelRecording() {
         isCancelled = true;
         window.shouldSendVoice = false;
