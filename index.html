@@ -99,6 +99,9 @@
         </div>
 
         <h3 style="color: #999;">Братва:</h3>
+        <button class="btn" style="background-color: #ff9800; margin-bottom: 15px;" onclick="setupTestRoom()">
+            🛠 Выковать ключ чата (Дебаг)
+        </button>
         <div id="friends-list">Загрузка...</div>
     </div>
 
@@ -166,6 +169,28 @@
     let currentUser = null; 
     let currentFriend = null; 
 
+    async function setupTestRoom() {
+        const testChatId = "00000000-0000-0000-0000-000000000001"; // Тот самый ID из SQL
+        let aesKey = await idbKeyval.get('current_chat_key');
+    
+        // Если ключа еще нет (первый запуск), куем его локально
+        if (!aesKey) {
+            console.log("Генерируем тестовый AES-ключ чата...");
+            aesKey = await window.crypto.subtle.generateKey(
+                { name: "AES-GCM", length: 256 },
+                true,
+                ["encrypt", "decrypt"]
+            );
+            await idbKeyval.set('current_chat_key', aesKey);
+            alert("✅ Ключ успешно выкован!");
+        } else {
+            console.log("Ключ уже есть в памяти.");
+        }
+        
+        // Запускаем прослушку входящих сообщений
+        listenForMessages(testChatId, aesKey);
+    }
+        
     async function setupTestRoom() {
         const testChatId = "00000000-0000-0000-0000-000000000001"; // Тот самый ID из SQL
         let aesKey = await idbKeyval.get('current_chat_key');
@@ -446,7 +471,11 @@ async function authUser() {
 
     // Если авторизация прошла успешно, запускаем проверку крипто-брони!
     if (isAuthorized && currentUser && currentUser.id) {
+        // 1. Проверяем личную броню (RSA)
         await checkCryptoKeys(currentUser.id);
+        
+        // 2. Генерируем ключ от чата (AES) и слушаем новые сообщения
+        await setupTestRoom(); // <--- ДОБАВЬ ЭТУ СТРОЧКУ!
         return true;
     }
 
