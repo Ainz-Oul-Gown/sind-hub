@@ -548,6 +548,57 @@
     let pauseStartTime = 0; // <--- ДОБАВИТЬ ЭТУ СТРОКУ
     let recTimerInterval = null;
     let isPointerDown = false;
+    let vAudioContext = null;
+    let vAnalyser = null;
+    let vMicrophone = null;
+    let volumeHistory = []; // Тут будем хранить историю громкости
+    let lastVolumeSampleTime = 0;
+
+    
+    function renderWaveform() {
+        const waveContainer = document.querySelector('.v-wave');
+        if (!waveContainer) return;
+        
+        waveContainer.innerHTML = ''; // Очищаем старые ||||||
+        waveContainer.style.display = 'flex';
+        waveContainer.style.alignItems = 'center';
+        waveContainer.style.justifyContent = 'space-between';
+        waveContainer.style.gap = '2px';
+        waveContainer.style.height = '24px'; 
+        
+        const BARS = 30; // Количество точек/палочек
+        let buckets = new Array(BARS).fill(0);
+        
+        if (volumeHistory.length > 0) {
+            // Разбиваем всю историю записи на 30 равных отрезков
+            const step = volumeHistory.length / BARS;
+            for (let i = 0; i < BARS; i++) {
+                let start = Math.floor(i * step);
+                let end = Math.floor((i + 1) * step);
+                if (end === start) end = start + 1; 
+                
+                let sum = 0, count = 0;
+                for (let j = start; j < end && j < volumeHistory.length; j++) {
+                    sum += volumeHistory[j];
+                    count++;
+                }
+                buckets[i] = count > 0 ? sum / count : 0;
+            }
+        }
+        
+        // Рисуем 30 палочек
+        buckets.forEach(vol => {
+            // vol (громкость) от 0 до 255. Высота палочки от 3px до 24px
+            let h = 3 + (vol / 255) * 21; 
+            const bar = document.createElement('div');
+            bar.style.width = '3px';
+            bar.style.height = `${h}px`;
+            bar.style.backgroundColor = 'rgba(255,255,255,0.8)';
+            bar.style.borderRadius = '2px';
+            waveContainer.appendChild(bar);
+        });
+    }
+
 
     async function startVoiceHold(e) {
         // Добавляем стили один раз. Они изолированы и не сломают остальной дизайн
@@ -669,6 +720,50 @@
                     <div class="v-send" onclick="stopAndSendRecording()"><i class="fas fa-paper-plane"></i></div>
                 </div>
             `;
+
+            // === НОВЫЙ БЛОК: АНАЛИЗАТОР ГРОМКОСТИ ===
+            volumeHistory = [];
+            lastVolumeSampleTime = Date.now();
+            try {
+                if (!vAudioContext) vAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+                if (vAudioContext.state === 'suspended') vAudioContext.resume();
+                if (!vAnalyser) {
+                    vAnalyser = vAudioContext.createAnalyser();
+                    vAnalyser.fftSize = 256;
+                    vMicrophone = vAudioContext.createMediaStreamSource(globalAudioStream);
+                    vMicrophone.connect(vAnalyser);
+                }
+                const dataArray = new Uint8Array(vAnalyser.frequencyBinCount);
+                
+                function trackVolume() {
+                    if (!isRecording) return; // Останавливаем луп, если запись окончена
+                    
+                    if (!isPaused) {
+                        vAnalyser.getByteFrequencyData(dataArray);
+                        let sum = 0;
+                        for(let i=0; i<dataArray.length; i++) sum += dataArray[i];
+                        let avgVolume = sum / dataArray.length; // Значение от 0 до 255
+                        
+                        // 1. Анимация самолетика (пульсация)
+                        const planes = document.querySelectorAll('.v-send');
+                        // Базовый размер 1, увеличивается до 1.3 в зависимости от громкости
+                        let scale = 1 + (avgVolume / 255) * 0.3; 
+                        planes.forEach(plane => {
+                            plane.style.transform = `scale(${scale}) rotate(-15deg)`;
+                        });
+                        
+                        // 2. Сбор истории для вейвформы
+                        const now = Date.now();
+                        if (now - lastVolumeSampleTime > 100) { // Пишем точку каждые 100мс
+                            volumeHistory.push(avgVolume);
+                            lastVolumeSampleTime = now;
+                        }
+                    }
+                    requestAnimationFrame(trackVolume);
+                }
+                trackVolume(); // Запускаем петлю
+            } catch(e) { console.warn("Аудио анализатор не запустился:", e); }
+            // =========================================
             
             // Один таймер на все три слоя
             recTimerInterval = setInterval(() => {
@@ -736,12 +831,13 @@
         if (!isRecording || isPaused) return;
         mediaRecorder.pause();
         isPaused = true;
-        
-        // Запоминаем точное время, когда мы ушли на паузу
         pauseStartTime = Date.now(); 
         
         document.getElementById('v-locked-rec-ui').classList.remove('active');
         document.getElementById('v-locked-pause-ui').classList.add('active');
+        
+        // ДОБАВЛЕНА ЭТА СТРОКА: Рисуем график при паузе
+        renderWaveform();
     }
 
     function resumeRecording() {
@@ -749,12 +845,13 @@
         mediaRecorder.resume();
         isPaused = false;
         
-        // Вычисляем, сколько миллисекунд мы простояли на паузе, 
-        // и сдвигаем время старта записи вперед на это значение.
         if (pauseStartTime > 0) {
             recStartTime += (Date.now() - pauseStartTime);
-            pauseStartTime = 0; // Сбрасываем для будущих пауз
+            pauseStartTime = 0; 
         }
+
+        // ДОБАВЛЕНА ЭТА СТРОКА: Сброс таймера для сбора громкости
+        lastVolumeSampleTime = Date.now();
         
         document.getElementById('v-locked-pause-ui').classList.remove('active');
         document.getElementById('v-locked-rec-ui').classList.add('active');
