@@ -259,8 +259,12 @@
                 
                 <!-- Кнопка Микрофон/Отправка -->
                 <button class="btn-dynamic mode-mic" id="btn-input-action" 
-                        ontouchstart="startVoiceHold(event)" ontouchmove="moveVoiceHold(event)" ontouchend="endVoiceHold(event)"
-                        onmousedown="startVoiceHold(event)" onmousemove="moveVoiceHold(event)" onmouseup="endVoiceHold(event)">
+                        ontouchstart="window.isPointerDown=true; startVoiceHold(event)" 
+                        ontouchmove="moveVoiceHold(event)" 
+                        ontouchend="window.isPointerDown=false; endVoiceHold(event)"
+                        onmousedown="window.isPointerDown=true; startVoiceHold(event)" 
+                        onmousemove="moveVoiceHold(event)" 
+                        onmouseup="window.isPointerDown=false; endVoiceHold(event)">
                     <i class="fas fa-microphone"></i>
                 </button>
             </div>
@@ -297,6 +301,78 @@
         return str.replace(/[&<>'"]/g,
             tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag])
         );
+    }
+
+    async function performSearch() {
+        const query = document.getElementById('search-input').value.trim();
+        const resultsDiv = document.getElementById('search-results');
+        const isSemantic = document.getElementById('semantic-toggle').checked;
+        const threshold = parseFloat(document.getElementById('semantic-slider').value);
+
+        if (!query || !currentChatId) return;
+        resultsDiv.innerHTML = '<div style="color: var(--primary); text-align: center; padding: 20px;"><i class="fas fa-spinner fa-spin fa-2x"></i></div>';
+
+        const { data: history } = await supabaseClient.from('messages').select('encrypted_text, encrypted_vector, created_at').eq('chat_id', currentChatId);
+        if (!history || history.length === 0) { resultsDiv.innerHTML = '<div style="color: var(--muted); text-align:center;">Чат пуст.</div>'; return; }
+
+        let results = [];
+        let queryVector = null;
+
+        if (isSemantic) {
+            resultsDiv.innerHTML = '<div style="color: var(--success); text-align: center; padding: 20px;"><i class="fas fa-brain fa-fade fa-2x"></i><br>Подгружаем ИИ-модель (до 40мб)...</div>';
+            try {
+                const ai = await initAI();
+                resultsDiv.innerHTML = '<div style="color: var(--success); text-align: center; padding: 20px;"><i class="fas fa-brain fa-fade fa-2x"></i><br>Анализ смысла...</div>';
+                const output = await ai(query, { pooling: 'mean', normalize: true });
+                queryVector = output.data; 
+            } catch(e) {
+                resultsDiv.innerHTML = '<div style="color: var(--danger); text-align:center;">Ошибка загрузки ИИ. Проверь интернет.</div>'; return;
+            }
+        }
+
+        for (const msg of history) {
+            try {
+                const rawData = atob(msg.encrypted_text);
+                const bytes = new Uint8Array(rawData.length);
+                for (let i = 0; i < rawData.length; i++) bytes[i] = rawData.charCodeAt(i);
+                const decryptedTextBuffer = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.slice(0, 12) }, currentAesKey, bytes.slice(12));
+                let plainText = dec.decode(decryptedTextBuffer);
+                
+                let displayText = plainText;
+                if (plainText.startsWith('[VOICE]:')) {
+                    const parts = plainText.replace('[VOICE]:', '').split('|');
+                    displayText = parts[1] ? `🎤 ${parts[1]}` : '🎤 ГС';
+                }
+
+                if (isSemantic && msg.encrypted_vector) {
+                    const vecRaw = atob(msg.encrypted_vector);
+                    const vecBytes = new Uint8Array(vecRaw.length);
+                    for (let i = 0; i < vecRaw.length; i++) vecBytes[i] = vecRaw.charCodeAt(i);
+                    const decryptedVecBuffer = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: vecBytes.slice(0, 12) }, currentAesKey, vecBytes.slice(12));
+                    const msgVector = new Float32Array(decryptedVecBuffer); 
+                    const score = cosineSimilarity(queryVector, msgVector);
+                    if (score >= threshold) results.push({ text: displayText, score: score, time: msg.created_at });
+                } else if (!isSemantic) {
+                    if (displayText.toLowerCase().includes(query.toLowerCase())) results.push({ text: displayText, score: 1, time: msg.created_at });
+                }
+            } catch (e) {
+                // Если не получилось расшифровать одно сообщение - просто идем дальше, не ломая весь поиск
+            }
+        }
+
+        if (results.length === 0) { resultsDiv.innerHTML = '<div style="color: var(--muted); text-align: center; padding: 20px;"><i class="fas fa-ghost fa-2x"></i><br>Ничего не найдено.</div>'; return; }
+        if (isSemantic) results.sort((a, b) => b.score - a.score);
+        else results.sort((a, b) => new Date(b.time) - new Date(a.time));
+
+        resultsDiv.innerHTML = results.map(r => `
+            <div style="padding: 12px; background: rgba(255,255,255,0.05); border-radius: 12px; margin-bottom: 8px;">
+                <div style="color: #fff; margin-bottom: 6px; font-size: 15px;">${escapeHTML(r.text)}</div>
+                <div style="color: var(--muted); display: flex; justify-content: space-between; font-size: 12px;">
+                    <span>${new Date(r.time).toLocaleDateString()} ${new Date(r.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                    ${isSemantic ? `<span style="color:var(--success);"><i class="fas fa-bullseye"></i> ${(r.score * 100).toFixed(0)}%</span>` : ''}
+                </div>
+            </div>
+        `).join('');
     }
     
     function getAvatarGradient(id) {
@@ -368,22 +444,29 @@
         return `${min}:${sec.toString().padStart(2, '0')}`;
     }
 
-    // НАЖАЛИ
+    // ФИКС: Глобально следим, убрал ли юзер палец
+    document.addEventListener('mouseup', () => window.isPointerDown = false);
+    document.addEventListener('touchend', () => window.isPointerDown = false);
+
     async function startVoiceHold(e) {
-        // Если это кнопка отправки текста, не запускаем голос
         if (document.getElementById('btn-input-action').classList.contains('mode-send')) {
-            if (e.type === 'mousedown') sendPrivateMessage();
+            if (e.type === 'mousedown' || e.type === 'touchstart') sendPrivateMessage();
             return;
         }
 
-        e.preventDefault(); // Чтоб телефон не пытался выделить текст
+        e.preventDefault(); 
         if (isRecording) return;
         
         startY = e.touches ? e.touches[0].clientY : e.clientY;
         isRecordingLocked = false;
         
         try {
-            if (!globalAudioStream) globalAudioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            if (!globalAudioStream) {
+                globalAudioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                // ФИКС: Если пока мы ждали разрешения (попап), юзер убрал палец — отменяем запись!
+                if (!window.isPointerDown) return; 
+            }
+            
             mediaRecorder = new MediaRecorder(globalAudioStream);
             audioChunks = [];
             mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
@@ -395,7 +478,6 @@
                 const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
                 isRecording = false;
                 
-                // Если запись отменена или длилась меньше 1 секунды - просто удаляем
                 if (Date.now() - recStartTime < 1000 || !window.shouldSendVoice) return;
                 if (audioBlob.size > 15 * 1024 * 1024) return alert('Сообщение больше 15 МБ');
                 
@@ -407,7 +489,6 @@
             window.shouldSendVoice = false; 
             recStartTime = Date.now();
             
-            // Включаем UI записи
             document.getElementById('record-overlay').classList.add('active');
             document.getElementById('record-hint').style.display = 'flex';
             document.getElementById('record-locked-actions').classList.remove('active');
@@ -419,7 +500,7 @@
 
             const btn = document.getElementById('btn-input-action');
             btn.innerHTML = '<i class="fas fa-microphone"></i>';
-            btn.style.transform = 'scale(1.3)'; // Увеличиваем кнопку пока держим
+            btn.style.transform = 'scale(1.3)'; 
 
             if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
         } catch (err) { alert('Нет доступа к микрофону!'); }
@@ -1035,7 +1116,11 @@
     }
 
     async function openDebtModal() {
-        document.getElementById('debt-rubles').value = ''; document.getElementById('debt-result').innerText = '0';
+        // ФИКС: Скрываем модалку чата перед переходом на экран долгов
+        document.getElementById('modal-debts').classList.remove('active');
+        
+        document.getElementById('debt-rubles').value = ''; 
+        document.getElementById('debt-result').innerText = '0';
         const { data: friendCurrencies } = await supabaseClient.from('currencies').select('*').eq('owner_id', currentFriend.id);
         const select = document.getElementById('debt-currency');
         select.innerHTML = '';
