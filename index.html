@@ -4,99 +4,171 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Синдикат-Хаб</title>
-    <!-- Скрипт Телеграма -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <!-- Скрипт Supabase -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
-        /* Берем цвета прямо из темы Телеграма пользователя! */
         body {
-            font-family: sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             background-color: var(--tg-theme-bg-color, #181818);
             color: var(--tg-theme-text-color, #ffffff);
-            padding: 20px;
+            padding: 15px;
+            margin: 0;
+        }
+        .header { text-align: center; margin-bottom: 20px; }
+        
+        .status-box {
+            background-color: var(--tg-theme-secondary-bg-color, #2c2c2c);
+            padding: 15px;
+            border-radius: 12px;
             text-align: center;
+            margin-bottom: 25px;
         }
         button {
             background-color: var(--tg-theme-button-color, #2481cc);
             color: var(--tg-theme-button-text-color, #ffffff);
             border: none;
-            padding: 15px 20px;
-            border-radius: 10px;
+            padding: 12px 15px;
+            border-radius: 8px;
             font-size: 16px;
-            width: 100%;
-            margin-top: 20px;
+            width: 48%;
+            margin-top: 10px;
+            font-weight: bold;
         }
-        .status-box {
-            margin-top: 20px;
-            padding: 20px;
-            border-radius: 10px;
+        .btn-busy { background-color: #e53935; }
+
+        /* Стили для списка друзей */
+        h3 { margin-bottom: 10px; color: var(--tg-theme-hint-color, #999); font-size: 14px; text-transform: uppercase; }
+        
+        .friends-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .friend-card {
             background-color: var(--tg-theme-secondary-bg-color, #2c2c2c);
+            padding: 15px;
+            border-radius: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: background-color 0.3s;
         }
+        .friend-name { font-weight: 600; font-size: 16px; }
+        .friend-status { font-size: 14px; background: rgba(0,0,0,0.2); padding: 5px 10px; border-radius: 20px; }
     </style>
 </head>
 <body>
-<h2>Синдикат-Хаб 🕵️‍♂️</h2>
-<div id="user-info">Загрузка...</div>
+    <div class="header">
+        <h2 style="margin: 0;">Синдикат 🕵️‍♂️</h2>
+        <div id="user-info" style="color: var(--tg-theme-hint-color, #999); font-size: 14px;">Загрузка...</div>
+    </div>
+    
+    <div class="status-box">
+        <p style="margin: 0 0 10px 0;">Твой статус: <strong id="current-status">...</strong></p>
+        <div style="display: flex; justify-content: space-between;">
+            <button onclick="setStatus('🟢 Свободен')">Свободен</button>
+            <button onclick="setStatus('🔴 Занят')" class="btn-busy">Занят</button>
+        </div>
+    </div>
 
-<div class="status-box">
-    <p>Твой статус: <strong id="current-status">?</strong></p>
-    <button onclick="setStatus('Свободен 🟢')">Я свободен</button>
-    <button onclick="setStatus('Занят 🔴')" style="background-color: #cc2424; margin-top: 10px;">Я занят</button>
-</div>
+    <!-- Список бандитов -->
+    <h3>Участники</h3>
+    <div class="friends-list" id="friends-container">
+        <!-- Сюда JS будет вставлять карточки друзей -->
+    </div>
 
-<script>
-    // Инициализируем Телеграм
-    const tg = window.Telegram.WebApp;
-    tg.expand(); // Открываем на весь экран
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand(); 
 
-    // ПОДСТАВЬ СВОИ ДАННЫЕ ИЗ SUPABASE
-    const SUPABASE_URL = 'https://cqhndgtiqdjzzrqdzrfq.supabase.co';
-    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaG5kZ3RpcWRqenpycWR6cmZxIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MzI4NzE3MCwiZXhwIjoyMDk4ODYzMTcwfQ.OMiry_4g_5Bn5VzjoA79V_MGnccm1x5D-Yne1Wc49Sw';
-    // ИСПРАВЛЕНО ТУТ: назвали переменную supabaseClient
-    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        // !!! ВСТАВЬ СВОИ КЛЮЧИ !!!
+        const SUPABASE_URL = 'https://cqhndgtiqdjzzrqdzrfq.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaG5kZ3RpcWRqenpycWR6cmZxIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MzI4NzE3MCwiZXhwIjoyMDk4ODYzMTcwfQ.OMiry_4g_5Bn5VzjoA79V_MGnccm1x5D-Yne1Wc49Sw';
+    
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    const user = tg.initDataUnsafe?.user;
+        const user = tg.initDataUnsafe?.user;
 
-    async function initApp() {
-        if (!user) {
-            document.getElementById('user-info').innerText = "Открой через Телеграм!";
-            return;
+        async function initApp() {
+            if (!user) {
+                document.getElementById('user-info').innerText = "Запусти через бота!";
+                return;
+            }
+
+            document.getElementById('user-info').innerText = `@${user.username || user.first_name}`;
+
+            // 1. Обновляем инфу о себе
+            const { data } = await supabaseClient
+                .from('users')
+                .upsert({ tg_id: user.id, first_name: user.first_name }, { onConflict: 'tg_id' })
+                .select();
+
+            if (data && data[0]) {
+                document.getElementById('current-status').innerText = data[0].status || 'Свободен';
+            }
+
+            // 2. Загружаем список всех братюнь
+            loadFriends();
+
+            // 3. Врубаем магию Realtime
+            subscribeToRealtime();
         }
 
-        document.getElementById('user-info').innerHTML = `Привет, <b>${user.first_name}</b>!`;
-
-        // ИСПРАВЛЕНО ТУТ: используем supabaseClient
-        const { data, error } = await supabaseClient
-            .from('users')
-            .upsert({ 
-                tg_id: user.id, 
-                first_name: user.first_name 
-            }, { onConflict: 'tg_id' })
-            .select();
-
-        if (data && data[0] && data[0].status) {
-            document.getElementById('current-status').innerText = data[0].status;
+        async function setStatus(newStatus) {
+            tg.HapticFeedback.impactOccurred('light');
+            document.getElementById('current-status').innerText = newStatus;
+            
+            await supabaseClient
+                .from('users')
+                .update({ status: newStatus })
+                .eq('tg_id', user.id);
         }
-    }
 
-    // Функция смены статуса
-    async function setStatus(newStatus) {
-        document.getElementById('current-status').innerText = "Обновляю...";
-        
-        // ИСПРАВЛЕНО ТУТ: используем supabaseClient
-        await supabaseClient
-            .from('users')
-            .update({ status: newStatus })
-            .eq('tg_id', user.id);
+        // Загрузка друзей из базы
+        async function loadFriends() {
+            const { data, error } = await supabaseClient
+                .from('users')
+                .select('*');
 
-        document.getElementById('current-status').innerText = newStatus;
-        
-        // Вибрация телефона при успешном нажатии
-        tg.HapticFeedback.impactOccurred('light');
-    }
+            if (error) return console.error(error);
 
-    initApp();
-</script>
+            const container = document.getElementById('friends-container');
+            container.innerHTML = '';
+
+            data.forEach(friend => {
+                // Себя в списке не выводим
+                if (friend.tg_id === user.id) return;
+
+                container.innerHTML += `
+                    <div class="friend-card">
+                        <span class="friend-name">${friend.first_name || 'Инкогнито'}</span>
+                        <span class="friend-status" id="status-${friend.tg_id}">${friend.status || 'Свободен'}</span>
+                    </div>
+                `;
+            });
+        }
+
+        // Подписка на изменения в реальном времени
+        function subscribeToRealtime() {
+            supabaseClient
+                .channel('public:users')
+                .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'users' }, payload => {
+                    const updatedUser = payload.new;
+                    
+                    // Если статус сменил кто-то другой (находим его бейджик)
+                    const statusBadge = document.getElementById(`status-${updatedUser.tg_id}`);
+                    if (statusBadge) {
+                        statusBadge.innerText = updatedUser.status;
+                        
+                        // Легкая анимация мигания (опционально)
+                        statusBadge.style.backgroundColor = 'rgba(255, 255, 255, 0.5)';
+                        setTimeout(() => statusBadge.style.backgroundColor = 'rgba(0,0,0,0.2)', 300);
+                    }
+                })
+                .subscribe();
+        }
+
+        initApp();
+    </script>
 </body>
 </html>
