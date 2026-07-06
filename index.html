@@ -1009,65 +1009,7 @@
             ).subscribe();
     }
 
-    // --- МОДУЛЬ ЗАПИСИ И ШИФРОВАНИЯ ГОЛОСА ---
-     // --- МОДУЛЬ ЗАПИСИ ---
-    let mediaRecorder;
-    let audioChunks = [];
-    let isRecording = false;
-
-    async function recordVoice() {
-        if (isRecording) {
-            mediaRecorder.stop();
-            return;
-        }
-
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            mediaRecorder = new MediaRecorder(stream);
-            audioChunks = [];
-
-            mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
-            
-            mediaRecorder.onstop = async () => {
-                stream.getTracks().forEach(track => track.stop());
-                
-                // ФИКС 3: Явно говорим нейросети, в каком формате браузер записал звук
-                const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
-                isRecording = false;
-                
-                const micBtn = document.getElementById('btn-mic');
-                micBtn.innerText = '⏳';
-                micBtn.style.color = '#ff9800';
-                
-                try {
-                    console.log("Анализ голоса...");
-                    const transcribedText = await transcribeAudio(audioBlob);
-                    console.log("Текст ГС:", transcribedText);
-                    await uploadAndSendVoice(audioBlob, transcribedText.trim());
-                } catch (e) {
-                    console.error("Ошибка транскрипции, отправляем как есть:", e);
-                    // Если ИИ упал, отправляем глухое ГС
-                    await uploadAndSendVoice(audioBlob, ""); 
-                } finally {
-                    // ФИКС 4: Железобетонный возврат кнопки при любом исходе
-                    micBtn.innerText = '🎤';
-                    micBtn.style.color = '';
-                }
-            };
-
-            mediaRecorder.start();
-            isRecording = true;
-            
-            const micBtn = document.getElementById('btn-mic');
-            micBtn.innerText = '🛑';
-            micBtn.style.color = '#ff5252';
-            
-            if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
-
-        } catch (err) {
-            alert('Синдикату нужен доступ к микрофону!');
-        }
-    }
+    
 
     async function uploadAndSendVoice(audioBlob, transcription) {
         if (!currentAesKey || !currentChatId) return;
