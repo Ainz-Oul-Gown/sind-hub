@@ -303,7 +303,15 @@
 
         // 3. ФОНОВАЯ ТРАНСКРИПЦИЯ И АПДЕЙТ
         try {
-            const transcribedText = await transcribeAudio(audioBlob);
+            // Распаковываем аудио для ИИ-воркера
+            if (audioContext.state === 'suspended') await audioContext.resume();
+            const rawAudioBuffer = await audioBlob.arrayBuffer(); // Берем свежий буфер
+            const decodedAudio = await audioContext.decodeAudioData(rawAudioBuffer);
+            const audioFloat32 = decodedAudio.getChannelData(0); // Получаем массив частот
+
+            // Кидаем математику в соседнее ядро и ждем результат (UI в этот момент ИДЕАЛЬНО ПЛАВНЫЙ)
+            const transcribedText = await transcribeViaWorker(audioFloat32);
+
             if (!transcribedText || transcribedText.trim() === '') {
                 throw new Error("ИИ не услышал слов");
             }
