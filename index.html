@@ -76,6 +76,11 @@
     <div class="friends-list" id="friends-container">
         <!-- Сюда JS будет вставлять карточки друзей -->
     </div>
+    
+    <h3>Долги мне:</h3>
+    <div class="friends-list" id="debts-container">
+        <div class="friend-card" style="justify-content: center; color: #999;">Нет должников</div>
+    </div>
 
     <script>
         const tg = window.Telegram.WebApp;
@@ -90,29 +95,64 @@
         const user = tg.initDataUnsafe?.user;
 
         async function initApp() {
-            if (!user) {
-                document.getElementById('user-info').innerText = "Запусти через бота!";
-                return;
-            }
+    if (!user) return;
+    document.getElementById('user-info').innerText = `@${user.username || user.first_name}`;
 
-            document.getElementById('user-info').innerText = `@${user.username || user.first_name}`;
+    // 1. Сохраняем ЮЗЕРНЕЙМ, чтобы бот мог искать
+    await supabaseClient
+        .from('users')
+        .upsert({ 
+            tg_id: user.id, 
+            first_name: user.first_name,
+            username: user.username // Добавили сохранение username
+        }, { onConflict: 'tg_id' });
 
-            // 1. Обновляем инфу о себе
-            const { data } = await supabaseClient
-                .from('users')
-                .upsert({ tg_id: user.id, first_name: user.first_name }, { onConflict: 'tg_id' })
-                .select();
+    // 2. Получаем текущий статус
+    const { data: statusData } = await supabaseClient.from('users').select('status').eq('tg_id', user.id).single();
+    if (statusData) document.getElementById('current-status').innerText = statusData.status || 'Свободен';
 
-            if (data && data[0]) {
-                document.getElementById('current-status').innerText = data[0].status || 'Свободен';
-            }
+    loadFriends();
+    loadDebts(); // Загружаем долги!
+    subscribeToRealtime();
+}
 
-            // 2. Загружаем список всех братюнь
-            loadFriends();
+// Загрузка ДОЛГОВ
+async function loadDebts() {
+    // Ищем долги, где я КРЕДИТОР
+    const { data: debts, error } = await supabaseClient
+        .from('debts')
+        .select('*')
+        .eq('creditor_id', user.id);
 
-            // 3. Врубаем магию Realtime
-            subscribeToRealtime();
-        }
+    if (error) return console.error(error);
+
+    const container = document.getElementById('debts-container');
+    
+    if (debts.length === 0) {
+        container.innerHTML = '<div class="friend-card" style="justify-content: center; color: #999;">Никто ничего не должен</div>';
+        return;
+    }
+
+    container.innerHTML = '';
+    
+    // Получаем имена должников
+    for (const debt of debts) {
+        const { data: debtor } = await supabaseClient
+            .from('users')
+            .select('first_name')
+            .eq('tg_id', debt.debtor_id)
+            .single();
+
+        const debtorName = debtor ? debtor.first_name : 'Неизвестный';
+
+        container.innerHTML += `
+            <div class="friend-card">
+                <span class="friend-name">${debtorName}</span>
+                <span style="font-weight: bold; color: #ffeb3b;">${debt.amount} ${debt.currency}</span>
+            </div>
+        `;
+    }
+}
 
         async function setStatus(newStatus) {
             tg.HapticFeedback.impactOccurred('light');
