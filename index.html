@@ -321,16 +321,26 @@
     }
 
     async function checkCryptoKeys(userId) {
-        // Проверяем, есть ли приватный ключ в локальной базе браузера
+        // 1. Проверяем локальный приватный ключ
         const privateKey = await idbKeyval.get('my_private_key');
         
-        if (!privateKey) {
-            console.log("Ключи не найдены. Выковываем новую крипто-броню...");
-            // Функция генерации ключей, которую мы обсуждали ранее
+        // 2. Проверяем, есть ли публичный ключ в БД
+        const { data: userData } = await supabaseClient
+            .from('users')
+            .select('public_key')
+            .eq('tg_id', userId)
+            .single();
+            
+        const isDbKeyMissing = !userData || !userData.public_key;
+
+        // Если нет локального ключа ИЛИ ключа в базе — куем заново!
+        if (!privateKey || isDbKeyMissing) {
+            console.log("Броня повреждена или отсутствует. Выковываем новую...");
+            
             const publicKeyJwk = await generatePersonalArmor(); 
             
-            // Отправляем публичный ключ в новую колонку таблицы users
-            const { error } = await supabase
+            // ВАЖНО: используем supabaseClient, а не supabase
+            const { error } = await supabaseClient
                 .from('users')
                 .update({ public_key: JSON.stringify(publicKeyJwk) })
                 .eq('tg_id', userId);
@@ -341,7 +351,7 @@
                 console.log("Публичный сейф успешно загружен в Supabase!");
             }
         } else {
-            console.log("Крипто-броня активна, ключи на месте.");
+            console.log("Крипто-броня активна, ключи на месте в браузере и в БД.");
         }
     }
 
