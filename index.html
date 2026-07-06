@@ -99,7 +99,7 @@
             font-size: 16px; resize: none; overflow-y: auto; max-height: 120px; line-height: 20px; min-height: 42px;
         }
         
-        .btn-dynamic { width: 42px; height: 42px; border-radius: 50%; border: none; font-size: 18px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1); flex-shrink: 0;}
+        .btn-dynamic { width: 42px; height: 42px; border-radius: 50%; border: none; font-size: 18px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1); flex-shrink: 0; outline: none; -webkit-tap-highlight-color: transparent;}
         .btn-dynamic.mode-mic { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
         .btn-dynamic.mode-send { background: var(--primary); color: white; transform: rotate(-15deg); }
         
@@ -108,17 +108,26 @@
         .record-overlay.active { opacity: 1; pointer-events: auto; }
         .record-timer { color: var(--danger); font-weight: 600; display: flex; align-items: center; gap: 8px; font-variant-numeric: tabular-nums;}
         .record-timer i { animation: blink 1s infinite; }
+        .record-timer.paused i { animation: none; opacity: 1; color: var(--text); }
         .record-slide-hint { color: var(--muted); font-size: 14px; display: flex; align-items: center; gap: 6px; animation: slideUpHint 1.5s infinite; }
         
-        /* Кнопки при заблокированной записи */
-        .record-locked-actions { display: none; gap: 10px; }
+        /* Новый дизайн локнутого ГС */
+        /* Новый дизайн локнутого ГС */
+        .record-locked-actions { display: none; width: 100%; justify-content: space-between; align-items: center; padding: 0 10px;}
         .record-locked-actions.active { display: flex; }
-        .btn-rec-cancel { background: transparent; color: var(--danger); border: none; font-size: 16px; font-weight: 600; padding: 10px; cursor: pointer; }
-        .btn-rec-send { background: var(--primary); color: white; border: none; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; cursor: pointer; }
+        
+        .btn-rec-action { width: 42px; height: 42px; border-radius: 50%; border: none; display: flex; align-items: center; justify-content: center; font-size: 18px; cursor: pointer; outline: none; -webkit-tap-highlight-color: transparent; transition: 0.2s;}
+        .btn-rec-action:active { transform: scale(0.9); }
+        .btn-rec-cancel { background: rgba(255, 69, 58, 0.15); color: var(--danger); }
+        .btn-rec-send { background: var(--primary); color: white; transform: rotate(-15deg); margin-left: auto; }
+        .btn-rec-resume { background: var(--surface); color: var(--text); border: 1px solid var(--border); margin: 0 15px; }
+        
+        .record-timer.paused i { animation: none; opacity: 1; color: var(--danger); display: none; }
 
         @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
         @keyframes slideUpHint { 0% { transform: translateY(0); opacity: 0.5; } 50% { transform: translateY(-5px); opacity: 1; } 100% { transform: translateY(0); opacity: 0.5; } }
 
+        
         /* Кастомный ГС UI */
         .voice-player { display: flex; align-items: center; gap: 12px; padding: 4px 6px 4px 4px; background: rgba(0,0,0,0.15); border-radius: 24px; cursor: pointer; margin-bottom: 6px; width: fit-content; }
         .voice-play-btn { width: 36px; height: 36px; background: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--primary); font-size: 14px; transition: 0.2s; box-shadow: 0 2px 5px rgba(0,0,0,0.2); flex-shrink: 0;}
@@ -254,12 +263,23 @@
             <div class="chat-input-area">
                 <!-- Оверлей записи ГС -->
                 <div id="record-overlay" class="record-overlay">
-                    <div class="record-timer" id="record-timer"><i class="fas fa-microphone"></i> <span>0:00</span></div>
-                    <div class="record-slide-hint" id="record-hint"><i class="fas fa-chevron-up"></i> Свайп для лока</div>
+                    
+                    <!-- Меню во время паузы (Корзина - Таймер - Микрофон - Отправить) -->
                     <div class="record-locked-actions" id="record-locked-actions">
-                        <button class="btn-rec-cancel" onclick="cancelRecording()">Отмена</button>
-                        <button class="btn-rec-send" onclick="stopAndSendRecording()"><i class="fas fa-arrow-up"></i></button>
+                        <button class="btn-rec-action btn-rec-cancel" onclick="cancelRecording()"><i class="fas fa-trash-alt"></i></button>
+                        
+                        <div class="record-timer paused" id="record-timer-paused" style="margin-left: 15px;"><span>0:00</span></div>
+                        
+                        <button class="btn-rec-action btn-rec-resume" onclick="resumeRecording()"><i class="fas fa-microphone"></i></button>
+                        <button class="btn-rec-action btn-rec-send" onclick="stopAndSendRecording()"><i class="fas fa-paper-plane"></i></button>
                     </div>
+
+                    <!-- Стандартный вид (Таймер слева, Подсказка по центру) -->
+                    <div class="record-slide-hint" id="record-hint" style="width: 100%; display: flex; justify-content: space-between; align-items: center;">
+                        <div class="record-timer" id="record-timer-live"><i class="fas fa-microphone"></i> <span>0:00</span></div>
+                        <div style="display: flex; gap: 6px; align-items: center; margin-right: 20px;"><i class="fas fa-chevron-up"></i> Свайп для лока</div>
+                    </div>
+                    
                 </div>
 
                 <textarea id="chat-input" rows="1" placeholder="Сообщение..." oninput="autoResizeInput()"></textarea>
@@ -503,16 +523,18 @@
 
     // --- НОВАЯ МЕХАНИКА ГОЛОСОВЫХ (КАК В ТГ) ---
     // --- ИДЕАЛЬНАЯ МЕХАНИКА ГОЛОСОВЫХ (POINTER EVENTS) ---
+    // --- ИДЕАЛЬНАЯ МЕХАНИКА ГОЛОСОВЫХ (POINTER EVENTS) ---
     let mediaRecorder;
     let audioChunks = [];
     let isRecording = false;
     let isRecordingLocked = false;
+    let isPaused = false;
     let globalAudioStream = null;
     
     let startY = 0;
     let recStartTime = 0;
     let recTimerInterval = null;
-    let isPointerDown = false; // Жесткий контроль пальца
+    let isPointerDown = false; 
 
     function formatTime(ms) {
         const totalSec = Math.floor(ms / 1000);
@@ -524,34 +546,27 @@
     async function startVoiceHold(e) {
         const btn = document.getElementById('btn-input-action');
         
-        // 1. Если это кнопка отправки текста — просто отправляем и выходим!
-        if (btn.classList.contains('mode-send')) {
-            sendPrivateMessage();
+        // 1. Текст
+        if (btn.classList.contains('mode-send')) { sendPrivateMessage(); return; }
+
+        // 2. Если уже залочили запись — эта кнопка теперь работает как ПАУЗА (Стоп)
+        if (isRecordingLocked) {
+            pauseRecording();
             return;
         }
 
-        // 2. Блокируем множественные нажатия
+        // Блокируем двойные нажатия
         if (isRecording || isPointerDown) return;
         isPointerDown = true;
         
-        // "Захватываем" палец, чтобы он не потерялся, если юзер уведет его с кнопки
         btn.setPointerCapture(e.pointerId);
         startY = e.clientY;
         
-        // 3. Если прав на микрофон еще нет
         if (!globalAudioStream) {
-            try {
-                globalAudioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            } catch (err) {
-                alert("Пожалуйста, разрешите доступ к микрофону!");
-                isPointerDown = false;
-                return;
-            }
-            // Если юзер отпустил палец, пока висело системное окно "Разрешить?"
+            try { globalAudioStream = await navigator.mediaDevices.getUserMedia({ audio: true }); } 
+            catch (err) { alert("Пожалуйста, разрешите доступ к микрофону!"); isPointerDown = false; return; }
             if (!isPointerDown) return;
         }
-        
-        isRecordingLocked = false;
         
         try {
             mediaRecorder = new MediaRecorder(globalAudioStream);
@@ -562,14 +577,18 @@
                 clearInterval(recTimerInterval);
                 document.getElementById('record-overlay').classList.remove('active');
                 
-                // Всегда возвращаем интерфейс кнопки в исходное состояние
+                // Сброс интерфейса
                 btn.innerHTML = '<i class="fas fa-microphone"></i>';
                 btn.style.transform = 'scale(1)'; 
+                btn.style.background = 'var(--surface)';
+                btn.style.color = 'var(--text)';
+                document.getElementById('record-timer').classList.remove('paused');
                 
                 const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
                 isRecording = false;
+                isPaused = false;
+                isRecordingLocked = false;
                 
-                // Если меньше секунды или отменили — игнорируем
                 if (Date.now() - recStartTime < 1000 || !window.shouldSendVoice) return;
                 if (audioBlob.size > 15 * 1024 * 1024) return alert('Сообщение слишком большое (Макс 15 МБ)');
                 
@@ -578,38 +597,49 @@
             
             mediaRecorder.start();
             isRecording = true;
+            isPaused = false;
             window.shouldSendVoice = false; 
             recStartTime = Date.now();
             
-            // Включаем интерфейс записи
+            // UI
             document.getElementById('record-overlay').classList.add('active');
             document.getElementById('record-hint').style.display = 'flex';
             document.getElementById('record-locked-actions').classList.remove('active');
-            document.getElementById('record-timer').querySelector('span').innerText = '0:00';
+            document.getElementById('record-timer-live').querySelector('span').innerText = '0:00';
+            document.getElementById('record-timer-paused').querySelector('span').innerText = '0:00';
             
             recTimerInterval = setInterval(() => {
-                document.getElementById('record-timer').querySelector('span').innerText = formatTime(Date.now() - recStartTime);
+                if (!isPaused) {
+                    const timeStr = formatTime(Date.now() - recStartTime);
+                    document.getElementById('record-timer-live').querySelector('span').innerText = timeStr;
+                    document.getElementById('record-timer-paused').querySelector('span').innerText = timeStr;
+                }
             }, 500);
 
+            // Кнопка увеличивается при удержании
             btn.innerHTML = '<i class="fas fa-microphone"></i>';
-            btn.style.transform = 'scale(1.3)'; 
+            btn.style.transform = 'scale(1.4)'; 
             if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
             
-        } catch (err) { alert('Ошибка инициализации микрофона!'); isPointerDown = false; }
+        } catch (err) { isPointerDown = false; }
     }
 
     function moveVoiceHold(e) {
         if (!isRecording || isRecordingLocked || !isPointerDown) return;
 
-        // Если потянули палец вверх на 40 пикселей - ЛОК!
+        // Свайп вверх на 40px
         if (startY - e.clientY > 40) {
             isRecordingLocked = true;
+            
+            // Меняем UI
             document.getElementById('record-hint').style.display = 'none';
-            document.getElementById('record-locked-actions').classList.add('active');
             
             const btn = document.getElementById('btn-input-action');
-            btn.style.transform = 'scale(1)'; 
-            btn.innerHTML = '<i class="fas fa-lock"></i>';
+            btn.style.transform = 'scale(1)'; // Возвращаем размер
+            btn.innerHTML = '<i class="fas fa-square"></i>'; // Кнопка СТОП
+            btn.style.background = 'var(--danger)';
+            btn.style.color = 'white';
+            
             if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
         }
     }
@@ -617,28 +647,63 @@
     function endVoiceHold(e) {
         isPointerDown = false;
         const btn = document.getElementById('btn-input-action');
-        
-        // Отпускаем захват пальца
         try { if (e && e.pointerId) btn.releasePointerCapture(e.pointerId); } catch(err) {}
         
         if (!isRecording) return;
-        btn.style.transform = 'scale(1)';
         
-        // Если ГС заблокировано свайпом, просто ждем пока юзер нажмет "Отмена" или "Отправить"
-        if (isRecordingLocked) return; 
+        // Если мы залочили ГС свайпом - просто оставляем всё как есть, ждем нажатия СТОП
+        if (isRecordingLocked) {
+            btn.style.transform = 'scale(1)';
+            return;
+        }
         
-        // Если не залочили — останавливаем и отправляем
+        // Если не залочили - просто отправляем!
         window.shouldSendVoice = true;
         mediaRecorder.stop();
     }
 
+    // --- ЛОГИКА ЗАБЛОКИРОВАННОГО ГС ---
+    function pauseRecording() {
+        if (!isRecording || isPaused) return;
+        mediaRecorder.pause();
+        isPaused = true;
+        
+        // Обновляем таймер
+        const timer = document.getElementById('record-timer');
+        timer.classList.add('paused');
+        timer.querySelector('i').className = 'fas fa-microphone-slash';
+        
+        // Показываем кнопки "Корзина", "Микрофон", "Отправить"
+        document.getElementById('record-locked-actions').classList.add('active');
+        
+        // Прячем центральную кнопку ввода
+        document.getElementById('btn-input-action').style.display = 'none';
+    }
+
+    function resumeRecording() {
+        if (!isRecording || !isPaused) return;
+        mediaRecorder.resume();
+        isPaused = false;
+        
+        // Возвращаем таймер
+        const timer = document.getElementById('record-timer');
+        timer.classList.remove('paused');
+        timer.querySelector('i').className = 'fas fa-microphone';
+        
+        // Прячем меню паузы, возвращаем центральную кнопку "СТОП"
+        document.getElementById('record-locked-actions').classList.remove('active');
+        document.getElementById('btn-input-action').style.display = 'flex';
+    }
+
     function cancelRecording() {
         window.shouldSendVoice = false;
+        document.getElementById('btn-input-action').style.display = 'flex'; // Возвращаем кнопку на место
         if (isRecording) mediaRecorder.stop();
     }
     
     function stopAndSendRecording() {
         window.shouldSendVoice = true;
+        document.getElementById('btn-input-action').style.display = 'flex'; // Возвращаем кнопку на место
         if (isRecording) mediaRecorder.stop();
     }
 
