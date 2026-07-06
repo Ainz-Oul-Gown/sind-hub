@@ -320,67 +320,38 @@
         area.scrollTop = area.scrollHeight; // Скролл вниз
     }
 
-    async function checkCryptoKeys(userId) {
-        // 1. Проверяем локальный приватный ключ
-        const privateKey = await idbKeyval.get('my_private_key');
-        
-        // 2. Проверяем, есть ли публичный ключ в БД
-        const { data: userData } = await supabaseClient
-            .from('users')
-            .select('public_key')
-            .eq('tg_id', userId)
-            .single();
-            
-        const isDbKeyMissing = !userData || !userData.public_key;
+    
 
-        // Если нет локального ключа ИЛИ ключа в базе — куем заново!
-        if (!privateKey || isDbKeyMissing) {
-            console.log("Броня повреждена или отсутствует. Выковываем новую...");
-            
-            const publicKeyJwk = await generatePersonalArmor(); 
-            
-            // ВАЖНО: используем supabaseClient, а не supabase
-            const { error } = await supabaseClient
-                .from('users')
-                .update({ public_key: JSON.stringify(publicKeyJwk) })
-                .eq('tg_id', userId);
-                
-            if (error) {
-                console.error("Ошибка загрузки ключа в базу:", error);
-            } else {
-                console.log("Публичный сейф успешно загружен в Supabase!");
-            }
-        } else {
-            console.log("Крипто-броня активна, ключи на месте в браузере и в БД.");
-        }
+    // 1. ПРИ ГЕНЕРАЦИИ СОХРАНЯЕМ С ID ПОЛЬЗОВАТЕЛЯ
+    async function generatePersonalArmor(userId) {
+        const keyPair = await window.crypto.subtle.generateKey(
+            { name: "RSA-OAEP", modulusLength: 4096, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" },
+            true, ["encrypt", "decrypt"]
+        );
+        
+        // ФИКС: У каждого юзера теперь свой личный сейф в памяти телефона
+        await idbKeyval.set(`my_private_key_${userId}`, keyPair.privateKey);
+        
+        const exportedPublicKey = await window.crypto.subtle.exportKey("jwk", keyPair.publicKey);
+        return exportedPublicKey;
     }
 
-    async function generatePersonalArmor() {
-        // 1. Генерируем RSA-пару (Публичный и Приватный)
-        const keyPair = await window.crypto.subtle.generateKey(
-            {
-                name: "RSA-OAEP",
-                modulusLength: 4096,
-                publicExponent: new Uint8Array([1, 0, 1]),
-                hash: "SHA-256"
-            },
-            true, // Публичный можно будет экспортировать
-            ["encrypt", "decrypt"]
-        );
-    
-        // 2. Прячем Приватный ключ в IndexedDB намертво!
-        // extractable: false мы не ставим на этапе генерации RSA-OAEP для простоты работы с IDB,
-        // но IDB сама по себе защитит объект от XSS.
-        await idbKeyval.set('my_private_key', keyPair.privateKey);
-    
-        // 3. Экспортируем Публичный ключ в строку (чтобы отправить в Supabase)
-        const exportedPublicKey = await window.crypto.subtle.exportKey(
-            "jwk",
-            keyPair.publicKey
-        );
-    
-        // TODO: Записать exportedPublicKey в таблицу users в Supabase
-        return exportedPublicKey;
+    // 2. ПРИ ПРОВЕРКЕ ИЩЕМ КЛЮЧ КОНКРЕТНОГО ПОЛЬЗОВАТЕЛЯ
+    async function checkCryptoKeys(userId) {
+        // ФИКС: Ищем по ID
+        const privateKey = await idbKeyval.get(`my_private_key_${userId}`);
+        
+        const { data: userData } = await supabaseClient.from('users').select('public_key').eq('tg_id', userId).single();
+        const isDbKeyMissing = !userData || !userData.public_key;
+
+        if (!privateKey || isDbKeyMissing) {
+            console.log("Броня повреждена или отсутствует. Выковываем новую...");
+            // ФИКС: Передаем userId в генератор
+            const publicKeyJwk = await generatePersonalArmor(userId); 
+            
+            const { error } = await supabaseClient.from('users').update({ public_key: JSON.stringify(publicKeyJwk) }).eq('tg_id', userId);
+            if (error) console.error("Ошибка загрузки ключа в базу:", error);
+        }
     }
 
     async function generateChatKey() {
@@ -418,17 +389,17 @@
     }
 
     // НАДЁЖНОЕ РАСШИФРОВЫВАНИЕ КЛЮЧА ЧАТА (Из Base64 обратно в байты)
+    // 3. ПРИ РАСШИФРОВКЕ ДОСТАЕМ ИМЕННО СВОЙ КЛЮЧ
     async function decryptChatKey(encryptedKeyBase64) {
-        const myPrivateKey = await idbKeyval.get('my_private_key');
+        // ФИКС: Достаем ключ текущего юзера
+        const myPrivateKey = await idbKeyval.get(`my_private_key_${currentUser.id}`);
 
-        // ФИКС: Декодируем строку Base64 из базы обратно в массив байт (Uint8Array)
         const binaryString = atob(encryptedKeyBase64);
         const encryptedKeyBuffer = new Uint8Array(binaryString.length);
         for (let i = 0; i < binaryString.length; i++) {
             encryptedKeyBuffer[i] = binaryString.charCodeAt(i);
         }
 
-        // Теперь крипто-движок получит честные байты, а не текст
         const rawChatKey = await window.crypto.subtle.decrypt(
             { name: "RSA-OAEP" },
             myPrivateKey,
