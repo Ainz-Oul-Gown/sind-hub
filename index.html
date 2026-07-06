@@ -462,9 +462,7 @@
         if (isAuthorized && currentUser && currentUser.id) {
             // 1. Проверяем личную броню (RSA)
             await checkCryptoKeys(currentUser.id);
-            
-            // 2. Генерируем ключ от чата (AES) и слушаем новые сообщения
-            await setupTestRoom(); // <--- ДОБАВЬ ЭТУ СТРОЧКУ!
+
             return true;
         }
     
@@ -551,17 +549,50 @@
     }
 
     async function loadExistingChat() {
-        // Достаем НАШ зашифрованный экземпляр ключа от этой комнаты
+        // 1. Достаем НАШ зашифрованный экземпляр ключа от этой комнаты
         const { data: keyData } = await supabaseClient.from('chat_keys')
             .select('encrypted_key').eq('chat_id', currentChatId).eq('user_id', currentUser.id).single();
 
-        // Вскрываем его своим приватным ключом из IndexedDB
+        // 2. Вскрываем его своим приватным ключом из IndexedDB
         currentAesKey = await decryptChatKey(keyData.encrypted_key);
         
-        document.getElementById('messages-area').innerHTML = ''; // Очищаем статус
+        // Очищаем статус "Подключение..."
+        document.getElementById('messages-area').innerHTML = ''; 
         
-        // TODO: Здесь можно добавить подгрузку старых сообщений из БД (decryptText)
+        // 3. ПОДГРУЗКА ИСТОРИИ ИЗ БАЗЫ
+        const { data: history } = await supabaseClient.from('messages')
+            .select('*')
+            .eq('chat_id', currentChatId)
+            .order('created_at', { ascending: true }); // Сортируем от старых к новым
 
+        if (history && history.length > 0) {
+            for (const msg of history) {
+                try {
+                    // Разбиваем Base64 обратно в байты
+                    const rawData = atob(msg.encrypted_text);
+                    const bytes = new Uint8Array(rawData.length);
+                    for (let i = 0; i < rawData.length; i++) bytes[i] = rawData.charCodeAt(i);
+
+                    const iv = bytes.slice(0, 12);
+                    const data = bytes.slice(12);
+
+                    // Расшифровываем AES-ключом
+                    const decryptedBuffer = await window.crypto.subtle.decrypt(
+                        { name: "AES-GCM", iv: iv }, 
+                        currentAesKey, 
+                        data
+                    );
+                    const plainText = dec.decode(decryptedBuffer);
+                    
+                    // Рисуем на экране
+                    renderMessage(plainText, msg.sender_id === currentUser.id);
+                } catch (e) {
+                    renderMessage("🔒 [Ошибка расшифровки истории]", msg.sender_id === currentUser.id);
+                }
+            }
+        }
+
+        // 4. Запускаем прослушку новых сообщений
         subscribeToPrivateMessages();
     }
 
