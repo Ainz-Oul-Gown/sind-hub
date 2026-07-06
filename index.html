@@ -1166,15 +1166,18 @@
 
         if (history && history.length > 0) {
             for (const msg of history) {
+                // ФИКС: Вынесли время за пределы try-catch!
+                const msgDate = new Date(msg.created_at);
+                const timeStr = msgDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                
                 try {
-                    const msgDate = new Date(msg.created_at);
-                    const timeStr = msgDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                     const rawData = atob(msg.encrypted_text);
                     const bytes = new Uint8Array(rawData.length);
                     for (let i = 0; i < rawData.length; i++) bytes[i] = rawData.charCodeAt(i);
                     const decryptedBuffer = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.slice(0, 12) }, currentAesKey, bytes.slice(12));
                     renderMessage(dec.decode(decryptedBuffer), msg.sender_id === currentUser.id, timeStr, msg.id);
                 } catch (e) {
+                    // Теперь timeStr отлично читается здесь
                     renderMessage("🔒 [История скрыта]", msg.sender_id === currentUser.id, timeStr, msg.id);
                 }
             }
