@@ -394,8 +394,8 @@
     }
 
     // publicJwk - это публичный ключ друга из БД Supabase
+    // НАДЁЖНОЕ ШИФРОВАНИЕ КЛЮЧА ЧАТА (Конвертируем в Base64)
     async function encryptChatKeyForFriend(chatKey, friendPublicJwk) {
-        // 1. Собираем Публичный ключ друга обратно из строки
         const friendPublicKey = await window.crypto.subtle.importKey(
             "jwk",
             friendPublicJwk,
@@ -403,43 +403,46 @@
             true,
             ["encrypt"]
         );
-    
-        // 2. Достаем сырые байты нашего AES-ключа
+
         const rawChatKey = await window.crypto.subtle.exportKey("raw", chatKey);
-    
-        // 3. Шифруем AES-ключ Публичным ключом друга (кладем в сейф)
+
         const encryptedKeyBuffer = await window.crypto.subtle.encrypt(
             { name: "RSA-OAEP" },
             friendPublicKey,
             rawChatKey
         );
-    
-        // Эту абракадабру (encryptedKeyBuffer) ты отправляешь в БД Supabase
-        // в таблицу chat_keys: { user_id: 'SANYA_ID', encrypted_key: '...' }
-        return encryptedKeyBuffer; 
+
+        // ФИКС: Переводим бинарный ArrayBuffer в безопасную Base64 строку
+        const bytes = new Uint8Array(encryptedKeyBuffer);
+        return btoa(String.fromCharCode.apply(null, bytes));
     }
 
-    async function decryptChatKey(encryptedKeyBuffer) {
-        // 1. Достаем свой Приватный ключ из "невидимого сейфа" браузера
+    // НАДЁЖНОЕ РАСШИФРОВЫВАНИЕ КЛЮЧА ЧАТА (Из Base64 обратно в байты)
+    async function decryptChatKey(encryptedKeyBase64) {
         const myPrivateKey = await idbKeyval.get('my_private_key');
-    
-        // 2. Вскрываем посылку (Расшифровываем AES-ключ)
+
+        // ФИКС: Декодируем строку Base64 из базы обратно в массив байт (Uint8Array)
+        const binaryString = atob(encryptedKeyBase64);
+        const encryptedKeyBuffer = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+            encryptedKeyBuffer[i] = binaryString.charCodeAt(i);
+        }
+
+        // Теперь крипто-движок получит честные байты, а не текст
         const rawChatKey = await window.crypto.subtle.decrypt(
             { name: "RSA-OAEP" },
             myPrivateKey,
             encryptedKeyBuffer
         );
-    
-        // 3. Превращаем сырые байты обратно в рабочий Crypto-объект
+
         const chatKey = await window.crypto.subtle.importKey(
             "raw",
             rawChatKey,
             { name: "AES-GCM", length: 256 },
-            false, // ВАЖНО! Больше он телефон не покинет
+            false,
             ["encrypt", "decrypt"]
         );
-    
-        // Теперь Саня может читать и писать сообщения в чат с помощью chatKey
+
         return chatKey;
     }
         
