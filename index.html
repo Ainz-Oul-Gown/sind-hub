@@ -81,6 +81,14 @@
             cursor: pointer;
             padding: 5px 10px;
         }
+        .msg-time {
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.5);
+            text-align: right;
+            margin-top: 4px;
+            margin-bottom: -4px;
+            user-select: none;
+        }
     </style>
 </head>
 <body>
@@ -118,7 +126,11 @@
 
     <!-- ЭКРАН 3: ПРОФИЛЬ ДРУГА И ЛС -->
     <div id="screen-friend" class="screen">
-        <div class="header-nav"><span class="back-btn" onclick="switchScreen('screen-main')">⬅</span> <span id="friend-name-title">Друг</span></div>
+        
+        <div class="header-nav" style="justify-content: space-between;">
+            <div><span class="back-btn" onclick="switchScreen('screen-main')">⬅</span> <span id="friend-name-title">Друг</span></div>
+            <span style="cursor:pointer; font-size: 20px;" onclick="document.getElementById('search-panel').style.display = document.getElementById('search-panel').style.display === 'none' ? 'block' : 'none'">🔍</span>
+        </div>
         
         <div class="card">
             <h3 style="margin-top:0; margin-bottom: 5px;">Сводка долгов</h3>
@@ -128,6 +140,23 @@
 
         <!-- ЧАТ С ДРУГОМ -->
         <div class="chat-container">
+            <!-- ПАНЕЛЬ ПОИСКА -->
+            <div id="search-panel" style="display: none; padding: 10px; background: #222; border-bottom: 1px solid #333;">
+                <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                    <input type="text" id="search-input" placeholder="Найти в переписке..." style="margin: 0; padding: 8px;">
+                    <button onclick="performSearch()" style="width: auto; padding: 8px 15px;">🔍</button>
+                </div>
+                <div style="display: flex; align-items: center; justify-content: space-between; font-size: 14px;">
+                    <label style="color: #bbb; display: flex; align-items: center; gap: 5px;">
+                        <input type="checkbox" id="semantic-toggle" onchange="toggleSlider()"> ИИ-поиск
+                    </label>
+                    <div id="slider-container" style="display: none; align-items: center; gap: 5px; color: #777;">
+                        Точность: <input type="range" id="semantic-slider" min="0.3" max="0.8" step="0.1" value="0.4" style="width: 70px; margin: 0;">
+                    </div>
+                </div>
+                <div id="search-results" style="max-height: 150px; overflow-y: auto; margin-top: 10px; font-size: 13px;"></div>
+            </div>
+            
             <div class="messages-area" id="messages-area">
                 <div style="text-align:center; color:#777; margin-top: 20px;">Подключение к защищенному каналу...</div>
             </div>
@@ -152,7 +181,180 @@
         </div>
     </div>
 
-    <script>
+    <script type="module">
+
+    // Вычисление сходства векторов (от -1 до 1, где 1 — идеальное совпадение)
+    function cosineSimilarity(vecA, vecB) {
+        let dotProduct = 0, normA = 0, normB = 0;
+        for (let i = 0; i < vecA.length; i++) {
+            dotProduct += vecA[i] * vecB[i];
+            normA += vecA[i] * vecA[i];
+            normB += vecB[i] * vecB[i];
+        }
+        if (normA === 0 || normB === 0) return 0;
+        return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+    }
+
+    async function performSearch() {
+        const query = document.getElementById('search-input').value.trim();
+        const resultsDiv = document.getElementById('search-results');
+        const isSemantic = document.getElementById('semantic-toggle').checked;
+        const threshold = parseFloat(document.getElementById('semantic-slider').value);
+
+        if (!query || !currentChatId) return;
+        resultsDiv.innerHTML = '<div style="color: #ff9800; text-align: center;">Взлом истории сообщений...</div>';
+
+        // 1. Скачиваем все сообщения из комнаты
+        const { data: history } = await supabaseClient.from('messages')
+            .select('encrypted_text, encrypted_vector, created_at')
+            .eq('chat_id', currentChatId);
+
+        if (!history || history.length === 0) {
+            resultsDiv.innerHTML = '<div style="color: #777;">Чат пуст.</div>';
+            return;
+        }
+
+        let results = [];
+        let queryVector = null;
+
+        // 2. Если ИИ-поиск, векторизуем запрос
+        if (isSemantic) {
+            resultsDiv.innerHTML = '<div style="color: #ff9800; text-align: center;">Анализ смысла запроса...</div>';
+            const ai = await initAI();
+            const output = await ai(query, { pooling: 'mean', normalize: true });
+            queryVector = output.data; // Float32Array
+        }
+
+        resultsDiv.innerHTML = '<div style="color: #ff9800; text-align: center;">Сравнение данных...</div>';
+
+        // 3. Расшифровываем и ищем
+        for (const msg of history) {
+            try {
+                // Расшифровываем ТЕКСТ
+                const rawData = atob(msg.encrypted_text);
+                const bytes = new Uint8Array(rawData.length);
+                for (let i = 0; i < rawData.length; i++) bytes[i] = rawData.charCodeAt(i);
+                
+                const decryptedTextBuffer = await window.crypto.subtle.decrypt(
+                    { name: "AES-GCM", iv: bytes.slice(0, 12) }, currentAesKey, bytes.slice(12)
+                );
+                let plainText = dec.decode(decryptedTextBuffer);
+                
+                // Очищаем маркеры ГС для красивого отображения
+                let displayText = plainText;
+                if (plainText.startsWith('[VOICE]:')) {
+                    const parts = plainText.replace('[VOICE]:', '').split('|');
+                    displayText = parts[1] ? `🎤 ${parts[1]}` : '🎤 Зашифрованное ГС';
+                }
+
+                if (isSemantic && msg.encrypted_vector) {
+                    // ИИ ПОИСК: Расшифровываем ВЕКТОР
+                    const vecRaw = atob(msg.encrypted_vector);
+                    const vecBytes = new Uint8Array(vecRaw.length);
+                    for (let i = 0; i < vecRaw.length; i++) vecBytes[i] = vecRaw.charCodeAt(i);
+                    
+                    const decryptedVecBuffer = await window.crypto.subtle.decrypt(
+                        { name: "AES-GCM", iv: vecBytes.slice(0, 12) }, currentAesKey, vecBytes.slice(12)
+                    );
+                    const msgVector = new Float32Array(decryptedVecBuffer); // Превращаем байты обратно в числа
+                    
+                    // Сравниваем смысл
+                    const score = cosineSimilarity(queryVector, msgVector);
+                    if (score >= threshold) {
+                        results.push({ text: displayText, score: score, time: msg.created_at });
+                    }
+                } else if (!isSemantic) {
+                    // ОБЫЧНЫЙ ПОИСК: Ищем подстроку
+                    if (displayText.toLowerCase().includes(query.toLowerCase())) {
+                        results.push({ text: displayText, score: 1, time: msg.created_at });
+                    }
+                }
+            } catch (e) {
+                console.error("Пропуск битого сообщения при поиске");
+            }
+        }
+
+        // 4. Отрисовка результатов
+        if (results.length === 0) {
+            resultsDiv.innerHTML = '<div style="color: #777; text-align: center;">Ничего не найдено.</div>';
+            return;
+        }
+
+        // Сортируем: ИИ-поиск по точности совпадения, обычный по дате
+        if (isSemantic) {
+            results.sort((a, b) => b.score - a.score);
+        } else {
+            results.sort((a, b) => new Date(b.time) - new Date(a.time));
+        }
+
+        resultsDiv.innerHTML = results.map(r => `
+            <div style="padding: 8px; background: #2a2a2a; border-radius: 6px; margin-bottom: 5px;">
+                <div style="color: #fff; margin-bottom: 3px;">${r.text}</div>
+                <div style="color: #777; display: flex; justify-content: space-between;">
+                    <span>${new Date(r.time).toLocaleDateString()} ${new Date(r.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                    ${isSemantic ? `<span style="color:#4caf50;">Точность: ${(r.score * 100).toFixed(0)}%</span>` : ''}
+                </div>
+            </div>
+        `).join('');
+    }
+
+    // Показ ползунка только если включен ИИ-поиск
+    function toggleSlider() {
+        const isChecked = document.getElementById('semantic-toggle').checked;
+        document.getElementById('slider-container').style.display = isChecked ? 'flex' : 'none';
+    }
+    // --- ИНИЦИАЛИЗАЦИЯ ИИ ДЛЯ RAG ---
+    import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.14.0';
+    
+    // Отключаем локальные пути, чтобы грузилось из CDN Hugging Face
+    env.allowLocalModels = false;
+    
+    // --- ИИ: ЭМБЕДДИНГИ ДЛЯ ПОИСКА (RAG) ---
+    let extractor = null;
+    let isAiLoading = false;
+
+    async function initAI() {
+        if (extractor) return extractor;
+        if (isAiLoading) {
+            while (isAiLoading) await new Promise(r => setTimeout(r, 100));
+            return extractor;
+        }
+        
+        isAiLoading = true;
+        console.log("Загрузка ИИ-модели для векторов...");
+        
+        // Динамический импорт Transformers.js (не ломает старый код)
+        const { pipeline, env } = await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.14.0');
+        env.allowLocalModels = false;
+        
+        extractor = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', { quantized: true });
+        isAiLoading = false;
+        return extractor;
+    }
+
+    async function generateAndEncryptVector(text, aesKey) {
+        const ai = await initAI();
+        
+        // Генерируем вектор из текста
+        const output = await ai(text, { pooling: 'mean', normalize: true });
+        const arrayBuffer = output.data.buffer; // Float32Array -> бинарный буфер
+        
+        // Шифруем вектор нашим AES-ключом комнаты
+        const iv = window.crypto.getRandomValues(new Uint8Array(12));
+        const encryptedContent = await window.crypto.subtle.encrypt(
+            { name: "AES-GCM", iv: iv }, aesKey, arrayBuffer
+        );
+        
+        // Склеиваем IV и шифр, пакуем в Base64 для базы
+        const encryptedBytes = new Uint8Array(encryptedContent);
+        const payload = new Uint8Array(iv.length + encryptedBytes.length);
+        payload.set(iv, 0);
+        payload.set(encryptedBytes, iv.length);
+        
+        return btoa(String.fromCharCode.apply(null, payload));
+    }
+
+        
     const tg = window.Telegram.WebApp;
     tg.expand(); 
 
@@ -311,23 +513,35 @@
             .subscribe();
     }
     
-    function renderMessage(text, isMine) {
+    function renderMessage(text, isMine, timeString = "") {
         const area = document.getElementById('messages-area');
         const div = document.createElement('div');
         div.className = `msg-bubble ${isMine ? 'msg-mine' : 'msg-other'}`;
         
-        // Проверяем, текст это или маркер голосового сообщения
         if (text.startsWith('[VOICE]:')) {
-            const fileName = text.replace('[VOICE]:', '');
-            // Рисуем кнопку для расшифровки
+            // Разбиваем маркер: [VOICE]:имя_файла|расшифрованный_текст
+            const parts = text.replace('[VOICE]:', '').split('|');
+            const fileName = parts[0];
+            const transcription = parts[1] ? `<i>"${parts[1]}"</i>` : '<i style="color:#777">ГС (без текста)</i>';
+            
             div.innerHTML = `
-                <div style="cursor:pointer; display:flex; align-items:center; gap:8px; padding: 5px;" 
+                <div style="cursor:pointer; display:flex; align-items:center; gap:8px; padding: 5px; background: rgba(0,0,0,0.15); border-radius: 8px;" 
                      onclick="loadAndPlayVoice('${fileName}', this)">
                     <span style="font-size: 24px;">▶️</span>
                     <span class="voice-status">Зашифрованное ГС</span>
+                </div>
+                <div style="margin-top: 8px; font-size: 14px; color: #ddd; word-break: break-word;">
+                    ${transcription}
                 </div>`;
         } else {
             div.innerText = text;
+        }
+        
+        if (timeString) {
+            const timeDiv = document.createElement('div');
+            timeDiv.className = 'msg-time';
+            timeDiv.innerText = timeString;
+            div.appendChild(timeDiv);
         }
         
         area.appendChild(div);
@@ -620,6 +834,8 @@
         if (history && history.length > 0) {
             for (const msg of history) {
                 try {
+                    const msgDate = new Date(msg.created_at);
+                    const timeStr = msgDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                     // Разбиваем Base64 обратно в байты
                     const rawData = atob(msg.encrypted_text);
                     const bytes = new Uint8Array(rawData.length);
@@ -637,7 +853,7 @@
                     const plainText = dec.decode(decryptedBuffer);
                     
                     // Рисуем на экране
-                    renderMessage(plainText, msg.sender_id === currentUser.id);
+                    renderMessage(plainText, msg.sender_id === currentUser.id, timeStr);
                 } catch (e) {
                     renderMessage("🔒 [Ошибка расшифровки истории]", msg.sender_id === currentUser.id);
                 }
@@ -653,12 +869,22 @@
         const text = input.value.trim();
         if (!text || !currentAesKey || !currentChatId) return;
 
-        input.value = ""; // Сразу очищаем для удобства
-
+        input.value = ""; // Сразу очищаем
+        
+        // 1. Шифруем сам текст
         const encryptedPayload = await encryptText(text, currentAesKey);
+        
+        // 2. Генерируем и шифруем вектор для поиска по смыслу
+        const encryptedVector = await generateAndEncryptVector(text, currentAesKey);
 
+        // 3. Отправляем в Supabase
         await supabaseClient.from('messages').insert([
-            { chat_id: currentChatId, sender_id: currentUser.id, encrypted_text: encryptedPayload }
+            { 
+                chat_id: currentChatId, 
+                sender_id: currentUser.id, 
+                encrypted_text: encryptedPayload,
+                encrypted_vector: encryptedVector // <--- Сохраняем зашифрованный вектор
+            }
         ]);
         if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
     }
@@ -673,6 +899,10 @@
             .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `chat_id=eq.${currentChatId}` },
                 async (payload) => {
                     const newMsg = payload.new;
+
+                    // Берем время прямо из свежего сообщения
+                    const msgDate = new Date(newMsg.created_at);
+                    const timeStr = msgDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                     
                     // РАСШИФРОВКА
                     const rawData = atob(newMsg.encrypted_text);
@@ -685,7 +915,7 @@
                     try {
                         const decryptedBuffer = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: iv }, currentAesKey, data);
                         const plainText = dec.decode(decryptedBuffer);
-                        renderMessage(plainText, newMsg.sender_id === currentUser.id);
+                        renderMessage(plainText, newMsg.sender_id === currentUser.id, timeStr);
                     } catch (e) {
                         renderMessage("🔒 [Ошибка]", newMsg.sender_id === currentUser.id);
                     }
@@ -697,92 +927,102 @@
     let mediaRecorder;
     let audioChunks = [];
     let isRecording = false;
+    let speechRecognition = null;
+    let currentTranscription = "";
 
     async function recordVoice() {
         if (isRecording) {
-            mediaRecorder.stop(); // Остановка записи
+            mediaRecorder.stop();
+            if (speechRecognition) speechRecognition.stop(); // Останавливаем распознавание
             return;
         }
 
         try {
-            // Запрашиваем доступ к микрофону
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             mediaRecorder = new MediaRecorder(stream);
             audioChunks = [];
+            currentTranscription = "";
 
-            mediaRecorder.ondataavailable = e => {
-                if (e.data.size > 0) audioChunks.push(e.data);
-            };
+            // Включаем встроенный "дешифровщик" голоса в текст
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (SpeechRecognition) {
+                speechRecognition = new SpeechRecognition();
+                speechRecognition.lang = 'ru-RU'; // Русский язык
+                speechRecognition.interimResults = true;
+                speechRecognition.continuous = true;
+                
+                speechRecognition.onresult = (event) => {
+                    let finalTranscript = '';
+                    for (let i = event.resultIndex; i < event.results.length; ++i) {
+                        if (event.results[i].isFinal) finalTranscript += event.results[i][0].transcript;
+                    }
+                    if (finalTranscript) currentTranscription += finalTranscript + ' ';
+                };
+                speechRecognition.start();
+            }
+
+            mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
             
             mediaRecorder.onstop = async () => {
-                // Выключаем микрофон, чтобы не горел индикатор в браузере/iOS
                 stream.getTracks().forEach(track => track.stop());
-                
                 const audioBlob = new Blob(audioChunks);
                 isRecording = false;
                 
-                const micBtn = document.getElementById('btn-mic');
-                micBtn.innerText = '🎤';
-                micBtn.style.color = '';
+                document.getElementById('btn-mic').innerText = '🎤';
                 
-                // Передаем файл на шифровку
-                await uploadAndSendVoice(audioBlob);
+                // Передаем файл И текст на шифровку
+                await uploadAndSendVoice(audioBlob, currentTranscription.trim());
             };
 
             mediaRecorder.start();
             isRecording = true;
-            
-            // Визуально показываем процесс записи
-            const micBtn = document.getElementById('btn-mic');
-            micBtn.innerText = '🛑';
-            micBtn.style.color = '#ff5252';
+            document.getElementById('btn-mic').innerText = '🛑';
             
             if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
 
         } catch (err) {
             alert('Синдикату нужен доступ к микрофону!');
-            console.error(err);
         }
     }
 
-    async function uploadAndSendVoice(audioBlob) {
+    async function uploadAndSendVoice(audioBlob, transcription) {
         if (!currentAesKey || !currentChatId) return;
 
-        // 1. Превращаем аудио в сырые байты
+        // 1. Шифруем аудио-файл
         const arrayBuffer = await audioBlob.arrayBuffer();
-
-        // 2. Шифруем байты нашим ключом от комнаты (AES-GCM)
         const iv = window.crypto.getRandomValues(new Uint8Array(12));
         const encryptedContent = await window.crypto.subtle.encrypt(
-            { name: "AES-GCM", iv: iv },
-            currentAesKey,
-            arrayBuffer
+            { name: "AES-GCM", iv: iv }, currentAesKey, arrayBuffer
         );
-
-        // 3. Склеиваем IV (соль) и зашифрованный файл
+        
         const encryptedBytes = new Uint8Array(encryptedContent);
         const payload = new Uint8Array(iv.length + encryptedBytes.length);
         payload.set(iv, 0);
         payload.set(encryptedBytes, iv.length);
 
-        // 4. Отправляем этот нечитаемый мусор в Supabase Storage
         const fileName = `voice_${Date.now()}_${currentUser.id}.bin`;
-        
-        const { error } = await supabaseClient.storage
-            .from('voice_messages')
-            .upload(fileName, payload, { contentType: 'application/octet-stream' });
+        await supabaseClient.storage.from('voice_messages').upload(fileName, payload, { contentType: 'application/octet-stream' });
 
-        if (error) {
-            console.error(error);
-            return alert('Ошибка загрузки ГС на сервер');
+        // 2. Формируем маркер, склеивая имя файла и распознанный текст (через символ |)
+        let textMarker = `[VOICE]:${fileName}`;
+        if (transcription) textMarker += `|${transcription}`;
+        
+        const encryptedPayloadText = await encryptText(textMarker, currentAesKey);
+        
+        // 3. Если есть текст из ГС, сразу делаем из него вектор!
+        let encryptedVector = null;
+        if (transcription) {
+            encryptedVector = await generateAndEncryptVector(transcription, currentAesKey);
         }
 
-        // 5. Отправляем в текстовый чат секретный маркер
-        const textMarker = `[VOICE]:${fileName}`;
-        const encryptedPayloadText = await encryptText(textMarker, currentAesKey);
-
+        // 4. Отправляем в базу
         await supabaseClient.from('messages').insert([
-            { chat_id: currentChatId, sender_id: currentUser.id, encrypted_text: encryptedPayloadText }
+            { 
+                chat_id: currentChatId, 
+                sender_id: currentUser.id, 
+                encrypted_text: encryptedPayloadText,
+                encrypted_vector: encryptedVector // <--- Сохраняем вектор ГС
+            }
         ]);
     }
         
