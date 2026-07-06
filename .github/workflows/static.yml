@@ -1,0 +1,38 @@
+name: Deploy static content to Pages
+
+on:
+  push:
+    branches: ["main"] # Убедись, что твоя ветка называется main
+  workflow_dispatch:
+
+# ВАЖНО: Эти права обязательны для успешного деплоя
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4 # Свежая версия
+        
+      - name: Setup Pages
+        uses: actions/configure-pages@v5 # Свежая версия
+        
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3 # Свежая версия
+        with:
+          path: '.' # Папка, где лежит твой index.html
+          
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4 # Свежая версия, которая фиксит ошибку Node 20
