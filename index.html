@@ -182,11 +182,8 @@
 
 
     // --- ИИ: РАСПОЗНАВАНИЕ ГОЛОСА (WHISPER) ---
-    // --- ИИ: РАСПОЗНАВАНИЕ ГОЛОСА (WHISPER) ---
     let whisperModel = null;
     let isWhisperLoading = false;
-    
-    // ФИКС 1: Создаем аудио-движок глобально, чтобы браузер его не блокировал
     const audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
 
     async function initWhisper() {
@@ -196,14 +193,28 @@
             return whisperModel;
         }
         isWhisperLoading = true;
-        console.log("Загрузка Whisper-tiny (~40MB)...");
         
         const { pipeline, env } = await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.14.0');
         env.allowLocalModels = false;
         
-        whisperModel = await pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny', { quantized: true });
-        console.log("Whisper готов!");
+        // ФИКС 1: Жестко отключаем многопоточность WASM, чтобы избежать краша на GitHub Pages
+        env.backends.onnx.wasm.numThreads = 1;
         
+        const micBtn = document.getElementById('btn-mic');
+        
+        // ФИКС 2: Добавляем отслеживание прогресса скачивания
+        whisperModel = await pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny', { 
+            quantized: true,
+            progress_callback: (data) => {
+                if (data.status === 'progress') {
+                    // Показываем проценты прямо на кнопке (например: ⬇️ 45%)
+                    micBtn.innerText = `⬇️ ${Math.round(data.progress)}%`;
+                    micBtn.style.fontSize = '14px';
+                }
+            }
+        });
+        
+        micBtn.style.fontSize = ''; // Сбрасываем размер шрифта обратно в норму
         isWhisperLoading = false;
         return whisperModel;
     }
@@ -211,17 +222,18 @@
     async function transcribeAudio(audioBlob) {
         const whisper = await initWhisper();
         
-        // ФИКС 2: Будим аудио-движок, если браузер усыпил его для экономии батареи
         if (audioContext.state === 'suspended') await audioContext.resume();
         
         const arrayBuffer = await audioBlob.arrayBuffer();
         const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
         const audioData = audioBuffer.getChannelData(0);
         
+        const micBtn = document.getElementById('btn-mic');
+        micBtn.innerText = '🧠'; // Показываем мозг, когда идет сам процесс перевода голоса в текст
+        
         const output = await whisper(audioData, { language: 'russian', task: 'transcribe' });
         return output.text;
     }
-
    
         
     // Вычисление сходства векторов (от -1 до 1, где 1 — идеальное совпадение)
