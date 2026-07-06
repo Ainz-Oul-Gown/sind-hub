@@ -182,6 +182,7 @@
 
 
     // --- ИИ: РАСПОЗНАВАНИЕ ГОЛОСА (WHISPER) ---
+    // --- ИИ: РАСПОЗНАВАНИЕ ГОЛОСА (WHISPER) ---
     let whisperModel = null;
     let isWhisperLoading = false;
     const audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
@@ -196,18 +197,61 @@
         
         const { pipeline, env } = await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.14.0');
         env.allowLocalModels = false;
+        env.useBrowserCache = true;
         env.backends.onnx.wasm.numThreads = 1;
         
-        // Перешли на base для отличного качества
-        whisperModel = await pipeline('automatic-speech-recognition', 'Xenova/whisper-base', { quantized: true });
+        const micBtn = document.getElementById('btn-mic');
+        
+        // Хранилище для подсчета общего веса всех файлов
+        const downloadTracker = {};
+
+        whisperModel = await pipeline('automatic-speech-recognition', 'Xenova/whisper-base', { 
+            quantized: true,
+            progress_callback: (data) => {
+                // Если идет скачивание...
+                if (data.status === 'progress') {
+                    // Записываем, сколько байт скачалось для конкретного файла
+                    downloadTracker[data.file] = {
+                        loaded: data.loaded,
+                        total: data.total
+                    };
+                    
+                    // Считаем общую сумму скачанного и общую сумму всего веса
+                    let totalLoaded = 0;
+                    let totalExpected = 0;
+                    
+                    for (const key in downloadTracker) {
+                        totalLoaded += downloadTracker[key].loaded || 0;
+                        totalExpected += downloadTracker[key].total || 0;
+                    }
+                    
+                    // Высчитываем честный общий процент
+                    if (totalExpected > 0) {
+                        const percent = Math.round((totalLoaded / totalExpected) * 100);
+                        // Показываем на кнопке!
+                        micBtn.innerText = `⬇️ ${percent}%`;
+                        micBtn.style.fontSize = '14px';
+                    }
+                }
+            }
+        });
+        
+        // Возвращаем кнопку в норму, когда всё скачалось
+        micBtn.innerText = '🎤';
+        micBtn.style.fontSize = ''; 
+        micBtn.style.color = '';
         
         isWhisperLoading = false;
         return whisperModel;
     }
 
+    // --- МОДУЛЬ ЗАПИСИ ---
     let mediaRecorder;
     let audioChunks = [];
     let isRecording = false;
+    
+    // ФИКС 1: Создаем глобальную переменную для хранения "открытого" микрофона
+    let globalAudioStream = null; 
 
     async function recordVoice() {
         if (isRecording) {
@@ -216,23 +260,27 @@
         }
 
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            mediaRecorder = new MediaRecorder(stream);
+            // ФИКС 2: Проверяем, есть ли уже доступ. Если нет — запрашиваем.
+            if (!globalAudioStream) {
+                globalAudioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            }
+            
+            // Заряжаем рекордер нашим открытым потоком
+            mediaRecorder = new MediaRecorder(globalAudioStream);
             audioChunks = [];
 
             mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
             
             mediaRecorder.onstop = async () => {
-                stream.getTracks().forEach(track => track.stop());
+                // ФИКС 3: Мы БОЛЬШЕ НЕ отключаем треки (Убрали stream.getTracks()...stop())
+                
                 const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
                 isRecording = false;
                 
-                // Возвращаем иконку сразу! Не заставляем юзера ждать.
                 const micBtn = document.getElementById('btn-mic');
                 micBtn.innerText = '🎤';
                 micBtn.style.color = '';
                 
-                // Запускаем фоновый конвейер (без await, чтобы не блочить интерфейс)
                 processBackgroundVoice(audioBlob).catch(e => console.error("Ошибка конвейера ГС:", e));
             };
 
