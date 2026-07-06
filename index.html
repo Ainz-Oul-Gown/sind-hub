@@ -245,6 +245,22 @@
         return whisperModel;
     }
 
+    // Эта функция переводит аудио-файл в сырые данные и скармливает нейросети
+    async function transcribeAudio(audioBlob) {
+        const whisper = await initWhisper();
+        
+        // Будим аудио-движок, если браузер усыпил его
+        if (audioContext.state === 'suspended') await audioContext.resume();
+        
+        const arrayBuffer = await audioBlob.arrayBuffer();
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+        const audioData = audioBuffer.getChannelData(0);
+        
+        // Запускаем расшифровку
+        const output = await whisper(audioData, { language: 'russian', task: 'transcribe' });
+        return output.text;
+    }
+
     // --- МОДУЛЬ ЗАПИСИ ---
     let mediaRecorder;
     let audioChunks = [];
