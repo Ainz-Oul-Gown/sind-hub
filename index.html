@@ -6,7 +6,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Синдикат-Хаб</title>
     
-    <!-- Подключаем современный шрифт и иконки -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
@@ -31,25 +30,18 @@
 
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
         
-        body { 
-            font-family: 'Inter', sans-serif; 
-            background-color: var(--bg); 
-            color: var(--text); 
-            margin: 0; 
-            padding: 0;
-            overflow-x: hidden;
-        }
+        body { font-family: 'Inter', sans-serif; background-color: var(--bg); color: var(--text); margin: 0; padding: 0; overflow-x: hidden; }
+        
+        /* Исправление вытянутых иконок */
+        .fas, .far { line-height: 1; display: flex; align-items: center; justify-content: center; }
 
         .screen { display: none; padding: 16px; padding-bottom: 40px; min-height: 100vh; animation: fadeIn 0.3s ease; } 
         .screen.active { display: block; }
-        
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
-        /* Типографика */
         h2.brand-title { font-size: 28px; font-weight: 700; text-align: center; margin: 10px 0 24px; background: linear-gradient(135deg, var(--primary), #32D74B); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
         h3.section-title { font-size: 14px; text-transform: uppercase; color: var(--muted); letter-spacing: 0.5px; margin: 24px 0 12px 4px; font-weight: 600; }
 
-        /* Карточки и элементы */
         .card { background: var(--surface); padding: 16px; border-radius: var(--radius-lg); margin-bottom: 16px; border: 1px solid var(--border); box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
         
         /* Профиль */
@@ -59,42 +51,30 @@
         .status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 20px; font-size: 13px; font-weight: 500; background: rgba(50, 215, 75, 0.15); color: var(--success); cursor: pointer; border: 1px solid rgba(50, 215, 75, 0.3); transition: 0.2s; }
         .status-badge.busy { background: rgba(255, 69, 58, 0.15); color: var(--danger); border-color: rgba(255, 69, 58, 0.3); }
         
-        /* Сетка кнопок */
         .action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 24px; }
         .action-btn { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px; text-align: center; color: var(--text); font-weight: 600; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 8px; transition: 0.2s; }
         .action-btn:active { transform: scale(0.96); background: var(--surface-hover); }
         .action-btn i { font-size: 24px; color: var(--primary); }
 
-        /* Списки (Друзья, Валюты) */
         .list-item { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--surface); border-radius: var(--radius-md); margin-bottom: 8px; border: 1px solid var(--border); cursor: pointer; transition: 0.2s; }
         .list-item:active { background: var(--surface-hover); }
         .list-item-left { display: flex; align-items: center; gap: 12px; }
         .list-item-title { font-weight: 600; font-size: 16px; }
         .list-item-subtitle { font-size: 13px; color: var(--muted); margin-top: 2px; }
         
-        /* Кнопки */
-        button.primary-btn { background: var(--primary); color: #fff; border: none; padding: 14px; border-radius: var(--radius-md); width: 100%; font-size: 16px; font-weight: 600; cursor: pointer; transition: 0.2s; box-shadow: 0 4px 10px rgba(10, 132, 255, 0.3); }
+        button.primary-btn { background: var(--primary); color: #fff; border: none; padding: 14px; border-radius: var(--radius-md); width: 100%; font-size: 16px; font-weight: 600; cursor: pointer; transition: 0.2s; box-shadow: 0 4px 10px rgba(10, 132, 255, 0.3); display: flex; align-items: center; justify-content: center; gap: 8px; }
         button.primary-btn:active { transform: scale(0.98); opacity: 0.9; }
         
-        /* Формы */
         input, select { width: 100%; padding: 14px; margin-bottom: 12px; border-radius: var(--radius-md); border: 1px solid var(--border); background: rgba(0,0,0,0.2); color: var(--text); font-size: 16px; outline: none; transition: 0.2s; font-family: 'Inter', sans-serif;}
         input:focus, select:focus { border-color: var(--primary); }
         
-        /* Навигация */
         .header-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
         .back-btn { background: none; border: none; color: var(--primary); font-size: 18px; cursor: pointer; display: flex; align-items: center; gap: 8px; padding: 0; }
-        
-        /* Долги */
-        .debt-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--border); }
-        .debt-row:last-child { border-bottom: none; padding-bottom: 0; }
-        .debt-amount { font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 6px; }
-        .debt-amount.owe { color: var(--danger); }
-        .debt-amount.owed { color: var(--success); }
-        .btn-resolve { background: rgba(255,255,255,0.1); color: var(--text); font-size: 13px; padding: 6px 14px; border-radius: 20px; cursor: pointer; border: none; font-weight: 500; }
+        .icon-btn { background: none; border: none; color: var(--primary); font-size: 20px; padding: 5px; cursor: pointer; display: flex; align-items: center; justify-content: center; aspect-ratio: 1/1; }
 
         /* ОСОБЫЙ ЛЕЙАУТ ДЛЯ ЧАТА */
         #screen-friend { display: flex; flex-direction: column; height: 100vh; padding: 0; }
-        .friend-header-wrap { padding: 16px 16px 0; flex-shrink: 0; }
+        .friend-header-wrap { padding: 16px 16px 0; flex-shrink: 0; border-bottom: 1px solid var(--border); background: var(--surface); z-index: 10;}
         
         .chat-container { flex-grow: 1; display: flex; flex-direction: column; background: var(--bg); overflow: hidden; position: relative; }
         .messages-area { flex-grow: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
@@ -104,20 +84,40 @@
         .msg-other { background: var(--surface); align-self: flex-start; border-bottom-left-radius: 4px; border: 1px solid var(--border); }
         .msg-time { font-size: 11px; color: rgba(255, 255, 255, 0.6); text-align: right; margin-top: 4px; margin-bottom: -4px; user-select: none; }
         
-        /* Поле ввода чата (Стеклянное) */
-        .chat-input-area { flex-shrink: 0; display: flex; align-items: center; padding: 12px 16px; gap: 10px; background: rgba(28, 28, 30, 0.8); backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px); border-top: 1px solid var(--border); padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
-        .chat-input-area input { flex-grow: 1; margin: 0; padding: 12px 16px; border-radius: 24px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); }
-        .btn-send, .btn-mic { background: var(--primary); border: none; width: 44px; height: 44px; border-radius: 50%; color: white; font-size: 18px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s; box-shadow: 0 2px 10px rgba(10,132,255,0.3); }
-        .btn-mic { background: var(--surface); color: var(--text); border: 1px solid var(--border); box-shadow: none; }
-        .btn-mic.recording { background: var(--danger); color: white; animation: pulse 1.5s infinite; }
+        /* Умное поле ввода */
+        .chat-input-area { flex-shrink: 0; display: flex; align-items: center; padding: 12px 16px; gap: 10px; background: rgba(28, 28, 30, 0.85); backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px); border-top: 1px solid var(--border); padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
+        .chat-input-area input { flex-grow: 1; margin: 0; padding: 12px 16px; border-radius: 24px; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1); }
         
+        .btn-dynamic { width: 44px; height: 44px; border-radius: 50%; border: none; font-size: 18px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1); flex-shrink: 0;}
+        .btn-dynamic.mode-mic { background: var(--surface); color: var(--text); border: 1px solid var(--border); box-shadow: none; }
+        .btn-dynamic.mode-send { background: var(--primary); color: white; box-shadow: 0 2px 10px rgba(10,132,255,0.3); transform: rotate(-15deg); }
+        .btn-dynamic.mode-stop { background: var(--danger); color: white; animation: pulse 1.5s infinite; transform: scale(1.1); }
         @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(255,69,58,0.7); } 70% { box-shadow: 0 0 0 10px rgba(255,69,58,0); } 100% { box-shadow: 0 0 0 0 rgba(255,69,58,0); } }
 
-        /* ГС UI */
-        .voice-player { display: flex; align-items: center; gap: 12px; padding: 8px 12px; background: rgba(0,0,0,0.2); border-radius: 12px; cursor: pointer; margin-bottom: 6px; }
-        .voice-play-btn { width: 36px; height: 36px; background: var(--primary); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; }
-        .voice-status { font-size: 13px; font-weight: 500; }
-        .voice-text { font-size: 14px; font-style: italic; color: rgba(255,255,255,0.9); }
+        /* Кастомный ГС UI */
+        .voice-player { display: flex; align-items: center; gap: 12px; padding: 4px 6px 4px 4px; background: rgba(0,0,0,0.15); border-radius: 24px; cursor: pointer; margin-bottom: 6px; width: fit-content; }
+        .voice-play-btn { width: 36px; height: 36px; background: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--primary); font-size: 14px; transition: 0.2s; box-shadow: 0 2px 5px rgba(0,0,0,0.2); flex-shrink: 0;}
+        .voice-play-btn:active { transform: scale(0.9); }
+        .msg-other .voice-play-btn { background: var(--primary); color: white; }
+        .voice-waveform { font-size: 18px; color: rgba(255,255,255,0.8); margin-right: 8px; letter-spacing: -2px; }
+        
+        .transcript-toggle { font-size: 12px; color: rgba(255,255,255,0.7); cursor: pointer; display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; user-select: none; }
+        .transcript-toggle:hover { color: white; }
+        .transcript-content { font-size: 14px; font-style: italic; color: rgba(255,255,255,0.9); background: rgba(0,0,0,0.1); padding: 8px 12px; border-radius: 8px; margin-top: 6px; display: none; border-left: 2px solid rgba(255,255,255,0.3); }
+
+        /* Glass Modals (Поверх чата) */
+        .glass-modal { position: absolute; inset: 0; z-index: 100; background: rgba(15, 15, 19, 0.7); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); display: none; flex-direction: column; padding: 20px; animation: fadeIn 0.2s ease; }
+        .glass-modal.active { display: flex; }
+        .modal-close { position: absolute; top: 16px; right: 16px; background: rgba(255,255,255,0.1); border: none; width: 32px; height: 32px; border-radius: 50%; color: white; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+
+        /* Долги внутри модалки */
+        .debt-row { display: flex; justify-content: space-between; align-items: center; padding: 16px 0; border-bottom: 1px solid var(--border); }
+        .debt-row:last-child { border-bottom: none; }
+        .debt-amount { font-size: 18px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+        .debt-amount.owe { color: var(--danger); }
+        .debt-amount.owed { color: var(--success); }
+        .btn-resolve { background: rgba(255,255,255,0.1); color: var(--text); font-size: 14px; padding: 8px 16px; border-radius: 20px; cursor: pointer; border: none; font-weight: 600; transition: 0.2s;}
+        .btn-resolve:active { transform: scale(0.95); }
     </style>
 </head>
 <body>
@@ -136,7 +136,7 @@
                     </div>
                 </div>
             </div>
-            <i class="fas fa-cog text-muted" style="color: var(--muted); font-size: 20px;" onclick="switchScreen('screen-currencies')"></i>
+            <button class="icon-btn" onclick="switchScreen('screen-currencies')"><i class="fas fa-cog" style="color: var(--muted);"></i></button>
         </div>
         
         <div class="action-grid">
@@ -152,7 +152,7 @@
 
         <h3 class="section-title">Братва</h3>
         <div id="friends-list">
-            <div style="text-align:center; color: var(--muted); padding: 20px;">Загрузка данных...</div>
+            <div style="text-align:center; color: var(--muted); padding: 20px;"><i class="fas fa-spinner fa-spin"></i> Загрузка...</div>
         </div>
     </div>
 
@@ -168,7 +168,7 @@
             <h3 class="section-title" style="margin-top: 0;">Создать новую</h3>
             <input type="text" id="cur-name" placeholder="Название (напр. Адреналин)">
             <input type="number" id="cur-price" placeholder="Цена в рублях (напр. 150)">
-            <button class="primary-btn" onclick="addCurrency()"><i class="fas fa-plus" style="margin-right: 8px;"></i>Добавить</button>
+            <button class="primary-btn" onclick="addCurrency()"><i class="fas fa-plus"></i>Добавить</button>
         </div>
         
         <h3 class="section-title">Мои активы</h3>
@@ -178,42 +178,51 @@
     <!-- ЭКРАН 3: ПРОФИЛЬ ДРУГА И ЛС -->
     <div id="screen-friend" class="screen">
         
+        <!-- Шапка чата -->
         <div class="friend-header-wrap">
-            <div class="header-nav">
+            <div class="header-nav" style="margin-bottom: 12px; border: none; padding-bottom: 0;">
                 <button class="back-btn" onclick="switchScreen('screen-main')"><i class="fas fa-chevron-left"></i></button>
-                <div style="text-align: center;">
+                <div style="text-align: center; flex-grow: 1;">
                     <div id="friend-name-title" style="font-weight: 600; font-size: 17px;">Друг</div>
                     <div id="friend-fingerprint" style="font-size: 11px; color: var(--success); font-family: monospace; margin-top: 2px;"></div>
                 </div>
-                <button class="back-btn" onclick="document.getElementById('search-panel').style.display = document.getElementById('search-panel').style.display === 'none' ? 'block' : 'none'"><i class="fas fa-search"></i></button>
-            </div>
-            
-            <div class="card" style="margin-bottom: 0;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                    <span style="font-weight: 600; color: var(--muted); text-transform: uppercase; font-size: 12px;">Сводка долгов</span>
-                    <button class="btn-resolve" style="background: rgba(10,132,255,0.15); color: var(--primary);" onclick="openDebtModal()"><i class="fas fa-plus"></i> Записать</button>
+                <div style="display: flex; gap: 8px;">
+                    <button class="icon-btn" onclick="toggleModal('modal-debts')"><i class="fas fa-wallet"></i></button>
+                    <button class="icon-btn" onclick="toggleModal('modal-search')"><i class="fas fa-search"></i></button>
                 </div>
-                <div id="friend-debts">Загрузка...</div>
             </div>
         </div>
 
-        <!-- ЧАТ С ДРУГОМ -->
+        <!-- Контейнер чата -->
         <div class="chat-container">
-            <!-- ПАНЕЛЬ ПОИСКА -->
-            <div id="search-panel" style="display: none; padding: 12px; background: rgba(0,0,0,0.5); border-bottom: 1px solid var(--border); position: absolute; top: 0; width: 100%; z-index: 10; backdrop-filter: blur(10px);">
-                <div style="display: flex; gap: 10px; margin-bottom: 10px;">
-                    <input type="text" id="search-input" placeholder="Найти..." style="margin: 0; padding: 10px;">
-                    <button class="primary-btn" onclick="performSearch()" style="width: auto; padding: 0 16px;"><i class="fas fa-search"></i></button>
+            
+            <!-- МОДАЛКА: ДОЛГИ -->
+            <div id="modal-debts" class="glass-modal">
+                <button class="modal-close" onclick="toggleModal('modal-debts')"><i class="fas fa-times"></i></button>
+                <h3 style="margin-top: 0; margin-bottom: 20px; font-size: 20px; text-align: center;">Сводка долгов</h3>
+                <div class="card" style="background: rgba(0,0,0,0.3); border: none;">
+                    <div id="friend-debts-list">Загрузка...</div>
                 </div>
-                <div style="display: flex; align-items: center; justify-content: space-between; font-size: 13px;">
-                    <label style="color: var(--muted); display: flex; align-items: center; gap: 6px;">
-                        <input type="checkbox" id="semantic-toggle" onchange="toggleSlider()"> ИИ-поиск
+                <button class="primary-btn" style="margin-top: auto;" onclick="openDebtModal()"><i class="fas fa-plus"></i> Оформить долг</button>
+            </div>
+
+            <!-- МОДАЛКА: ПОИСК -->
+            <div id="modal-search" class="glass-modal">
+                <button class="modal-close" onclick="toggleModal('modal-search')"><i class="fas fa-times"></i></button>
+                <h3 style="margin-top: 0; margin-bottom: 20px; font-size: 20px; text-align: center;">Глубокий поиск</h3>
+                <div style="display: flex; gap: 10px; margin-bottom: 16px;">
+                    <input type="text" id="search-input" placeholder="Найти в переписке..." style="margin: 0; background: rgba(0,0,0,0.5);">
+                    <button class="primary-btn" onclick="performSearch()" style="width: 50px; padding: 0;"><i class="fas fa-search"></i></button>
+                </div>
+                <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.3); padding: 12px; border-radius: 12px; font-size: 14px;">
+                    <label style="color: var(--text); display: flex; align-items: center; gap: 8px;">
+                        <input type="checkbox" id="semantic-toggle" onchange="toggleSlider()" style="width: auto; margin:0;"> ИИ-поиск (Смысл)
                     </label>
                     <div id="slider-container" style="display: none; align-items: center; gap: 5px; color: var(--muted);">
-                        Точность: <input type="range" id="semantic-slider" min="0.3" max="0.8" step="0.1" value="0.4" style="width: 70px; margin: 0;">
+                        <i class="fas fa-sliders-h"></i> <input type="range" id="semantic-slider" min="0.3" max="0.8" step="0.1" value="0.4" style="width: 60px; margin: 0;">
                     </div>
                 </div>
-                <div id="search-results" style="max-height: 200px; overflow-y: auto; margin-top: 10px;"></div>
+                <div id="search-results" style="overflow-y: auto; margin-top: 16px; flex-grow: 1;"></div>
             </div>
             
             <div class="messages-area" id="messages-area">
@@ -223,10 +232,10 @@
                 </div>
             </div>
             
+            <!-- Динамическое поле ввода -->
             <div class="chat-input-area">
-                <button class="btn-mic" id="btn-mic" onclick="recordVoice()"><i class="fas fa-microphone"></i></button>
-                <input type="text" id="chat-input" placeholder="Сообщение..." onkeypress="handleEnter(event)">
-                <button class="btn-send" onclick="sendPrivateMessage()"><i class="fas fa-paper-plane"></i></button>
+                <input type="text" id="chat-input" placeholder="Сообщение..." oninput="updateInputMode()" onkeypress="handleEnter(event)">
+                <button class="btn-dynamic mode-mic" id="btn-input-action" onclick="handleInputAction()"><i class="fas fa-microphone"></i></button>
             </div>
         </div>
     </div>
@@ -234,29 +243,29 @@
     <!-- ЭКРАН 4: ОФОРМИТЬ ДОЛГ -->
     <div id="screen-add-debt" class="screen">
         <div class="header-nav">
-            <button class="back-btn" onclick="switchScreen('screen-friend')"><i class="fas fa-chevron-left"></i> Назад</button>
+            <button class="back-btn" onclick="switchScreen('screen-friend'); toggleModal('modal-debts');"><i class="fas fa-chevron-left"></i> Отмена</button>
             <span>Оформление долга</span>
-            <div style="width: 24px;"></div>
+            <div style="width: 60px;"></div>
         </div>
         
         <div class="card">
             <label style="font-size: 14px; color: var(--muted); margin-bottom: 6px; display: block;">Я должен (в рублях):</label>
-            <input type="number" id="debt-rubles" placeholder="Напр. 300" oninput="calculateDebt()" style="font-size: 20px; font-weight: bold;">
+            <input type="number" id="debt-rubles" placeholder="Напр. 300" oninput="calculateDebt()" style="font-size: 24px; font-weight: bold; text-align: center;">
             
-            <label id="debt-currency-label" style="font-size: 14px; color: var(--muted); margin-bottom: 6px; margin-top: 10px; display: block;">В чем принимает друг:</label>
+            <label style="font-size: 14px; color: var(--muted); margin-bottom: 6px; margin-top: 16px; display: block;">В чем принимает друг:</label>
             <select id="debt-currency" onchange="calculateDebt()"></select>
             
-            <div style="margin: 24px 0; font-size: 16px; text-align: center; color: var(--muted);">
+            <div style="margin: 30px 0; font-size: 16px; text-align: center; color: var(--muted);">
                 Итого к выплате:<br>
-                <strong id="debt-result" style="color: var(--success); font-size: 28px; display: block; margin-top: 5px;">0</strong>
+                <strong id="debt-result" style="color: var(--success); font-size: 32px; display: block; margin-top: 8px;">0</strong>
             </div>
-            <button class="primary-btn" onclick="saveDebt()"><i class="fas fa-handshake" style="margin-right: 8px;"></i>Закрепить сделку</button>
+            <button class="primary-btn" onclick="saveDebt()"><i class="fas fa-handshake"></i> Закрепить сделку</button>
         </div>
     </div>
 
 <script>
-    // --- ВСЯ ЛОГИКА ОСТАЛАСЬ БЕЗ ИЗМЕНЕНИЙ ---
-    
+    // --- ВСПОМОГАТЕЛЬНЫЙ UI КОД ---
+
     function escapeHTML(str) {
         if (typeof str !== 'string') return str;
         return str.replace(/[&<>'"]/g,
@@ -264,7 +273,6 @@
         );
     }
     
-    // Вспомогательная функция для генерации цвета аватарки
     function getAvatarGradient(id) {
         const colors = [
             ['#FF2D55', '#FF375F'], ['#FF9F0A', '#FF453A'], ['#32D74B', '#28CD41'],
@@ -275,18 +283,59 @@
         return `linear-gradient(135deg, ${pair[0]}, ${pair[1]})`;
     }
 
+    function switchScreen(screenId) {
+        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+        document.getElementById(screenId).classList.add('active');
+        if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+    }
+
+    function toggleModal(modalId) {
+        const modal = document.getElementById(modalId);
+        modal.classList.toggle('active');
+        if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+    }
+
+    // --- ДИНАМИЧЕСКИЙ ВВОД (МИКРОФОН <-> ОТПРАВКА) ---
+    
+    function updateInputMode() {
+        const input = document.getElementById('chat-input').value.trim();
+        const btn = document.getElementById('btn-input-action');
+        
+        if (isRecording) return; // Если пишем ГС, не меняем кнопку
+
+        if (input.length > 0) {
+            btn.className = 'btn-dynamic mode-send';
+            btn.innerHTML = '<i class="fas fa-paper-plane" style="margin-right: 2px; margin-top: 2px;"></i>';
+        } else {
+            btn.className = 'btn-dynamic mode-mic';
+            btn.innerHTML = '<i class="fas fa-microphone"></i>';
+        }
+    }
+
+    function handleInputAction() {
+        if (isRecording) {
+            recordVoice(); // Остановить запись
+        } else {
+            const input = document.getElementById('chat-input').value.trim();
+            if (input.length > 0) sendPrivateMessage();
+            else recordVoice(); // Начать запись
+        }
+    }
+
+    // --- ИИ И ГОЛОСОВЫЕ СООБЩЕНИЯ ---
+
     let isAiReady = false;
     const aiWorker = new Worker('ai-worker.js', { type: 'module' });
     const audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
 
     aiWorker.onmessage = (event) => {
         const msg = event.data;
-        const micBtn = document.getElementById('btn-mic');
-        if (msg.type === 'progress' && micBtn) {
-            micBtn.innerHTML = `<span style="font-size: 12px; font-weight: bold;">${msg.percent}%</span>`;
+        const btn = document.getElementById('btn-input-action');
+        if (msg.type === 'progress' && !isRecording && btn.classList.contains('mode-mic')) {
+            btn.innerHTML = `<span style="font-size: 11px; font-weight: bold;">${msg.percent}%</span>`;
         } else if (msg.type === 'ready') {
             isAiReady = true;
-            if (micBtn) micBtn.innerHTML = '<i class="fas fa-microphone"></i>';
+            updateInputMode();
         }
     };
 
@@ -312,10 +361,13 @@
     let globalAudioStream = null;
 
     async function recordVoice() {
+        const btn = document.getElementById('btn-input-action');
+        
         if (isRecording) {
             mediaRecorder.stop();
             return;
         }
+        
         try {
             if (!globalAudioStream) globalAudioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
             mediaRecorder = new MediaRecorder(globalAudioStream);
@@ -324,18 +376,17 @@
             mediaRecorder.onstop = async () => {
                 const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
                 isRecording = false;
-                const micBtn = document.getElementById('btn-mic');
-                micBtn.innerHTML = '<i class="fas fa-microphone"></i>';
-                micBtn.classList.remove('recording');
+                updateInputMode(); // Возвращаем обычную кнопку
 
                 if (audioBlob.size > 15 * 1024 * 1024) return alert('Голосовое сообщение слишком длинное (Максимум 15 МБ)');
                 processBackgroundVoice(audioBlob).catch(e => console.error("Ошибка конвейера ГС:", e));
             };
+            
             mediaRecorder.start();
             isRecording = true;
-            const micBtn = document.getElementById('btn-mic');
-            micBtn.innerHTML = '<i class="fas fa-stop"></i>';
-            micBtn.classList.add('recording');
+            
+            btn.className = 'btn-dynamic mode-stop';
+            btn.innerHTML = '<i class="fas fa-square"></i>';
             if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
         } catch (err) { alert('Синдикату нужен доступ к микрофону!'); }
     }
@@ -381,6 +432,110 @@
         }
     }
 
+    // --- КАСТОМНЫЙ АУДИОПЛЕЕР И СВОРАЧИВАЕМЫЙ ТЕКСТ ---
+    
+    async function loadAndPlayVoice(fileName, element) {
+        const icon = element.querySelector('.voice-play-btn i');
+        
+        // Если аудио уже загружено, просто ставим паузу/плей
+        if (element.audioObj) {
+            if (element.audioObj.paused) { 
+                element.audioObj.play(); 
+                icon.className = 'fas fa-pause'; 
+            } else { 
+                element.audioObj.pause(); 
+                icon.className = 'fas fa-play'; 
+            }
+            if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+            return;
+        }
+
+        icon.className = 'fas fa-spinner fa-spin';
+        const { data, error } = await supabaseClient.storage.from('voice_messages').download(fileName);
+        if (error) { icon.className = 'fas fa-exclamation-triangle'; return; }
+        
+        const bytes = new Uint8Array(await data.arrayBuffer());
+        try {
+            const decryptedBuffer = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.slice(0, 12) }, currentAesKey, bytes.slice(12));
+            const audioUrl = URL.createObjectURL(new Blob([decryptedBuffer]));
+            
+            // Создаем невидимый плеер
+            const audio = new Audio(audioUrl);
+            element.audioObj = audio; // Привязываем к элементу
+            
+            audio.onended = () => { icon.className = 'fas fa-play'; };
+            audio.play();
+            icon.className = 'fas fa-pause';
+            if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+        } catch (e) { icon.className = 'fas fa-lock'; }
+    }
+
+    function toggleTranscript(btn) {
+        const content = btn.nextElementSibling;
+        if (content.style.display === 'none') {
+            content.style.display = 'block';
+            btn.innerHTML = '<i class="fas fa-chevron-up"></i> Скрыть перевод';
+        } else {
+            content.style.display = 'none';
+            btn.innerHTML = '<i class="fas fa-chevron-down"></i> Показать перевод';
+        }
+        if(tg.HapticFeedback) tg.HapticFeedback.selectionChanged();
+    }
+
+    function renderMessage(text, isMine, timeString = "", msgId = null) {
+        const area = document.getElementById('messages-area');
+        let div = msgId ? document.getElementById(`msg-${msgId}`) : null;
+        let isNew = false;
+        
+        if (!div) {
+            div = document.createElement('div');
+            if (msgId) div.id = `msg-${msgId}`;
+            div.className = `msg-bubble ${isMine ? 'msg-mine' : 'msg-other'}`;
+            isNew = true;
+        }
+
+        if (text.startsWith('[VOICE]:')) {
+            const parts = text.replace('[VOICE]:', '').split('|');
+            const fileName = parts[0];
+            const hasTranscript = parts[1] && !parts[1].includes('❌ Ошибка');
+            const transcriptionText = parts[1] ? parts[1] : 'ИИ анализирует... ⏳';
+            
+            let transcriptHtml = '';
+            if (hasTranscript) {
+                transcriptHtml = `
+                    <div class="transcript-toggle" onclick="toggleTranscript(this)"><i class="fas fa-chevron-down"></i> Показать перевод</div>
+                    <div class="transcript-content" style="display:none;">${escapeHTML(transcriptionText)}</div>
+                `;
+            } else {
+                transcriptHtml = `<div class="transcript-toggle" style="cursor:default;">${escapeHTML(transcriptionText)}</div>`;
+            }
+
+            div.innerHTML = `
+                <div class="voice-player" onclick="loadAndPlayVoice('${fileName}', this)">
+                    <div class="voice-play-btn"><i class="fas fa-play" style="margin-left: 3px;"></i></div>
+                    <div class="voice-waveform">|||||||||</div>
+                </div>
+                ${transcriptHtml}
+            `;
+        } else {
+            div.innerText = text;
+        }
+
+        if (timeString) {
+            const timeDiv = document.createElement('div');
+            timeDiv.className = 'msg-time';
+            timeDiv.innerText = timeString;
+            div.appendChild(timeDiv);
+        }
+
+        if (isNew) {
+            area.appendChild(div);
+            area.scrollTo({ top: area.scrollHeight, behavior: 'smooth' });
+        }
+    }
+
+    // --- ПОИСК ---
+
     function cosineSimilarity(vecA, vecB) {
         let dotProduct = 0, normA = 0, normB = 0;
         for (let i = 0; i < vecA.length; i++) { dotProduct += vecA[i] * vecB[i]; normA += vecA[i] * vecA[i]; normB += vecB[i] * vecB[i]; }
@@ -395,7 +550,7 @@
         const threshold = parseFloat(document.getElementById('semantic-slider').value);
 
         if (!query || !currentChatId) return;
-        resultsDiv.innerHTML = '<div style="color: var(--primary); text-align: center; padding: 10px;"><i class="fas fa-spinner fa-spin"></i> Поиск в зашифрованной базе...</div>';
+        resultsDiv.innerHTML = '<div style="color: var(--primary); text-align: center; padding: 20px;"><i class="fas fa-spinner fa-spin fa-2x"></i></div>';
 
         const { data: history } = await supabaseClient.from('messages').select('encrypted_text, encrypted_vector, created_at').eq('chat_id', currentChatId);
         if (!history || history.length === 0) { resultsDiv.innerHTML = '<div style="color: var(--muted); text-align:center;">Чат пуст.</div>'; return; }
@@ -404,7 +559,7 @@
         let queryVector = null;
 
         if (isSemantic) {
-            resultsDiv.innerHTML = '<div style="color: var(--success); text-align: center; padding: 10px;"><i class="fas fa-brain"></i> ИИ анализирует смысл...</div>';
+            resultsDiv.innerHTML = '<div style="color: var(--success); text-align: center; padding: 20px;"><i class="fas fa-brain fa-fade fa-2x"></i><br>Анализ смысла...</div>';
             const ai = await initAI();
             const output = await ai(query, { pooling: 'mean', normalize: true });
             queryVector = output.data; 
@@ -437,14 +592,14 @@
             } catch (e) {}
         }
 
-        if (results.length === 0) { resultsDiv.innerHTML = '<div style="color: var(--muted); text-align: center; padding: 10px;">Ничего не найдено.</div>'; return; }
+        if (results.length === 0) { resultsDiv.innerHTML = '<div style="color: var(--muted); text-align: center; padding: 20px;"><i class="fas fa-ghost fa-2x"></i><br>Ничего не найдено.</div>'; return; }
         if (isSemantic) results.sort((a, b) => b.score - a.score);
         else results.sort((a, b) => new Date(b.time) - new Date(a.time));
 
         resultsDiv.innerHTML = results.map(r => `
-            <div style="padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px; margin-bottom: 8px;">
-                <div style="color: #fff; margin-bottom: 4px;">${escapeHTML(r.text)}</div>
-                <div style="color: var(--muted); display: flex; justify-content: space-between; font-size: 11px;">
+            <div style="padding: 12px; background: rgba(255,255,255,0.05); border-radius: 12px; margin-bottom: 8px;">
+                <div style="color: #fff; margin-bottom: 6px; font-size: 15px;">${escapeHTML(r.text)}</div>
+                <div style="color: var(--muted); display: flex; justify-content: space-between; font-size: 12px;">
                     <span>${new Date(r.time).toLocaleDateString()} ${new Date(r.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                     ${isSemantic ? `<span style="color:var(--success);"><i class="fas fa-bullseye"></i> ${(r.score * 100).toFixed(0)}%</span>` : ''}
                 </div>
@@ -453,6 +608,8 @@
     }
 
     function toggleSlider() { document.getElementById('slider-container').style.display = document.getElementById('semantic-toggle').checked ? 'flex' : 'none'; }
+
+    // --- ОСТАЛЬНАЯ ЛОГИКА (КРИПТА, ИНИЦИАЛИЗАЦИЯ, БД) ---
 
     let extractor = null;
     let isAiLoading = false;
@@ -481,12 +638,10 @@
 
     const tg = window.Telegram.WebApp;
     tg.expand();
-
     const supabaseClient = supabase.createClient(
         'https://cqhndgtiqdjzzrqdzrfq.supabase.co',
         'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaG5kZ3RpcWRqenpycWR6cmZxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMyODcxNzAsImV4cCI6MjA5ODg2MzE3MH0.Tt432Nn4A9z9IYiVQcePj9v0FEFJNdjGI5pywdFYSOQ'
     );
-
     function setSupabaseToken(token) { supabaseClient.rest.headers['Authorization'] = `Bearer ${token}`; }
 
     let currentUser = null;
@@ -514,6 +669,8 @@
         const text = input.value.trim();
         if (!text || !currentAesKey || !currentChatId) return;
         input.value = "";
+        updateInputMode(); // Возвращаем микрофон
+        
         const encryptedPayload = await encryptText(text, currentAesKey);
         const encryptedVector = await generateAndEncryptVector(text, currentAesKey);
         await supabaseClient.from('messages').insert([ { chat_id: currentChatId, sender_id: currentUser.id, encrypted_text: encryptedPayload, encrypted_vector: encryptedVector } ]);
@@ -568,63 +725,6 @@
         } catch (e) { console.error("P2P Ошибка:", e); }
     }
 
-    // НОВЫЙ РЕНДЕР СООБЩЕНИЙ С КРАСИВЫМИ ГС
-    function renderMessage(text, isMine, timeString = "", msgId = null) {
-        const area = document.getElementById('messages-area');
-        let div = msgId ? document.getElementById(`msg-${msgId}`) : null;
-        let isNew = false;
-        if (!div) {
-            div = document.createElement('div');
-            if (msgId) div.id = `msg-${msgId}`;
-            div.className = `msg-bubble ${isMine ? 'msg-mine' : 'msg-other'}`;
-            isNew = true;
-        }
-
-        if (text.startsWith('[VOICE]:')) {
-            const parts = text.replace('[VOICE]:', '').split('|');
-            const fileName = parts[0];
-            const transcription = parts[1] ? parts[1] : 'ИИ анализирует... ⏳';
-            
-            div.innerHTML = `
-                <div class="voice-player" onclick="loadAndPlayVoice('${fileName}', this)">
-                    <div class="voice-play-btn"><i class="fas fa-play" style="margin-left: 3px;"></i></div>
-                    <div>
-                        <div class="voice-status">Голосовое сообщение</div>
-                    </div>
-                </div>
-                <div class="voice-text">${escapeHTML(transcription)}</div>
-            `;
-        } else {
-            div.innerText = text;
-        }
-
-        if (timeString) {
-            const timeDiv = document.createElement('div');
-            timeDiv.className = 'msg-time';
-            timeDiv.innerText = timeString;
-            div.appendChild(timeDiv);
-        }
-
-        if (isNew) {
-            area.appendChild(div);
-            // Плавная прокрутка
-            area.scrollTo({ top: area.scrollHeight, behavior: 'smooth' });
-        }
-    }
-
-    async function loadAndPlayVoice(fileName, element) {
-        const icon = element.querySelector('.voice-play-btn i');
-        icon.className = 'fas fa-spinner fa-spin';
-        const { data, error } = await supabaseClient.storage.from('voice_messages').download(fileName);
-        if (error) { icon.className = 'fas fa-exclamation-triangle'; return; }
-        const bytes = new Uint8Array(await data.arrayBuffer());
-        try {
-            const decryptedBuffer = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.slice(0, 12) }, currentAesKey, bytes.slice(12));
-            const audioUrl = URL.createObjectURL(new Blob([decryptedBuffer]));
-            element.outerHTML = `<audio controls src="${audioUrl}" autoplay style="height: 40px; width: 220px; outline: none; margin-bottom: 8px; border-radius: 20px;"></audio>`;
-        } catch (e) { icon.className = 'fas fa-lock'; }
-    }
-
     async function generatePersonalArmor(userId) {
         const keyPair = await window.crypto.subtle.generateKey({ name: "RSA-OAEP", modulusLength: 4096, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["encrypt", "decrypt"]);
         await idbKeyval.set(`my_private_key_${userId}`, keyPair.privateKey);
@@ -673,8 +773,7 @@
         if (tgInitData) {
             try {
                 const { data: result, error: fetchErr } = await supabaseClient.functions.invoke('tg-auth', { body: { initData: tgInitData } });
-                if (fetchErr) { alert("Ошибка сервера: " + fetchErr.message); } 
-                else if (result && result.token) {
+                if (result && result.token) {
                     currentUser = { id: result.id, first_name: result.first_name };
                     localStorage.setItem('synd_token', result.token);
                     setSupabaseToken(result.token); 
@@ -763,7 +862,7 @@
         catch (e) { myEncryptedKey = keyData.encrypted_key; }
 
         if (!myEncryptedKey) {
-            document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:#ff9800; padding: 20px; font-size: 14px;"><i class="fas fa-key" style="font-size: 24px; margin-bottom: 10px;"></i><br>Синхронизация ключей...</div>';
+            document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:#ff9800; padding: 20px; font-size: 14px;"><i class="fas fa-key" style="font-size: 24px; margin-bottom: 10px;"></i><br>Синхронизация ключей для нового устройства...</div>';
             currentAesKey = await generateChatKey();
             const { data: friendData } = await supabaseClient.from('users').select('public_key').eq('tg_id', currentFriend.id).single();
             const { data: myData } = await supabaseClient.from('users').select('public_key').eq('tg_id', currentUser.id).single();
@@ -777,7 +876,7 @@
             await supabaseClient.from('chat_keys').update({ encrypted_key: JSON.stringify(encKeysForFriend) }).eq('chat_id', currentChatId).eq('user_id', currentFriend.id);
             await supabaseClient.from('chat_keys').update({ encrypted_key: JSON.stringify(encKeysForMe) }).eq('chat_id', currentChatId).eq('user_id', currentUser.id);
 
-            document.getElementById('messages-area').innerHTML += '<div style="text-align:center; color:var(--success); margin-top: 10px;">Готово! Можно писать.</div>';
+            document.getElementById('messages-area').innerHTML += '<div style="text-align:center; color:var(--success); margin-top: 10px;">Готово! Канал обновлен.</div>';
             subscribeToPrivateMessages();
             return;
         }
@@ -809,7 +908,6 @@
         const isAuth = await authUser();
         if (!isAuth) { document.body.innerHTML = '<div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; color:var(--danger);"><i class="fas fa-lock" style="font-size:48px; margin-bottom:20px;"></i><h2>Доступ запрещен</h2><p style="color:var(--muted)">Открой Хаб через Telegram-бота</p></div>'; return; }
         
-        // Устанавливаем аватарку
         const avatarEl = document.getElementById('my-avatar');
         avatarEl.innerText = currentUser.first_name.charAt(0).toUpperCase();
         avatarEl.style.background = getAvatarGradient(currentUser.id);
@@ -818,12 +916,6 @@
         loadFriends();
         loadMyCurrencies();
         setTimeout(() => { aiWorker.postMessage({ type: 'init' }); }, 1000);
-    }
-
-    function switchScreen(screenId) {
-        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-        document.getElementById(screenId).classList.add('active');
-        if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
     }
 
     async function loadMyStatus() {
@@ -922,24 +1014,24 @@
         if (iOwe && iOwe.length > 0) {
             html += iOwe.map(d => `
                 <div class="debt-row">
-                    <span class="debt-amount owe"><i class="fas fa-arrow-up" style="font-size: 10px;"></i> ${d.amount} ${escapeHTML(d.currency)}</span>
-                    <button class="btn-resolve" onclick="deleteDebt('${d.id}')">Отдать</button>
+                    <span class="debt-amount owe"><i class="fas fa-arrow-up" style="font-size: 12px; margin-right: 4px;"></i> ${d.amount} ${escapeHTML(d.currency)}</span>
+                    <button class="btn-resolve" onclick="deleteDebt('${d.id}')">Вернул</button>
                 </div>`).join('');
         }
         if (owesMe && owesMe.length > 0) {
             html += owesMe.map(d => `
                 <div class="debt-row">
-                    <span class="debt-amount owed"><i class="fas fa-arrow-down" style="font-size: 10px;"></i> ${d.amount} ${escapeHTML(d.currency)}</span>
+                    <span class="debt-amount owed"><i class="fas fa-arrow-down" style="font-size: 12px; margin-right: 4px;"></i> ${d.amount} ${escapeHTML(d.currency)}</span>
                     <button class="btn-resolve" onclick="deleteDebt('${d.id}')">Простить</button>
                 </div>`).join('');
         }
-        document.getElementById('friend-debts').innerHTML = html || '<div style="color:var(--muted); font-size: 13px; text-align: center; padding: 10px 0;">Счета чисты</div>';
+        document.getElementById('friend-debts-list').innerHTML = html || '<div style="color:var(--muted); font-size: 15px; text-align: center; padding: 20px 0;"><i class="fas fa-check-circle" style="font-size:32px; color:var(--success); margin-bottom:10px; opacity:0.7;"></i><br>Никто никому не должен</div>';
         
         await initPrivateChat(tgId);
         
         const { data: friendData } = await supabaseClient.from('users').select('public_key').eq('tg_id', tgId).single();
         const fingerprint = await getFingerprint(friendData?.public_key);
-        document.getElementById('friend-fingerprint').innerText = `Код: ${fingerprint}`;
+        document.getElementById('friend-fingerprint').innerText = `Шифр: ${fingerprint}`;
     }
 
     async function deleteDebt(id) {
@@ -981,7 +1073,9 @@
 
         await supabaseClient.from('debts').insert({ creditor_id: currentFriend.id, debtor_id: currentUser.id, amount: amount, currency: currencyArr.join(' ') });
         if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
-        await openFriend(currentFriend.id, currentFriend.name);
+        
+        switchScreen('screen-friend');
+        openFriend(currentFriend.id, currentFriend.name);
     }
 
     initApp();
