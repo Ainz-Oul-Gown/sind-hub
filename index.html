@@ -265,16 +265,13 @@
                 <textarea id="chat-input" rows="1" placeholder="Сообщение..." oninput="autoResizeInput()"></textarea>
                 
                 <!-- Кнопка Микрофон/Отправка -->
+                <!-- Кнопка Микрофон/Отправка -->
                 <button class="btn-dynamic mode-mic" id="btn-input-action" 
-                        style="touch-action: none;"
-                        ontouchstart="startVoiceHold(event)" 
-                        ontouchmove="moveVoiceHold(event)" 
-                        ontouchend="endVoiceHold(event)"
-                        ontouchcancel="endVoiceHold(event)"
-                        onmousedown="startVoiceHold(event)" 
-                        onmousemove="moveVoiceHold(event)" 
-                        onmouseup="endVoiceHold(event)"
-                        onmouseleave="endVoiceHold(event)">
+                        style="touch-action: none; user-select: none; -webkit-user-select: none;"
+                        onpointerdown="startVoiceHold(event)"
+                        onpointermove="moveVoiceHold(event)"
+                        onpointerup="endVoiceHold(event)"
+                        onpointercancel="endVoiceHold(event)">
                     <i class="fas fa-microphone"></i>
                 </button>
             </div>
@@ -505,6 +502,7 @@
 
 
     // --- НОВАЯ МЕХАНИКА ГОЛОСОВЫХ (КАК В ТГ) ---
+    // --- ИДЕАЛЬНАЯ МЕХАНИКА ГОЛОСОВЫХ (POINTER EVENTS) ---
     let mediaRecorder;
     let audioChunks = [];
     let isRecording = false;
@@ -514,7 +512,7 @@
     let startY = 0;
     let recStartTime = 0;
     let recTimerInterval = null;
-    let isHolding = false; // Защита от двойных нажатий
+    let isPointerDown = false; // Жесткий контроль пальца
 
     function formatTime(ms) {
         const totalSec = Math.floor(ms / 1000);
@@ -524,8 +522,6 @@
     }
 
     async function startVoiceHold(e) {
-        e.preventDefault(); // ЖЕСТКО БЛОКИРУЕМ двойные срабатывания сенсора
-
         const btn = document.getElementById('btn-input-action');
         
         // 1. Если это кнопка отправки текста — просто отправляем и выходим!
@@ -534,24 +530,27 @@
             return;
         }
 
-        // 2. Если уже пишем или держим — игнорим
-        if (isRecording || isHolding) return;
-        isHolding = true;
+        // 2. Блокируем множественные нажатия
+        if (isRecording || isPointerDown) return;
+        isPointerDown = true;
         
-        // 3. Запрашиваем микрофон (если еще нет)
+        // "Захватываем" палец, чтобы он не потерялся, если юзер уведет его с кнопки
+        btn.setPointerCapture(e.pointerId);
+        startY = e.clientY;
+        
+        // 3. Если прав на микрофон еще нет
         if (!globalAudioStream) {
             try {
                 globalAudioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
             } catch (err) {
-                alert("Нет доступа к микрофону!");
-                isHolding = false;
+                alert("Пожалуйста, разрешите доступ к микрофону!");
+                isPointerDown = false;
                 return;
             }
-            // Если юзер отпустил палец, пока вылезало системное окно
-            if (!isHolding) return;
+            // Если юзер отпустил палец, пока висело системное окно "Разрешить?"
+            if (!isPointerDown) return;
         }
         
-        startY = e.touches ? e.touches[0].clientY : e.clientY;
         isRecordingLocked = false;
         
         try {
@@ -563,13 +562,18 @@
                 clearInterval(recTimerInterval);
                 document.getElementById('record-overlay').classList.remove('active');
                 
+                // Всегда возвращаем интерфейс кнопки в исходное состояние
+                btn.innerHTML = '<i class="fas fa-microphone"></i>';
+                btn.style.transform = 'scale(1)'; 
+                
                 const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
                 isRecording = false;
                 
+                // Если меньше секунды или отменили — игнорируем
                 if (Date.now() - recStartTime < 1000 || !window.shouldSendVoice) return;
-                if (audioBlob.size > 15 * 1024 * 1024) return alert('Сообщение больше 15 МБ');
+                if (audioBlob.size > 15 * 1024 * 1024) return alert('Сообщение слишком большое (Макс 15 МБ)');
                 
-                processBackgroundVoice(audioBlob).catch(err => console.error("Ошибка:", err));
+                processBackgroundVoice(audioBlob).catch(err => console.error("Ошибка ГС:", err));
             };
             
             mediaRecorder.start();
@@ -577,30 +581,28 @@
             window.shouldSendVoice = false; 
             recStartTime = Date.now();
             
+            // Включаем интерфейс записи
             document.getElementById('record-overlay').classList.add('active');
             document.getElementById('record-hint').style.display = 'flex';
             document.getElementById('record-locked-actions').classList.remove('active');
-            
             document.getElementById('record-timer').querySelector('span').innerText = '0:00';
+            
             recTimerInterval = setInterval(() => {
                 document.getElementById('record-timer').querySelector('span').innerText = formatTime(Date.now() - recStartTime);
             }, 500);
 
             btn.innerHTML = '<i class="fas fa-microphone"></i>';
             btn.style.transform = 'scale(1.3)'; 
-
             if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
-        } catch (err) { alert('Ошибка запуска микрофона!'); isHolding = false; }
+            
+        } catch (err) { alert('Ошибка инициализации микрофона!'); isPointerDown = false; }
     }
 
     function moveVoiceHold(e) {
-        if (!isRecording || isRecordingLocked) return;
-        e.preventDefault(); // Жестко блокируем скролл
+        if (!isRecording || isRecordingLocked || !isPointerDown) return;
 
-        const currentY = e.touches ? e.touches[0].clientY : e.clientY;
-        
-        // Свайпнули вверх на 40px
-        if (startY - currentY > 40) {
+        // Если потянули палец вверх на 40 пикселей - ЛОК!
+        if (startY - e.clientY > 40) {
             isRecordingLocked = true;
             document.getElementById('record-hint').style.display = 'none';
             document.getElementById('record-locked-actions').classList.add('active');
@@ -613,30 +615,31 @@
     }
 
     function endVoiceHold(e) {
-        isHolding = false;
-        if (e) e.preventDefault();
+        isPointerDown = false;
+        const btn = document.getElementById('btn-input-action');
+        
+        // Отпускаем захват пальца
+        try { if (e && e.pointerId) btn.releasePointerCapture(e.pointerId); } catch(err) {}
         
         if (!isRecording) return;
-        document.getElementById('btn-input-action').style.transform = 'scale(1)';
+        btn.style.transform = 'scale(1)';
         
-        // Если залочили - ждем пока юзер нажмет кнопку Отмена/Отправить
+        // Если ГС заблокировано свайпом, просто ждем пока юзер нажмет "Отмена" или "Отправить"
         if (isRecordingLocked) return; 
         
-        // Если не залочили - останавливаем и отправляем
+        // Если не залочили — останавливаем и отправляем
         window.shouldSendVoice = true;
         mediaRecorder.stop();
     }
 
     function cancelRecording() {
         window.shouldSendVoice = false;
-        mediaRecorder.stop();
-        document.getElementById('btn-input-action').innerHTML = '<i class="fas fa-microphone"></i>';
+        if (isRecording) mediaRecorder.stop();
     }
     
     function stopAndSendRecording() {
         window.shouldSendVoice = true;
-        mediaRecorder.stop();
-        document.getElementById('btn-input-action').innerHTML = '<i class="fas fa-microphone"></i>';
+        if (isRecording) mediaRecorder.stop();
     }
 
 
@@ -1221,58 +1224,66 @@
         await loadDebts(currentFriend.id);
     }
 
+    // --- ЖЕЛЕЗОБЕТОННАЯ ЛОГИКА ДОЛГОВ ---
     async function openDebtModal() {
-        // Сначала скрываем модалку и СРАЗУ переключаем экран!
+        // Жестко прячем модалку чата (Сводку долгов)
         document.getElementById('modal-debts').classList.remove('active');
-        switchScreen('screen-add-debt');
         
-        // Очищаем поля
         document.getElementById('debt-rubles').value = ''; 
         document.getElementById('debt-result').innerText = '0';
         
+        // Подгружаем валюты друга
+        const { data: friendCurrencies } = await supabaseClient.from('currencies').select('*').eq('owner_id', currentFriend.id);
         const select = document.getElementById('debt-currency');
-        select.innerHTML = '<option>Загрузка валют...</option>';
-        
-        // Теперь спокойно грузим валюты друга в фоне
-        try {
-            const { data: friendCurrencies } = await supabaseClient.from('currencies').select('*').eq('owner_id', currentFriend.id);
-            select.innerHTML = '';
-            if (!friendCurrencies || friendCurrencies.length === 0) {
-                select.innerHTML = `<option value="Руб." data-price="1">Рубли (1 к 1)</option>`;
-            } else {
-                friendCurrencies.forEach(c => {
-                    const safeName = escapeHTML(c.name);
-                    select.innerHTML += `<option value="${safeName}" data-price="${c.rub_value}">${safeName} (Курс: ${c.rub_value} ₽)</option>`;
-                });
-            }
-        } catch(e) {
+        select.innerHTML = '';
+        if (!friendCurrencies || friendCurrencies.length === 0) {
             select.innerHTML = `<option value="Руб." data-price="1">Рубли (1 к 1)</option>`;
+        } else {
+            friendCurrencies.forEach(c => {
+                const safeName = escapeHTML(c.name);
+                select.innerHTML += `<option value="${safeName}" data-price="${c.rub_value}">${safeName} (Курс: ${c.rub_value} ₽)</option>`;
+            });
         }
+        
+        // Переходим на экран оформления долга
+        switchScreen('screen-add-debt');
     }
-
+    
     function calculateDebt() {
         const rubles = parseFloat(document.getElementById('debt-rubles').value) || 0;
         const select = document.getElementById('debt-currency');
         const price = parseFloat(select.options[select.selectedIndex]?.getAttribute('data-price')) || 1;
-        document.getElementById('debt-result').innerText = rubles === 0 ? '0' : `${(rubles / price).toFixed(1)} ${select.value}`;
+        document.getElementById('debt-result').innerText = rubles === 0 ? '0' : `${(rubles / price).toFixed(2)} ${select.value}`;
     }
 
     async function saveDebt() {
-        const finalAmountText = document.getElementById('debt-result').innerText;
-        if(finalAmountText === '0') return alert('Введи сумму');
-        const [amountStr, ...currencyArr] = finalAmountText.split(' ');
-        const amount = parseFloat(amountStr);
-        if (isNaN(amount) || amount <= 0) return alert('Недопустимая сумма!');
+        const rubles = parseFloat(document.getElementById('debt-rubles').value);
+        if (!rubles || rubles <= 0) return alert('Введите корректную сумму в рублях!');
+        
+        // Берем значения напрямую из селекта (без сложных парсингов текста)
+        const select = document.getElementById('debt-currency');
+        const price = parseFloat(select.options[select.selectedIndex]?.getAttribute('data-price')) || 1;
+        const currencyName = select.value;
+        
+        const finalAmount = parseFloat((rubles / price).toFixed(2));
+        if (finalAmount > 1000000000) return alert('Сумма превышает лимиты Синдиката.');
 
-        const { error } = await supabaseClient.from('debts').insert({ creditor_id: currentFriend.id, debtor_id: currentUser.id, amount: amount, currency: currencyArr.join(' ') });
-        if (error) { alert("Ошибка сохранения: " + error.message); return; }
+        // Записываем в базу и ждем ответа (.select() гарантирует, что мы получим результат)
+        const { error } = await supabaseClient.from('debts').insert({ 
+            creditor_id: currentFriend.id, 
+            debtor_id: currentUser.id, 
+            amount: finalAmount, 
+            currency: currencyName 
+        }).select();
+        
+        if (error) { alert("Ошибка сохранения в БД: " + error.message); return; }
         
         if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
         
-        // ВОТ ЗДЕСЬ ИСПРАВЛЕНО ВОЗВРАЩЕНИЕ
+        // Возвращаемся в чат, подгружаем свежие долги и показываем модалку
         switchScreen('screen-friend');
         await loadDebts(currentFriend.id);
-        document.getElementById('modal-debts').classList.add('active'); // Оставляем модалку открытой, чтобы увидеть результат
+        document.getElementById('modal-debts').classList.add('active'); 
     }
 
     initApp();
