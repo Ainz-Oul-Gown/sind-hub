@@ -483,20 +483,51 @@
     }
 
     // --- ГРУППЫ: ПРИНЯТИЕ ИНВАЙТА ---
-    async function acceptGroupInvite(groupId, keysJSON) {
-        // Проверяем, нет ли нас уже там
-        const { data: existing } = await supabaseClient.from('chat_keys')
-            .select('id').eq('chat_id', groupId).eq('user_id', currentUser.id).single();
-            
-        if (existing) return alert("Вы уже состоите в этой группе!");
+    async function acceptGroupInvite(groupId, keysJSON, btnElement) {
+        // 1. Мгновенная реакция UI (крутилка на кнопке)
+        if (btnElement) {
+            btnElement.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Вступаем...';
+            btnElement.disabled = true;
+            btnElement.style.opacity = '0.7';
+        }
 
-        // Записываем полученные ключи в БД
+        // 2. ИСПРАВЛЕНИЕ 406 ОШИБКИ: используем maybeSingle() вместо single()
+        const { data: existing } = await supabaseClient.from('chat_keys')
+            .select('id').eq('chat_id', groupId).eq('user_id', currentUser.id).maybeSingle();
+            
+        if (existing) {
+            if (btnElement) {
+                btnElement.innerHTML = '<i class="fas fa-check"></i> Уже в группе';
+                btnElement.style.background = 'var(--surface)';
+                btnElement.style.color = 'var(--muted)';
+            }
+            return;
+        }
+
+        // 3. Записываем полученные ключи в БД
         const { error } = await supabaseClient.from('chat_keys').insert([
             { chat_id: groupId, user_id: currentUser.id, encrypted_key: keysJSON }
         ]);
 
-        if (error) alert("Ошибка вступления");
-        else alert("Вы успешно вступили в группу!");
+        if (error) {
+            alert("Ошибка вступления");
+            if (btnElement) {
+                btnElement.innerHTML = 'Вступить';
+                btnElement.disabled = false;
+                btnElement.style.opacity = '1';
+            }
+        } else {
+            // 4. Успех! Красим кнопку и обновляем список чатов
+            if (btnElement) {
+                btnElement.innerHTML = '<i class="fas fa-check"></i> Вы в группе';
+                btnElement.style.background = 'var(--surface)';
+                btnElement.style.color = 'var(--muted)';
+                btnElement.onclick = null; // Отключаем клик
+            }
+            
+            // Ждем полсекунды, чтобы база точно успела сохранить данные, и только потом грузим список
+            setTimeout(() => { loadChats(); }, 500); 
+        }
     }
 
     // Функция для формирования текста "Сегодня", "Вчера" или "5 июля"
@@ -1382,10 +1413,11 @@
 
         // Генерируем цветное имя для групп
         let senderHtml = '';
-        if (!isMine && currentChatType === 'group' && senderName && senderId) {
+        if (!isMine && currentChatType === 'group' && senderId) {
+            const finalName = senderName || "Участник"; // Если имя не успело подгрузиться, пишем "Участник"
             const colors = ['#FF2D55', '#FF9F0A', '#32D74B', '#0A84FF', '#5E5CE6', '#BF5AF2'];
             const cIdx = senderId.toString().split('').reduce((a,b)=>a+b.charCodeAt(0),0) % colors.length;
-            senderHtml = `<div class="sender-name" style="color: ${colors[cIdx]};">${escapeHTML(senderName)}</div>`;
+            senderHtml = `<div class="sender-name" style="color: ${colors[cIdx]};">${escapeHTML(finalName)}</div>`;
         }
         
         if (text.startsWith('[VOICE]:')) {
@@ -1474,7 +1506,7 @@
                         <div style="width: 40px; height: 40px; border-radius: 50%; background: var(--primary); display:flex; align-items:center; justify-content:center; color: white;"><i class="fas fa-users"></i></div>
                         <div>
                             <div style="font-weight: 600;">${escapeHTML(groupName)}</div>
-                            <button onclick="acceptGroupInvite('${groupId}', atob('${safeKeys}'))" style="margin-top: 8px; background: var(--success); color: white; border: none; padding: 6px 12px; border-radius: 12px; font-weight: 600; cursor: pointer;">Вступить</button>
+                            <button onclick="acceptGroupInvite('${groupId}', atob('${safeKeys}'), this)" style="margin-top: 8px; background: var(--success); color: white; border: none; padding: 6px 12px; border-radius: 12px; font-weight: 600; cursor: pointer;">Вступить</button>
                         </div>
                     </div>
                 `;
@@ -1885,8 +1917,9 @@
         requestMicrophoneAccess(); 
         
         // Подтягиваем количество участников
-        const { count } = await supabaseClient.from('chat_keys').select('*', { count: 'exact', head: true }).eq('chat_id', groupId);
-        document.getElementById('friend-fingerprint').innerText = `${count} участник${count > 1 ? 'ов' : ''}`;
+        const { count, error } = await supabaseClient.from('chat_keys').select('id', { count: 'exact', head: true }).eq('chat_id', groupId);
+        const finalCount = count || 1; // Защита от пустоты
+        document.getElementById('friend-fingerprint').innerText = `${finalCount} участник${finalCount > 1 ? 'ов' : ''}`;
         
         await loadGroupChatKeys(groupId);
     }
