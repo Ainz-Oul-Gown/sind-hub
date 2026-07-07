@@ -129,15 +129,23 @@
         @keyframes slideUpHint { 0% { transform: translateY(0); opacity: 0.5; } 50% { transform: translateY(-5px); opacity: 1; } 100% { transform: translateY(0); opacity: 0.5; } }
 
         
-        /* Кастомный ГС UI */
-        .voice-player { display: flex; align-items: center; gap: 12px; padding: 4px 6px 4px 4px; background: rgba(0,0,0,0.15); border-radius: 24px; cursor: pointer; margin-bottom: 6px; width: fit-content; }
-        .voice-play-btn { width: 36px; height: 36px; background: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--primary); font-size: 14px; transition: 0.2s; box-shadow: 0 2px 5px rgba(0,0,0,0.2); flex-shrink: 0;}
-        .msg-other .voice-play-btn { background: var(--primary); color: white; }
-        .voice-waveform { font-size: 18px; color: rgba(255,255,255,0.8); margin-right: 8px; letter-spacing: -2px; }
+        /* Кастомный ГС UI (Стиль Telegram) */
+        .msg-bubble.voice-msg { min-width: 240px; padding: 12px 14px 10px; display: flex; flex-direction: column; }
+        .voice-player { display: flex; align-items: center; gap: 12px; cursor: pointer; width: 100%; user-select: none; }
         
-        .transcript-toggle { font-size: 12px; color: rgba(255,255,255,0.7); cursor: pointer; display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; user-select: none; }
-        .transcript-content { font-size: 14px; font-style: italic; color: rgba(255,255,255,0.9); background: rgba(0,0,0,0.1); padding: 8px 12px; border-radius: 8px; margin-top: 6px; display: none; border-left: 2px solid rgba(255,255,255,0.3); }
-
+        .voice-play-btn { width: 42px; height: 42px; background: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--primary); font-size: 16px; transition: 0.2s; box-shadow: 0 2px 5px rgba(0,0,0,0.15); flex-shrink: 0;}
+        .msg-other .voice-play-btn { background: var(--primary); color: white; }
+        
+        .voice-waveform { display: flex; align-items: center; gap: 2.5px; flex-grow: 1; height: 32px; margin-right: 4px; }
+        .v-bar { flex: 1; border-radius: 2px; transition: 0.2s; min-width: 2px; }
+        
+        /* Цвета палочек для меня и друга */
+        .msg-mine .v-bar { background: rgba(255,255,255,0.9); }
+        .msg-other .v-bar { background: var(--primary); opacity: 0.6; }
+        
+        .transcript-toggle { font-size: 13px; color: rgba(255,255,255,0.8); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.15); width: 100%; user-select: none; }
+        .transcript-content { font-size: 14px; color: rgba(255,255,255,0.9); background: rgba(0,0,0,0.15); padding: 10px; border-radius: 8px; margin-top: 8px; display: none; }
+        
         /* FIX: Модалки теперь FIXED (не скроллятся вместе с фоном) */
         .glass-modal { position: fixed; inset: 0; z-index: 1000; background: rgba(15, 15, 19, 0.85); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); display: none; flex-direction: column; padding: 20px; animation: fadeIn 0.2s ease; overflow-y: auto;}
         .glass-modal.active { display: flex; }
@@ -564,37 +572,35 @@
         const waveContainer = document.querySelector('.v-wave');
         if (!waveContainer) return;
         
-        waveContainer.innerHTML = ''; // Очищаем старые ||||||
+        waveContainer.innerHTML = ''; 
         waveContainer.style.display = 'flex';
         waveContainer.style.alignItems = 'center';
         waveContainer.style.justifyContent = 'space-between';
         waveContainer.style.gap = '2px';
         waveContainer.style.height = '24px'; 
         
-        const BARS = 30; // Количество точек/палочек
+        const BARS = 30;
         let buckets = new Array(BARS).fill(0);
         
         if (volumeHistory.length > 0) {
-            // Разбиваем всю историю записи на 30 равных отрезков
             const step = volumeHistory.length / BARS;
             for (let i = 0; i < BARS; i++) {
                 let start = Math.floor(i * step);
                 let end = Math.floor((i + 1) * step);
                 if (end === start) end = start + 1; 
-                
                 let sum = 0, count = 0;
-                for (let j = start; j < end && j < volumeHistory.length; j++) {
-                    sum += volumeHistory[j];
-                    count++;
-                }
+                for (let j = start; j < end && j < volumeHistory.length; j++) { sum += volumeHistory[j]; count++; }
                 buckets[i] = count > 0 ? sum / count : 0;
             }
         }
         
-        // Рисуем 30 палочек
+        // --- НОВАЯ ЛОГИКА: Относительное масштабирование ---
+        const maxVol = Math.max(...buckets, 1); // Ищем пик громкости (минимум 1, чтобы не делить на 0)
+        
         buckets.forEach(vol => {
-            // vol (громкость) от 0 до 255. Высота палочки от 3px до 24px
-            let h = 3 + (vol / 255) * 21; 
+            const norm = vol / maxVol; // Получаем долю от 0.0 до 1.0
+            let h = 3 + norm * 21; // Переводим в пиксели от 3px до 24px
+            
             const bar = document.createElement('div');
             bar.style.width = '3px';
             bar.style.height = `${h}px`;
@@ -693,8 +699,28 @@
                 if (wasCancelled || !window.shouldSendVoice || duration < 800) return; 
                 if (audioBlob.size > 15 * 1024 * 1024) return alert('Сообщение слишком большое');
                 
-                processBackgroundVoice(audioBlob).catch(err => console.error("Ошибка ГС:", err));
+                // === ГЕНЕРИРУЕМ СТРОКУ ГРОМКОСТИ ДЛЯ БД ===
+                const BARS = 30;
+                let buckets = new Array(BARS).fill(0);
+                if (volumeHistory.length > 0) {
+                    const step = volumeHistory.length / BARS;
+                    for (let i = 0; i < BARS; i++) {
+                        let start = Math.floor(i * step);
+                        let end = Math.floor((i + 1) * step);
+                        if (end === start) end = start + 1; 
+                        let sum = 0, count = 0;
+                        for (let j = start; j < end && j < volumeHistory.length; j++) { sum += volumeHistory[j]; count++; }
+                        buckets[i] = count > 0 ? sum / count : 0;
+                    }
+                }
+                const maxVol = Math.max(...buckets, 1);
+                // Превращаем массив в строку вида "10,50,100,20..."
+                const wfStr = buckets.map(v => Math.floor((v / maxVol) * 100)).join(',');
+                
+                // Передаем строку в функцию отправки
+                processBackgroundVoice(audioBlob, wfStr).catch(err => console.error("Ошибка ГС:", err));
             };
+                
             
             mediaRecorder.start();
             isRecording = true;
@@ -938,7 +964,8 @@
         });
     }
 
-    async function processBackgroundVoice(audioBlob) {
+    // Добавили второй параметр wfStr
+    async function processBackgroundVoice(audioBlob, wfStr) { 
         if (!currentAesKey || !currentChatId) return;
         const fileName = `voice_${Date.now()}_${currentUser.id}.bin`;
         const arrayBuffer = await audioBlob.arrayBuffer();
@@ -949,7 +976,9 @@
         payload.set(iv, 0); payload.set(encryptedBytes, iv.length);
 
         await supabaseClient.storage.from('voice_messages').upload(fileName, payload, { contentType: 'application/octet-stream' });
-        const textMarker = `[VOICE]:${fileName}`;
+        
+        // Вшиваем WF (WaveForm) в маркер!
+        const textMarker = `[VOICE]:${fileName}|WF:${wfStr}`; 
         const encryptedPayloadText = await encryptText(textMarker, currentAesKey);
 
         const { data: insertedMsg, error: insertErr } = await supabaseClient.from('messages').insert([
@@ -966,13 +995,15 @@
             if (!transcribedText || transcribedText.trim() === '') throw new Error("ИИ не услышал слов");
 
             const encryptedVector = await generateAndEncryptVector(transcribedText, currentAesKey);
-            const newMarker = `[VOICE]:${fileName}|${transcribedText.trim()}`;
+            // Добавляем перевод после графика
+            const newMarker = `[VOICE]:${fileName}|WF:${wfStr}|${transcribedText.trim()}`;
             const newEncryptedText = await encryptText(newMarker, currentAesKey);
 
             await supabaseClient.from('messages').update({ encrypted_text: newEncryptedText, encrypted_vector: encryptedVector }).eq('id', insertedMsg.id);
         } catch (e) {
             try {
-                const errorMarker = `[VOICE]:${fileName}|❌ Ошибка: ${e.message}`;
+                // Если ИИ сломался, всё равно оставляем график!
+                const errorMarker = `[VOICE]:${fileName}|WF:${wfStr}|❌ Ошибка: ${e.message}`;
                 const errorEncryptedText = await encryptText(errorMarker, currentAesKey);
                 await supabaseClient.from('messages').update({ encrypted_text: errorEncryptedText }).eq('id', insertedMsg.id);
             } catch (fallbackErr) {}
@@ -1040,11 +1071,43 @@
         }
 
         if (text.startsWith('[VOICE]:')) {
+            div.classList.add('voice-msg'); // Добавляем класс для широкого облачка
+            
             const parts = text.replace('[VOICE]:', '').split('|');
             const fileName = parts[0];
-            const hasTranscript = parts[1] && !parts[1].includes('❌ Ошибка');
-            const transcriptionText = parts[1] ? parts[1] : 'ИИ анализирует... ⏳';
             
+            let wfStr = null;
+            let transcriptionText = 'ИИ анализирует... ⏳';
+            let hasTranscript = false;
+
+            // Разбираем части сообщения (График и Перевод)
+            for (let i = 1; i < parts.length; i++) {
+                if (parts[i].startsWith('WF:')) {
+                    wfStr = parts[i].substring(3);
+                } else if (!parts[i].includes('❌ Ошибка')) {
+                    transcriptionText = parts[i];
+                    hasTranscript = true;
+                } else {
+                    transcriptionText = parts[i];
+                }
+            }
+
+            // Генерируем 30 палочек графика
+            let barsHtml = '';
+            if (wfStr) {
+                const vals = wfStr.split(',').map(Number);
+                vals.forEach(val => {
+                    let h = Math.max(10, val); // Минимум 10% высоты
+                    barsHtml += `<div class="v-bar" style="height: ${h}%;"></div>`;
+                });
+            } else {
+                // Страховка для старых ГС без графиков
+                for(let i=0; i<30; i++) {
+                    let h = 10 + Math.random() * 90;
+                    barsHtml += `<div class="v-bar" style="height: ${h}%;"></div>`;
+                }
+            }
+
             let transcriptHtml = '';
             if (hasTranscript) {
                 transcriptHtml = `
@@ -1058,12 +1121,11 @@
             div.innerHTML = `
                 <div class="voice-player" onclick="loadAndPlayVoice('${fileName}', this)">
                     <div class="voice-play-btn"><i class="fas fa-play" style="margin-left: 3px;"></i></div>
-                    <div class="voice-waveform">|||||||||</div>
+                    <div class="voice-waveform">${barsHtml}</div>
                 </div>
                 ${transcriptHtml}
             `;
         } else {
-            // Уважаем переносы строк
             div.innerHTML = escapeHTML(text).replace(/\n/g, '<br>');
         }
 
