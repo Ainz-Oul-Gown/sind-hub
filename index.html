@@ -99,6 +99,22 @@
             border: 1px solid rgba(255,255,255,0.1); color: white; outline: none; font-family: 'Inter', sans-serif;
             font-size: 16px; resize: none; overflow-y: auto; max-height: 120px; line-height: 20px; min-height: 42px;
         }
+
+        /* Плашка с датой в чате */
+        .date-divider {
+            align-self: center;
+            background: rgba(0, 0, 0, 0.35);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            color: rgba(255, 255, 255, 0.95);
+            padding: 4px 12px;
+            border-radius: 14px;
+            font-size: 13px;
+            font-weight: 500;
+            margin: 8px 0 4px;
+            user-select: none;
+            z-index: 2;
+        }
         
         .btn-dynamic { width: 42px; height: 42px; border-radius: 50%; border: none; font-size: 18px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1); flex-shrink: 0; outline: none; -webkit-tap-highlight-color: transparent;}
         .btn-dynamic.mode-mic { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
@@ -345,6 +361,23 @@
         return str.replace(/[&<>'"]/g,
             tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag])
         );
+    }
+
+    // Функция для формирования текста "Сегодня", "Вчера" или "5 июля"
+    function getRelativeDateStr(date) {
+        const today = new Date();
+        const yesterday = new Date(); 
+        yesterday.setDate(yesterday.getDate() - 1);
+        
+        const isSameDay = (d1, d2) => d1.getDate() === d2.getDate() && d1.getMonth() === d2.getMonth() && d1.getFullYear() === d2.getFullYear();
+        
+        if (isSameDay(date, today)) return "Сегодня";
+        if (isSameDay(date, yesterday)) return "Вчера";
+        
+        const months = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+        let str = `${date.getDate()} ${months[date.getMonth()]}`;
+        if (date.getFullYear() !== today.getFullYear()) str += ` ${date.getFullYear()}`;
+        return str;
     }
 
     async function requestMicrophoneAccess() {
@@ -1077,7 +1110,7 @@
             
             // --- ЛОГИКА ПРОГРЕСС БАРА ---
             audio.addEventListener('timeupdate', () => {
-                if (!audio.duration) return;
+                if (!audio.duration || player.isScrubbing) return; // <--- ДОБАВЛЕНО ИГНОРИРОВАНИЕ
                 const progress = audio.currentTime / audio.duration;
                 const bars = player.querySelectorAll('.v-bar');
                 const activeCount = Math.floor(progress * bars.length);
@@ -1107,6 +1140,7 @@
     }
 
     // --- ЛОГИКА ПЕРЕМОТКИ И СКРАББИНГА (DRAG) ---
+    // --- ЛОГИКА ПЕРЕМОТКИ И СКРАББИНГА (DRAG) ---
     function handleWaveformPointer(e, waveformEl, fileName) {
         const player = waveformEl.closest('.voice-player');
         
@@ -1118,35 +1152,53 @@
         
         const audio = player.audioObj;
         
-        // Функция расчета позиции
-        const updateTime = (clientX) => {
+        // Вспомогательная функция: ТОЛЬКО красит палочки, но НЕ трогает саму музыку
+        const updateVisuals = (clientX) => {
             const rect = waveformEl.getBoundingClientRect();
             let x = clientX - rect.left;
-            x = Math.max(0, Math.min(x, rect.width)); // Жесткие рамки от 0 до 100%
+            x = Math.max(0, Math.min(x, rect.width)); 
             const percent = x / rect.width;
             
-            if (audio.duration) {
-                audio.currentTime = percent * audio.duration;
-                // Звук продолжает играть, а timeupdate сам перерисует прогресс-бар
-            }
+            const bars = waveformEl.querySelectorAll('.v-bar');
+            const activeCount = Math.floor(percent * bars.length);
+            
+            bars.forEach((bar, index) => {
+                if (index < activeCount) bar.classList.add('active');
+                else bar.classList.remove('active');
+            });
+            
+            return percent;
         };
 
         if (e.type === 'pointerdown') {
             try { waveformEl.setPointerCapture(e.pointerId); } catch(err){}
-            updateTime(e.clientX); // Прыгаем на место тапа
+            
+            // 1. Ставим флаг, что мы держим палец (чтобы timeupdate не мешал нам рисовать)
+            player.isScrubbing = true; 
+            
+            // 2. Красим палочки в месте нажатия
+            let finalPercent = updateVisuals(e.clientX); 
             if(tg.HapticFeedback) tg.HapticFeedback.selectionChanged();
             
-            // Если ведем пальцем - обновляем время без остановки воспроизведения
+            // 3. Пока ведем пальцем - только перерисовываем картинку! Аудио играет своим чередом
             waveformEl.onpointermove = (ev) => {
-                updateTime(ev.clientX);
+                finalPercent = updateVisuals(ev.clientX);
             };
             
-            // Отпускаем палец - стираем слежку
+            // 4. Как только ОТПУСТИЛИ палец - перематываем реальное аудио
             waveformEl.onpointerup = waveformEl.onpointercancel = (ev) => {
                 waveformEl.onpointermove = null;
                 waveformEl.onpointerup = null;
                 waveformEl.onpointercancel = null;
                 try { waveformEl.releasePointerCapture(e.pointerId); } catch(err){}
+                
+                // Делаем мгновенный скачок аудио в ту точку, где мы отпустили палец
+                if (audio.duration) {
+                    audio.currentTime = finalPercent * audio.duration; 
+                }
+                
+                // Отдаем контроль за палочками обратно плееру
+                player.isScrubbing = false; 
             };
         }
     }
@@ -1163,7 +1215,7 @@
         if(tg.HapticFeedback) tg.HapticFeedback.selectionChanged();
     }
 
-    function renderMessage(text, isMine, timeString = "", msgId = null) {
+    function renderMessage(text, isMine, timeString = "", msgId = null, msgDate = null) {
         const area = document.getElementById('messages-area');
         let div = msgId ? document.getElementById(`msg-${msgId}`) : null;
         let isNew = false;
@@ -1175,6 +1227,19 @@
             isNew = true;
         }
 
+        // --- ЛОГИКА ВСТАВКИ ПЛАШКИ С ДАТОЙ ---
+        if (isNew && msgDate) {
+            const dateStr = getRelativeDateStr(msgDate);
+            // Если дата сменилась, создаем облачко по центру
+            if (window.lastRenderedDate !== dateStr) {
+                const divider = document.createElement('div');
+                divider.className = 'date-divider';
+                divider.innerText = dateStr;
+                area.appendChild(divider);
+                window.lastRenderedDate = dateStr;
+            }
+        }
+        
         if (text.startsWith('[VOICE]:')) {
             div.classList.add('voice-msg'); // Добавляем класс для широкого облачка
             
@@ -1326,12 +1391,14 @@
                         for (let i = 0; i < rawData.length; i++) bytes[i] = rawData.charCodeAt(i);
                         const decryptedBuffer = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.slice(0, 12) }, currentAesKey, bytes.slice(12));
                         const plainText = dec.decode(decryptedBuffer); 
-                        renderMessage(plainText, newMsg.sender_id === currentUser.id, timeStr, newMsg.id);
+                        renderMessage(plainText, newMsg.sender_id === currentUser.id, timeStr, newMsg.id, msgDate);
                         
                         if (newMsg.sender_id !== currentUser.id && plainText.startsWith('[VOICE]:') && !plainText.includes('|') && isAiReady) {
                             helpFriendTranscribe(plainText.replace('[VOICE]:', ''), newMsg.id);
                         }
-                    } catch (e) { renderMessage("🔒 [Ошибка расшифровки]", newMsg.sender_id === currentUser.id, timeStr, newMsg.id); }
+                    } catch (e) { 
+                        renderMessage("🔒 [Ошибка расшифровки]", newMsg.sender_id === currentUser.id, timeStr, newMsg.id, msgDate);  
+                    }
                 }
             ).subscribe();
     }
@@ -1458,6 +1525,7 @@
             { chat_id: currentChatId, user_id: currentUser.id, encrypted_key: JSON.stringify(encKeysForMe) }
         ]);
         document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:var(--success); margin-top: 20px;"><i class="fas fa-lock" style="margin-bottom:8px;"></i><br>Канал защищен</div>';
+        window.lastRenderedDate = null;
         subscribeToPrivateMessages();
     }
 
@@ -1491,6 +1559,8 @@
 
         currentAesKey = await decryptChatKey(myEncryptedKey);
         document.getElementById('messages-area').innerHTML = '';
+        
+        window.lastRenderedDate = null; // <--- ДОБАВИТЬ ЭТУ СТРОКУ
 
         const { data: history } = await supabaseClient.from('messages').select('*').eq('chat_id', currentChatId).order('created_at', { ascending: true });
 
@@ -1503,9 +1573,9 @@
                     const bytes = new Uint8Array(rawData.length);
                     for (let i = 0; i < rawData.length; i++) bytes[i] = rawData.charCodeAt(i);
                     const decryptedBuffer = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.slice(0, 12) }, currentAesKey, bytes.slice(12));
-                    renderMessage(dec.decode(decryptedBuffer), msg.sender_id === currentUser.id, timeStr, msg.id);
+                    renderMessage(dec.decode(decryptedBuffer), msg.sender_id === currentUser.id, timeStr, msg.id, msgDate);
                 } catch (e) {
-                    renderMessage("🔒 [История скрыта]", msg.sender_id === currentUser.id, timeStr, msg.id);
+                    renderMessage("🔒 [История скрыта]", msg.sender_id === currentUser.id, timeStr, msg.id, msgDate);
                 }
             }
         }
