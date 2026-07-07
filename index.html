@@ -5,10 +5,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Синдикат-Хаб</title>
-    
+
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
+
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/idb-keyval@6/dist/umd.js"></script>
@@ -29,10 +29,10 @@
         }
 
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-        
+
         /* Запрещаем скролл самого body, скроллиться будут только нужные блоки */
         body { font-family: 'Inter', sans-serif; background-color: var(--bg); color: var(--text); margin: 0; padding: 0; overflow: hidden; height: var(--tg-viewport-height, 100vh); }
-        
+
         .fas, .far { line-height: 1; display: flex; align-items: center; justify-content: center; }
 
         .screen { display: none; padding: 16px; height: 100%; overflow-y: auto; animation: fadeIn 0.2s ease; } 
@@ -43,13 +43,13 @@
         h3.section-title { font-size: 14px; text-transform: uppercase; color: var(--muted); letter-spacing: 0.5px; margin: 24px 0 12px 4px; font-weight: 600; }
 
         .card { background: var(--surface); z-index:10; padding: 16px; border-radius: var(--radius-lg); margin-bottom: 16px; border: 1px solid var(--border); box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
-        
+
         .profile-card { display: flex; align-items: center; justify-content: space-between; }
         .profile-info { display: flex; align-items: center; gap: 12px; }
         .avatar { width: 48px; height: 48px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: bold; color: white; background: linear-gradient(135deg, #FF9F0A, #FF453A); flex-shrink: 0; }
         .status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 20px; font-size: 13px; font-weight: 500; background: rgba(50, 215, 75, 0.15); color: var(--success); cursor: pointer; border: 1px solid rgba(50, 215, 75, 0.3); transition: 0.2s; }
         .status-badge.busy { background: rgba(255, 69, 58, 0.15); color: var(--danger); border-color: rgba(255, 69, 58, 0.3); }
-        
+
         .action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 24px; }
         .action-btn { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px; text-align: center; color: var(--text); font-weight: 600; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 8px; transition: 0.2s; }
         .action-btn:active { transform: scale(0.96); background: var(--surface-hover); }
@@ -60,13 +60,13 @@
         .list-item-left { display: flex; align-items: center; gap: 12px; }
         .list-item-title { font-weight: 600; font-size: 16px; }
         .list-item-subtitle { font-size: 13px; color: var(--muted); margin-top: 2px; }
-        
+
         button.primary-btn { background: var(--primary); color: #fff; border: none; padding: 14px; border-radius: var(--radius-md); width: 100%; font-size: 16px; font-weight: 600; cursor: pointer; transition: 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px; }
         button.primary-btn:active { transform: scale(0.98); opacity: 0.9; }
-        
+
         input, select { width: 100%; padding: 14px; margin-bottom: 12px; border-radius: var(--radius-md); border: 1px solid var(--border); background: rgba(0,0,0,0.2); color: var(--text); font-size: 16px; outline: none; transition: 0.2s; font-family: 'Inter', sans-serif;}
         input:focus, select:focus { border-color: var(--primary); }
-        
+
         .header-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
         .back-btn { background: none; border: none; color: var(--primary); font-size: 18px; cursor: pointer; display: flex; align-items: center; gap: 8px; padding: 0; }
         .icon-btn { background: none; border: none; color: var(--primary); font-size: 20px; padding: 5px; cursor: pointer; display: flex; align-items: center; justify-content: center; aspect-ratio: 1/1; }
@@ -77,23 +77,23 @@
         .avatar-wrap .avatar { width: 100%; height: 100%; font-size: 16px; }
         .status-indicator { position: absolute; bottom: -2px; right: -2px; width: 14px; height: 14px; border-radius: 50%; border: 2.5px solid var(--surface); background: var(--success); z-index: 2; transition: 0.2s; }
         .status-indicator.busy { background: var(--danger); }
-        
+
         /* ОСОБЫЙ ЛЕЙАУТ ДЛЯ ЧАТА */
         /* ОСОБЫЙ ЛЕЙАУТ ДЛЯ ЧАТА */
         #screen-friend.active { display: flex; flex-direction: column; padding: 0; overflow: hidden; }
         .friend-header-wrap { padding: 16px 16px 0; flex-shrink: 0; border-bottom: 1px solid var(--border); background: var(--surface); z-index: 10;}
-        
+
         .chat-container { flex-grow: 1; display: flex; flex-direction: column; background: var(--bg); overflow: hidden; position: relative; }
         .messages-area { flex-grow: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
-        
+
         .msg-bubble { max-width: 85%; padding: 10px 14px; border-radius: 18px; font-size: 15px; line-height: 1.4; word-wrap: break-word; position: relative; }
         .msg-mine { background: var(--primary); align-self: flex-end; border-bottom-right-radius: 4px; box-shadow: 0 2px 5px rgba(10,132,255,0.2); }
         .msg-other { background: var(--surface); align-self: flex-start; border-bottom-left-radius: 4px; border: 1px solid var(--border); }
         .msg-time { font-size: 11px; color: rgba(255, 255, 255, 0.6); text-align: right; margin-top: 4px; margin-bottom: -4px; user-select: none; }
-        
+
         /* Умное поле ввода с TEXTAREA */
         .chat-input-area { flex-shrink: 0; display: flex; align-items: flex-end; padding: 10px 16px; gap: 10px; background: rgba(28, 28, 30, 0.85); backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px); border-top: 1px solid var(--border); padding-bottom: calc(10px + env(safe-area-inset-bottom)); position: relative; z-index: 5;}
-        
+
         .chat-input-area textarea { 
             flex-grow: 1; margin: 0; padding: 10px 16px; border-radius: 20px; background: rgba(0,0,0,0.4); 
             border: 1px solid rgba(255,255,255,0.1); color: white; outline: none; font-family: 'Inter', sans-serif;
@@ -115,11 +115,11 @@
             user-select: none;
             z-index: 2;
         }
-        
+
         .btn-dynamic { width: 42px; height: 42px; border-radius: 50%; border: none; font-size: 18px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1); flex-shrink: 0; outline: none; -webkit-tap-highlight-color: transparent;}
         .btn-dynamic.mode-mic { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
         .btn-dynamic.mode-send { background: var(--primary); color: white; transform: rotate(-15deg); }
-        
+
         /* UI Записи голоса (Как в ТГ) */
         .record-overlay { position: absolute; inset: 0; background: var(--surface); display: flex; align-items: center; justify-content: space-between; padding: 0 16px; z-index: 10; opacity: 0; pointer-events: none; transition: 0.2s; border-radius: inherit; }
         .record-overlay.active { opacity: 1; pointer-events: auto; }
@@ -127,52 +127,52 @@
         .record-timer i { animation: blink 1s infinite; }
         .record-timer.paused i { animation: none; opacity: 1; color: var(--text); }
         .record-slide-hint { color: var(--muted); font-size: 14px; display: flex; align-items: center; gap: 6px; animation: slideUpHint 1.5s infinite; }
-        
+
         /* Новый дизайн локнутого ГС */
         /* Новый дизайн локнутого ГС */
         .record-locked-actions { display: none; width: 100%; justify-content: space-between; align-items: center; padding: 0 10px;}
         .record-locked-actions.active { display: flex; }
-        
+
         .btn-rec-action { width: 42px; height: 42px; border-radius: 50%; border: none; display: flex; align-items: center; justify-content: center; font-size: 18px; cursor: pointer; outline: none; -webkit-tap-highlight-color: transparent; transition: 0.2s;}
         .btn-rec-action:active { transform: scale(0.9); }
         .btn-rec-cancel { background: rgba(255, 69, 58, 0.15); color: var(--danger); }
         .btn-rec-send { background: var(--primary); color: white; transform: rotate(-15deg); margin-left: auto; }
         .btn-rec-resume { background: var(--surface); color: var(--text); border: 1px solid var(--border); margin: 0 15px; }
-        
+
         .record-timer.paused i { animation: none; opacity: 1; color: var(--danger); display: none; }
 
         @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
         @keyframes slideUpHint { 0% { transform: translateY(0); opacity: 0.5; } 50% { transform: translateY(-5px); opacity: 1; } 100% { transform: translateY(0); opacity: 0.5; } }
 
-        
+
         /* Кастомный ГС UI (Стиль Telegram) */
         .msg-bubble.voice-msg { min-width: 240px; padding: 12px 14px 10px; display: flex; flex-direction: column; }
         .voice-player { display: flex; align-items: center; gap: 12px; cursor: pointer; width: 100%; user-select: none; }
-        
+
         .voice-play-btn { width: 42px; height: 42px; background: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--primary); font-size: 16px; transition: 0.2s; box-shadow: 0 2px 5px rgba(0,0,0,0.15); flex-shrink: 0;}
         .msg-other .voice-play-btn { background: var(--primary); color: white; }
-        
+
         /* ДОБАВЛЕН touch-action: none; ДЛЯ ПЕРЕМОТКИ ПАЛЬЦЕМ */
         .voice-waveform { display: flex; align-items: center; gap: 2.5px; flex-grow: 1; height: 32px; margin-right: 4px; cursor: pointer; touch-action: none; }
         .v-bar { flex: 1; border-radius: 2px; transition: 0.1s; min-width: 2px; }
-        
+
         /* Цвета палочек: Непрослушанные и Прослушанные (.active) */
         .msg-mine .v-bar { background: rgba(255,255,255,0.4); }
         .msg-mine .v-bar.active { background: #ffffff; box-shadow: 0 0 2px rgba(255,255,255,0.5); }
-        
+
         .msg-other .v-bar { background: var(--primary); opacity: 0.3; }
         .msg-other .v-bar.active { opacity: 1; box-shadow: 0 0 2px var(--primary); }
-        
+
         .transcript-toggle { font-size: 13px; color: rgba(255,255,255,0.8); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.15); width: 100%; user-select: none; }
         .transcript-content { font-size: 14px; color: rgba(255,255,255,0.9); background: rgba(0,0,0,0.15); padding: 10px; border-radius: 8px; margin-top: 8px; display: none; }
 
         /* Кнопка создания (FAB) */
         .fab { position: fixed; bottom: 24px; right: 24px; width: 56px; height: 56px; background: var(--primary); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 22px; box-shadow: 0 4px 15px rgba(10,132,255,0.4); cursor: pointer; z-index: 100; transition: 0.2s; }
         .fab:active { transform: scale(0.9); }
-        
+
         /* Имя отправителя в группе */
         .sender-name { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
-        
+
         /* FIX: Модалки теперь FIXED (не скроллятся вместе с фоном) */
         .glass-modal { position: fixed; inset: 0; z-index: 1000; background: rgba(15, 15, 19, 0.85); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); display: none; flex-direction: column; padding: 20px; animation: fadeIn 0.2s ease; overflow-y: auto;}
         .glass-modal.active { display: flex; }
@@ -191,7 +191,7 @@
     <!-- ЭКРАН 1: ГЛАВНАЯ -->
     <div id="screen-main" class="screen active">
         <h2 class="brand-title">СИНДИКАТ</h2>
-        
+
         <div class="card profile-card">
             <div class="profile-info">
                 <div class="avatar" id="my-avatar">М</div>
@@ -205,10 +205,10 @@
                 </div>
             </div>
             <button class="icon-btn" onclick="switchScreen('screen-currencies')"><i class="fas fa-cog" style="color: var(--muted);"></i></button>
-            
+
         </div>
 
-        
+
         <div class="action-grid">
             <div class="action-btn" onclick="switchScreen('screen-currencies')">
                 <i class="fas fa-coins"></i>
@@ -227,11 +227,11 @@
             </button>
         </div>
 
-        
+
         <div id="friends-list">
             <div style="text-align:center; color: var(--muted); padding: 20px;"><i class="fas fa-spinner fa-spin"></i> Загрузка...</div>
         </div>
-        
+
         <!-- ПЕРЕНЕСЛИ КНОПКУ СЮДА -->
         <div class="fab" onclick="toggleModal('modal-create-group')"><i class="fas fa-pencil-alt"></i></div>
 
@@ -253,7 +253,7 @@
             <input type="number" id="friend-tg-id-input" placeholder="Например: 123456789" style="background: rgba(0,0,0,0.5); text-align: center; font-weight: bold; letter-spacing: 2px;">
             <button class="primary-btn" onclick="sendFriendRequest()"><i class="fas fa-paper-plane"></i> Отправить запрос</button>
         </div>
-        
+
     </div>
 
     <!-- ЭКРАН 2: ВАЛЮТЫ -->
@@ -263,21 +263,21 @@
             <span>Эмиссия валют</span>
             <div style="width: 24px;"></div>
         </div>
-        
+
         <div class="card">
             <h3 class="section-title" style="margin-top: 0;">Создать новую</h3>
             <input type="text" id="cur-name" placeholder="Название (напр. Адреналин)">
             <input type="number" id="cur-price" placeholder="Цена в рублях (напр. 150)">
             <button class="primary-btn" onclick="addCurrency()"><i class="fas fa-plus"></i>Добавить</button>
         </div>
-        
+
         <h3 class="section-title">Мои активы</h3>
         <div id="my-currencies-list"></div>
     </div>
 
     <!-- ЭКРАН 3: ПРОФИЛЬ ДРУГА И ЛС -->
     <div id="screen-friend" class="screen">
-        
+
         <div class="friend-header-wrap">
             <div class="header-nav" style="margin-bottom: 12px; border: none; padding-bottom: 0;">
                 <button class="back-btn" onclick="switchScreen('screen-main')"><i class="fas fa-chevron-left"></i></button>
@@ -303,7 +303,7 @@
                 <button class="primary-btn" style="margin-top: auto;" onclick="openDebtModal()"><i class="fas fa-plus"></i> Оформить долг</button>
             </div>
 
-            
+
 
             <!-- МОДАЛКА: ИНФО О ДРУГЕ -->
             <div id="modal-friend-info" class="glass-modal">
@@ -313,36 +313,36 @@
                     <h2 id="friend-info-name" style="margin:0; font-size: 22px;">Имя</h2>
                     <div id="friend-info-id" style="color: var(--muted); font-size: 14px; margin-top: 4px; font-family: monospace;">ID: ...</div>
                 </div>
-                
+
                 <button class="primary-btn" style="background: transparent; border: 1px solid rgba(255,69,58,0.3); color: var(--danger);" onclick="removeFriend()">
                     <i class="fas fa-user-minus"></i> Удалить из друзей
                 </button>
             </div>
-            
+
             <!-- МОДАЛКА: ИНФО О ГРУППЕ -->
             <div id="modal-group-info" class="glass-modal">
                 <button class="modal-close" onclick="toggleModal('modal-group-info')"><i class="fas fa-times"></i></button>
                 <div style="text-align: center; margin-bottom: 20px;">
                     <div class="avatar" id="group-info-avatar" style="width: 80px; height: 80px; font-size: 32px; margin: 0 auto 12px; background: linear-gradient(135deg, #007AFF, #00C6FF);">Г</div>
-                    
+
                     <!-- Заголовок с карандашом -->
                     <h2 id="group-info-name" style="margin:0; font-size: 22px; display: flex; align-items: center; justify-content: center; gap: 8px;">
                         Название <i class="fas fa-pen" style="font-size: 14px; color: var(--muted); cursor: pointer;" onclick="editGroupName()"></i>
                     </h2>
-                    
+
                     <div id="group-info-count" style="color: var(--muted); font-size: 14px; margin-top: 4px;">1 участник</div>
                 </div>
-                
+
                 <button class="primary-btn" style="margin-bottom: 16px;" onclick="openInviteModal()"><i class="fas fa-user-plus"></i> Добавить участника</button>
-                
+
                 <div id="group-members-list" style="margin-bottom: 16px; background: rgba(0,0,0,0.3); border-radius: 12px; padding: 8px;"></div>
-                
+
                 <!-- Кнопки выхода и удаления -->
                 <button class="primary-btn" style="background: rgba(255,69,58,0.15); color: var(--danger); margin-bottom: 8px;" onclick="leaveGroup()"><i class="fas fa-sign-out-alt"></i> Покинуть группу</button>
                 <button class="primary-btn" style="background: transparent; border: 1px solid rgba(255,69,58,0.3); color: var(--danger);" onclick="deleteGroup()"><i class="fas fa-trash-alt"></i> Удалить для всех</button>
             </div>
 
-            
+
 
             <!-- МОДАЛКА: ВЫБОР ДРУГА ДЛЯ ИНВАЙТА -->
             <div id="modal-invite-friend" class="glass-modal">
@@ -369,25 +369,25 @@
                 </div>
                 <div id="search-results" style="overflow-y: auto; margin-top: 16px; flex-grow: 1;"></div>
             </div>
-            
+
             <div class="messages-area" id="messages-area">
                 <div style="text-align:center; color:var(--muted); margin-top: 40px; font-size: 14px;">
                     <i class="fas fa-shield-alt" style="font-size: 24px; color: var(--success); margin-bottom: 10px;"></i><br>
                     Установка сквозного шифрования...
                 </div>
             </div>
-            
+
             <!-- Поле ввода (с растягивающимся textarea) -->
             <div class="chat-input-area">
                 <!-- Оверлей записи ГС -->
                 <div id="record-overlay" class="record-overlay">
-                    
+
                     <!-- Меню во время паузы (Корзина - Таймер - Микрофон - Отправить) -->
                     <div class="record-locked-actions" id="record-locked-actions">
                         <button class="btn-rec-action btn-rec-cancel" onclick="cancelRecording()"><i class="fas fa-trash-alt"></i></button>
-                        
+
                         <div class="record-timer paused" id="record-timer-paused" style="margin-left: 15px;"><span>0:00</span></div>
-                        
+
                         <button class="btn-rec-action btn-rec-resume" onclick="resumeRecording()"><i class="fas fa-microphone"></i></button>
                         <button class="btn-rec-action btn-rec-send" onclick="stopAndSendRecording()"><i class="fas fa-paper-plane"></i></button>
                     </div>
@@ -397,11 +397,11 @@
                         <div class="record-timer" id="record-timer-live"><i class="fas fa-microphone"></i> <span>0:00</span></div>
                         <div style="display: flex; gap: 6px; align-items: center; margin-right: 20px;"><i class="fas fa-chevron-up"></i> Свайп для лока</div>
                     </div>
-                    
+
                 </div>
 
                 <textarea id="chat-input" rows="1" placeholder="Сообщение..." oninput="autoResizeInput()"></textarea>
-                
+
                 <!-- Кнопка Микрофон/Отправка -->
                 <!-- Кнопка Микрофон/Отправка -->
                 <button class="btn-dynamic mode-mic" id="btn-input-action" 
@@ -424,14 +424,14 @@
             <span>Оформление долга</span>
             <div style="width: 60px;"></div>
         </div>
-        
+
         <div class="card">
             <label style="font-size: 14px; color: var(--muted); margin-bottom: 6px; display: block;">Я должен (в рублях):</label>
             <input type="number" id="debt-rubles" placeholder="Напр. 300" oninput="calculateDebt()" style="font-size: 24px; font-weight: bold; text-align: center;">
-            
+
             <label style="font-size: 14px; color: var(--muted); margin-bottom: 6px; margin-top: 16px; display: block;">В чем принимает друг:</label>
             <select id="debt-currency" onchange="calculateDebt()"></select>
-            
+
             <div style="margin: 30px 0; font-size: 16px; text-align: center; color: var(--muted);">
                 Итого к выплате:<br>
                 <strong id="debt-result" style="color: var(--success); font-size: 32px; display: block; margin-top: 8px;">0</strong>
@@ -1611,16 +1611,16 @@
     }
 
     async function encryptText(text, aesKey) {
+        // 1. Создаем математическую подпись текста
+        const signature = await signText(text);
 
+        // 2. Упаковываем в объект
+        const payloadObj = { t: text, s: signature };
+        const payloadStr = JSON.stringify(payloadObj);
 
-
-
-
-
-
-
+        // 3. Шифруем (теперь шифруется JSON)
         const iv = window.crypto.getRandomValues(new Uint8Array(12));
-        const encryptedContent = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, aesKey, enc.encode(text));
+        const encryptedContent = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, aesKey, enc.encode(payloadStr));
         const encryptedBytes = new Uint8Array(encryptedContent);
         const payload = new Uint8Array(iv.length + encryptedBytes.length);
         payload.set(iv, 0); payload.set(encryptedBytes, iv.length);
@@ -1662,124 +1662,124 @@
                 async (payload) => {
                     const newMsg = payload.new;
                     if (!newMsg || !newMsg.encrypted_text) return;
-                    const msgDate = new Date(newMsg.created_at);
-                    const timeStr = msgDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
 
 
-
-
-
+                    // Теперь мы используем единую надежную функцию для отрисовки Live-сообщений
+                    await processAndRenderMessage(newMsg, currentAesKey);
+                    
+                    // Дополнительный ИИ триггер для ГС (остается как был)
+                    // Расшифровываем по-быстрому только для того, чтобы понять, ГС это или нет
                     try {
                         const rawData = atob(newMsg.encrypted_text);
                         const bytes = new Uint8Array(rawData.length);
                         for (let i = 0; i < rawData.length; i++) bytes[i] = rawData.charCodeAt(i);
                         const decryptedBuffer = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.slice(0, 12) }, currentAesKey, bytes.slice(12));
-                        const plainText = dec.decode(decryptedBuffer); 
-                        
-                        // ЗДЕСЬ ИСПОЛЬЗУЕМ newMsg.sender_id
-                        const senderName = window.currentGroupUsers ? (window.currentGroupUsers[newMsg.sender_id] || "Участник") : null;
-                        
-                        // Рендерим новое сообщение
-                        renderMessage(plainText, newMsg.sender_id === currentUser.id, timeStr, newMsg.id, msgDate, senderName, newMsg.sender_id);
+                        let plainText = dec.decode(decryptedBuffer);
+                        try { plainText = JSON.parse(plainText).t; } catch(e) {} // Достаем текст из JSON
+
+
+
+
+
 
                         if (newMsg.sender_id !== currentUser.id && plainText.startsWith('[VOICE]:') && !plainText.includes('|') && isAiReady) {
                             helpFriendTranscribe(plainText.replace('[VOICE]:', ''), newMsg.id);
                         }
-                    } catch (e) { 
-                        const senderName = window.currentGroupUsers ? (window.currentGroupUsers[newMsg.sender_id] || "Участник") : null;
-                        renderMessage("🔒 [Ошибка расшифровки]", newMsg.sender_id === currentUser.id, timeStr, newMsg.id, msgDate, senderName, newMsg.sender_id); 
-                    }
+                    } catch(e) {}
+
+
+
                 }
             ).subscribe();
     }
 
     async function generatePersonalArmor(userId) {
-        const keyPair = await window.crypto.subtle.generateKey({ name: "RSA-OAEP", modulusLength: 4096, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["encrypt", "decrypt"]);
-        await idbKeyval.set(`my_private_key_${userId}`, keyPair.privateKey);
-        return await window.crypto.subtle.exportKey("jwk", keyPair.publicKey);
+        // Ключ для шифрования (RSA)
+        const encKeyPair = await window.crypto.subtle.generateKey({ name: "RSA-OAEP", modulusLength: 4096, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["encrypt", "decrypt"]);
+        // НОВЫЙ: Ключ для ЭЦП и подписи (ECDSA)
+        const signKeyPair = await window.crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
 
+        await idbKeyval.set(`my_private_key_${userId}`, encKeyPair.privateKey);
+        await idbKeyval.set(`my_sign_key_${userId}`, signKeyPair.privateKey); // Сохраняем приватный ключ подписи
 
-
-
-
-
-
-
-
-
+        const encJwk = await window.crypto.subtle.exportKey("jwk", encKeyPair.publicKey);
+        const signJwk = await window.crypto.subtle.exportKey("jwk", signKeyPair.publicKey);
+        
+        // Возвращаем оба публичных ключа
+        return { rsa: encJwk, ecdsa: signJwk };
     }
 
     async function checkCryptoKeys(userId) {
         const deviceId = getDeviceId();
         const privateKey = await idbKeyval.get(`my_private_key_${userId}`);
-
-
+        const signKey = await idbKeyval.get(`my_sign_key_${userId}`); // Проверяем наличие ключа подписи
+        
         const { data: userData } = await supabaseClient.from('users').select('public_key').eq('tg_id', userId).single();
         let publicKeysDict = {};
         if (userData && userData.public_key) {
             try { publicKeysDict = JSON.parse(userData.public_key); if (publicKeysDict.kty) publicKeysDict = { "legacy_dev": publicKeysDict }; } catch (e) { publicKeysDict = {}; }
         }
-        if (!privateKey || !publicKeysDict[deviceId]) {
-            const publicKeyJwk = await generatePersonalArmor(userId);
-            publicKeysDict[deviceId] = publicKeyJwk;
-
-
+        
+        // Если нет приватных ключей локально, ИЛИ в базе нет ключа ECDSA для этого девайса - перегенерируем!
+        if (!privateKey || !signKey || !publicKeysDict[deviceId] || !publicKeysDict[deviceId].ecdsa) {
+            const keysObj = await generatePersonalArmor(userId);
+            publicKeysDict[deviceId] = keysObj;
             await supabaseClient.from('users').update({ public_key: JSON.stringify(publicKeysDict) }).eq('tg_id', userId);
         }
     }
 
+    async function signText(text) {
+        const signPrivKey = await idbKeyval.get(`my_sign_key_${currentUser.id}`);
+        if (!signPrivKey) return null; // Для старых аккаунтов (совместимость)
+        
+        const signatureBuffer = await window.crypto.subtle.sign(
+            { name: "ECDSA", hash: { name: "SHA-256" } },
+            signPrivKey,
+            enc.encode(text)
+        );
+        const sigArray = Array.from(new Uint8Array(signatureBuffer));
+        return btoa(String.fromCharCode.apply(null, sigArray));
+    }
 
+    async function verifySignature(text, signatureB64, senderId) {
+        if (!signatureB64) return false; // Подписи нет, хотя должна быть
+        
+        const { data } = await supabaseClient.from('users').select('public_key').eq('tg_id', senderId).single();
+        if (!data || !data.public_key) return true; // У юзера вообще нет ключей, пропускаем
 
+        let keysDict = {};
+        try { keysDict = JSON.parse(data.public_key); } catch(e) { return true; }
 
+        const sigBytes = Uint8Array.from(atob(signatureB64), c => c.charCodeAt(0));
+        const encodedText = enc.encode(text);
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+        // Перебираем все устройства отправителя, вдруг он написал с компьютера или второго телефона
+        for (let devId in keysDict) {
+            if (!keysDict[devId].ecdsa) continue;
+            try {
+                const pubKey = await window.crypto.subtle.importKey(
+                    "jwk", keysDict[devId].ecdsa,
+                    { name: "ECDSA", namedCurve: "P-256" },
+                    true, ["verify"]
+                );
+                const isValid = await window.crypto.subtle.verify(
+                    { name: "ECDSA", hash: { name: "SHA-256" } },
+                    pubKey, sigBytes, encodedText
+                );
+                if (isValid) return true; // Подпись совпала!
+            } catch(e) {}
+        }
+        return false; // Ни один ключ девайса не подошел -> 100% подделка!
+    }
 
 
     async function generateChatKey() { return await window.crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]); }
 
     async function encryptChatKeyForFriend(chatKey, friendPublicJwk) {
-        const friendPublicKey = await window.crypto.subtle.importKey("jwk", friendPublicJwk, { name: "RSA-OAEP", hash: "SHA-256" }, true, ["encrypt"]);
-
-
+        // Поддержка старого формата ключей и нового (где RSA лежит внутри объекта)
+        const actualRsaJwk = friendPublicJwk.rsa ? friendPublicJwk.rsa : friendPublicJwk;
+        const friendPublicKey = await window.crypto.subtle.importKey("jwk", actualRsaJwk, { name: "RSA-OAEP", hash: "SHA-256" }, true, ["encrypt"]);
         const rawChatKey = await window.crypto.subtle.exportKey("raw", chatKey);
         const encryptedKeyBuffer = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, friendPublicKey, rawChatKey);
         return btoa(String.fromCharCode.apply(null, new Uint8Array(encryptedKeyBuffer)));
@@ -2726,33 +2726,33 @@ async function loadChats() {
             const bytes = new Uint8Array(rawData.length);
             for (let i = 0; i < rawData.length; i++) bytes[i] = rawData.charCodeAt(i);
             const decryptedBuffer = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.slice(0, 12) }, aesKey, bytes.slice(12));
-            renderMessage(dec.decode(decryptedBuffer), msg.sender_id === currentUser.id, timeStr, msg.id, msgDate, senderName, msg.sender_id);
+            const decryptedStr = dec.decode(decryptedBuffer);
+            
+            let finalPlainText = decryptedStr;
+            let isAuthentic = true;
 
+            try {
+                // Пытаемся распарсить новый формат (JSON с подписью)
+                const parsed = JSON.parse(decryptedStr);
+                if (parsed.t !== undefined) {
+                    finalPlainText = parsed.t;
+                    // Если сообщение чужое, проверяем подпись
+                    if (msg.sender_id !== currentUser.id) {
+                        isAuthentic = await verifySignature(parsed.t, parsed.s, msg.sender_id);
+                    }
+                }
+            } catch(e) {
+                // Старое сообщение (чистый текст), пропускаем
+            }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+            if (!isAuthentic) {
+                // Хакер спалился
+                renderMessage("🚨 [БЛОКИРОВКА: Цифровая подпись не совпадает! Текст подделан]", msg.sender_id === currentUser.id, timeStr, msg.id, msgDate, senderName, msg.sender_id);
+            } else {
+                renderMessage(finalPlainText, msg.sender_id === currentUser.id, timeStr, msg.id, msgDate, senderName, msg.sender_id);
+            }
         } catch (e) {
-            renderMessage("🔒 [Скрыто]", msg.sender_id === currentUser.id, timeStr, msg.id, msgDate, senderName, msg.sender_id);
+            renderMessage("🔒 [Ошибка расшифровки]", msg.sender_id === currentUser.id, timeStr, msg.id, msgDate, senderName, msg.sender_id);
         }
     }
 
@@ -2840,3 +2840,5 @@ async function loadChats() {
 </script>
 </body>
 </html>
+
+
