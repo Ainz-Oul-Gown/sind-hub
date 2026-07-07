@@ -446,7 +446,7 @@
     let currentChatType = 'private'; // 'private' или 'group'
     let currentGroup = null; // {id, name}
     window.currentGroupUsers = {}; // Словарь { tg_id: "Имя" } для отображения над сообщениями
-    
+
     function escapeHTML(str) {
         if (typeof str !== 'string') return str;
         return str.replace(/[&<>'"]/g,
@@ -460,7 +460,7 @@
         const { data: newChat, error: chatErr } = await supabaseClient.from('chats')
             .insert({ name: groupName, type: 'group' })
             .select().single();
-            
+
         if (chatErr) return alert("Ошибка создания группы");
 
         // 2. Генерируем AES ключ для группы
@@ -470,7 +470,7 @@
         const { data: myData } = await supabaseClient.from('users').select('public_key').eq('tg_id', currentUser.id).single();
         let myKeys = JSON.parse(myData.public_key); 
         if (myKeys.kty) myKeys = { "legacy": myKeys };
-        
+
         let encKeysForMe = {}; 
         for (const [devId, pubJwk] of Object.entries(myKeys)) {
             encKeysForMe[devId] = await encryptChatKeyForFriend(groupAesKey, pubJwk);
@@ -495,7 +495,7 @@
         // 2. Достаем наш зашифрованный ключ от группы и расшифровываем его (получаем сырой AES ключ)
         const { data: keyData } = await supabaseClient.from('chat_keys')
             .select('encrypted_key').eq('chat_id', groupId).eq('user_id', currentUser.id).single();
-            
+
         const deviceId = getDeviceId();
         const keysDict = JSON.parse(keyData.encrypted_key);
         const myEncryptedGroupKey = keysDict[deviceId] || keysDict["legacy_dev"] || keysDict["legacy"];
@@ -505,7 +505,7 @@
         const { data: friendData } = await supabaseClient.from('users').select('public_key').eq('tg_id', friendId).single();
         let friendKeys = JSON.parse(friendData.public_key); 
         if (friendKeys.kty) friendKeys = { "legacy": friendKeys };
-        
+
         // 4. Шифруем AES ключ группы ДЛЯ ДРУГА
         let encKeysForFriend = {}; 
         for (const [devId, pubJwk] of Object.entries(friendKeys)) {
@@ -520,7 +520,7 @@
         await supabaseClient.from('messages').insert([ 
             { chat_id: currentChatId, sender_id: currentUser.id, encrypted_text: encryptedPayloadText } 
         ]);
-        
+
         if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
     }
 
@@ -536,7 +536,7 @@
         // 2. Ищем, есть ли мы уже в группе (используем limit(1), чтобы не было 406 ошибки)
         const { data: existing } = await supabaseClient.from('chat_keys')
             .select('id').eq('chat_id', groupId).eq('user_id', currentUser.id).limit(1);
-            
+
         if (existing && existing.length > 0) {
             if (btnElement) {
                 btnElement.innerHTML = '<i class="fas fa-check"></i> Уже в группе';
@@ -566,7 +566,7 @@
                 btnElement.style.color = 'var(--muted)';
                 btnElement.onclick = null; // Отключаем клик
             }
-            
+
             // Ждем полсекунды, чтобы база точно успела сохранить данные, и только потом грузим список
             setTimeout(() => { loadChats(); }, 500); 
         }
@@ -577,12 +577,12 @@
         const today = new Date();
         const yesterday = new Date(); 
         yesterday.setDate(yesterday.getDate() - 1);
-        
+
         const isSameDay = (d1, d2) => d1.getDate() === d2.getDate() && d1.getMonth() === d2.getMonth() && d1.getFullYear() === d2.getFullYear();
-        
+
         if (isSameDay(date, today)) return "Сегодня";
         if (isSameDay(date, yesterday)) return "Вчера";
-        
+
         const months = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
         let str = `${date.getDate()} ${months[date.getMonth()]}`;
         if (date.getFullYear() !== today.getFullYear()) str += ` ${date.getFullYear()}`;
@@ -604,14 +604,14 @@
     // --- ИИ: ЭМБЕДДИНГИ ДЛЯ ПОИСКА ---
     let extractor = null;
     let isAiLoading = false;
-    
+
     async function initAI() {
         if (extractor) return extractor;
         if (isAiLoading) { 
             while (isAiLoading) await new Promise(r => setTimeout(r, 100)); 
             return extractor; 
         }
-        
+
         isAiLoading = true;
         const { pipeline, env } = await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.14.0');
         env.allowLocalModels = false;
@@ -640,19 +640,19 @@
         const ai = await initAI();
         const output = await ai(text, { pooling: 'mean', normalize: true });
         const arrayBuffer = output.data.buffer;
-        
+
         const iv = window.crypto.getRandomValues(new Uint8Array(12));
         const encryptedContent = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, aesKey, arrayBuffer);
-        
+
         const encryptedBytes = new Uint8Array(encryptedContent);
         const payload = new Uint8Array(iv.length + encryptedBytes.length);
         payload.set(iv, 0); 
         payload.set(encryptedBytes, iv.length);
-        
+
         return btoa(String.fromCharCode.apply(null, payload));
     }
     // --------------------------------------
-    
+
     async function performSearch() {
         const query = document.getElementById('search-input').value.trim();
         const resultsDiv = document.getElementById('search-results');
@@ -689,14 +689,14 @@
                 for (let i = 0; i < rawData.length; i++) bytes[i] = rawData.charCodeAt(i);
                 const decryptedTextBuffer = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.slice(0, 12) }, currentAesKey, bytes.slice(12));
                 let plainText = dec.decode(decryptedTextBuffer);
-                
+
                 let displayText = plainText;
-                
+
                 // Красивое форматирование для ГС
                 if (plainText.startsWith('[VOICE]:')) {
                     const parts = plainText.replace('[VOICE]:', '').split('|');
                     let transText = 'Голосовое сообщение';
-                    
+
                     // Ищем часть, которая НЕ является названием файла и НЕ является графиком (WF:)
                     for (let i = 1; i < parts.length; i++) {
                         if (!parts[i].startsWith('WF:')) {
@@ -729,7 +729,7 @@
         }
 
         if (results.length === 0) { resultsDiv.innerHTML = '<div style="color: var(--muted); text-align: center; padding: 20px;"><i class="fas fa-ghost fa-2x"></i><br>Ничего не найдено.</div>'; return; }
-        
+
         if (isSemantic) results.sort((a, b) => b.score - a.score);
         else results.sort((a, b) => new Date(b.time) - new Date(a.time));
 
@@ -743,7 +743,7 @@
             </div>
         `).join('');
     }
-    
+
     function getAvatarGradient(id) {
         const colors = [
             ['#FF2D55', '#FF375F'], ['#FF9F0A', '#FF453A'], ['#32D74B', '#28CD41'],
@@ -770,11 +770,11 @@
     function autoResizeInput() {
         const input = document.getElementById('chat-input');
         const btn = document.getElementById('btn-input-action');
-        
+
         // Авторазмер
         input.style.height = '42px';
         input.style.height = Math.min(input.scrollHeight, 120) + 'px'; // До 120px (около 5 строк)
-        
+
         // Смена иконки
         if (input.value.trim().length > 0) {
             btn.className = 'btn-dynamic mode-send';
@@ -804,7 +804,7 @@
         const tenths = Math.floor((ms % 1000) / 100); // Получаем десятые доли (0-9)
         return `${minutes}:${seconds.toString().padStart(2, '0')},${tenths}`;
     }
-    
+
 
     // --- НОВАЯ МЕХАНИКА ГОЛОСОВЫХ (КАК В ТГ) ---
     // --- ИДЕАЛЬНАЯ МЕХАНИКА ГОЛОСОВЫХ (POINTER EVENTS) ---
@@ -816,7 +816,7 @@
     let isPaused = false;
     let isCancelled = false; 
     let globalAudioStream = null;
-    
+
     let startX = 0; 
     let startY = 0; 
     let recStartTime = 0;
@@ -829,21 +829,21 @@
     let volumeHistory = []; // Тут будем хранить историю громкости
     let lastVolumeSampleTime = 0;
 
-    
+
     function renderWaveform() {
         const waveContainer = document.querySelector('.v-wave');
         if (!waveContainer) return;
-        
+
         waveContainer.innerHTML = ''; 
         waveContainer.style.display = 'flex';
         waveContainer.style.alignItems = 'center';
         waveContainer.style.justifyContent = 'space-between';
         waveContainer.style.gap = '2px';
         waveContainer.style.height = '24px'; 
-        
+
         const BARS = 30;
         let buckets = new Array(BARS).fill(0);
-        
+
         if (volumeHistory.length > 0) {
             const step = volumeHistory.length / BARS;
             for (let i = 0; i < BARS; i++) {
@@ -855,14 +855,14 @@
                 buckets[i] = count > 0 ? sum / count : 0;
             }
         }
-        
+
         // --- НОВАЯ ЛОГИКА: Относительное масштабирование ---
         const maxVol = Math.max(...buckets, 1); // Ищем пик громкости (минимум 1, чтобы не делить на 0)
-        
+
         buckets.forEach(vol => {
             const norm = vol / maxVol; // Получаем долю от 0.0 до 1.0
             let h = 3 + norm * 21; // Переводим в пиксели от 3px до 24px
-            
+
             const bar = document.createElement('div');
             bar.style.width = '3px';
             bar.style.height = `${h}px`;
@@ -916,55 +916,55 @@
             return; 
         }
         if (isRecordingLocked || isRecording || isPointerDown) return;
-        
+
         isPointerDown = true;
         isCancelled = false;
         startX = e.clientX;
         startY = e.clientY;
-        
+
         try { btn.setPointerCapture(e.pointerId); } catch(err){}
-        
+
         if (!globalAudioStream) {
             try { globalAudioStream = await navigator.mediaDevices.getUserMedia({ audio: true }); } 
             catch (err) { alert("Доступ к микрофону запрещен!"); isPointerDown = false; return; }
             if (!isPointerDown) return;
         }
-        
+
         try {
             mediaRecorder = new MediaRecorder(globalAudioStream);
             audioChunks = [];
             mediaRecorder.ondataavailable = event => { if (event.data.size > 0) audioChunks.push(event.data); };
-            
+
             mediaRecorder.onstop = async () => {
                 clearInterval(recTimerInterval);
-                
+
                 // ЖЕСТКАЯ ЗАЧИСТКА: Удаляем интерфейс вообще под ноль
                 const overlay = document.getElementById('record-overlay');
                 overlay.innerHTML = ''; 
                 overlay.classList.remove('active');
-                
+
                 // Возвращаем главной кнопке стандартные стили
                 btn.style.position = '';
                 btn.style.zIndex = '';
                 btn.style.transform = 'scale(1)'; 
                 btn.style.display = 'flex'; 
-                
+
                 // Функция авторазмера сама вернет микрофон, либо оставит самолетик, если в поле введен текст
                 btn.className = 'btn-dynamic mode-mic';
                 autoResizeInput(); 
 
-                
+
                 const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
                 const wasCancelled = isCancelled;
                 const duration = Date.now() - recStartTime;
-                
+
                 isRecording = false;
                 isPaused = false;
                 isRecordingLocked = false;
-                
+
                 if (wasCancelled || !window.shouldSendVoice || duration < 800) return; 
                 if (audioBlob.size > 15 * 1024 * 1024) return alert('Сообщение слишком большое');
-                
+
                 // === ГЕНЕРИРУЕМ СТРОКУ ГРОМКОСТИ ДЛЯ БД ===
                 const BARS = 30;
                 let buckets = new Array(BARS).fill(0);
@@ -982,23 +982,23 @@
                 const maxVol = Math.max(...buckets, 1);
                 // Превращаем массив в строку вида "10,50,100,20..."
                 const wfStr = buckets.map(v => Math.floor((v / maxVol) * 100)).join(',');
-                
+
                 // Передаем строку в функцию отправки
                 processBackgroundVoice(audioBlob, wfStr).catch(err => console.error("Ошибка ГС:", err));
             };
-                
-            
+
+
             mediaRecorder.start();
             isRecording = true;
             isPaused = false;
             window.shouldSendVoice = false; 
             recStartTime = Date.now();
-            
+
             const overlay = document.getElementById('record-overlay');
             // Очищаем оверлей от старого говна из HTML файла
             overlay.innerHTML = '';
             overlay.classList.add('active');
-            
+
             // СОЗДАЕМ ИДЕАЛЬНЫЙ HTML С НУЛЯ (3 слоя: Удержание, Лок-Запись, Лок-Пауза)
             overlay.innerHTML = `
                 <!-- Слой 1: Держим палец -->
@@ -1036,11 +1036,11 @@
 
             btn.style.position = 'relative';
             btn.style.zIndex = '50';
-            
+
             // Превращаем её в синий самолетик (как ты просил)
             btn.innerHTML = '<i class="fas fa-paper-plane" style="margin-right: 2px; margin-top: 2px;"></i>';
             btn.className = 'btn-dynamic mode-send'; 
-            
+
             // Задаем начальное увеличение
             btn.style.transform = 'scale(1.4)'; 
             if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
@@ -1058,20 +1058,20 @@
                     vMicrophone.connect(vAnalyser);
                 }
                 const dataArray = new Uint8Array(vAnalyser.frequencyBinCount);
-                
+
                 function trackVolume() {
                     if (!isRecording) return; 
-                    
+
                     if (!isPaused) {
                         vAnalyser.getByteFrequencyData(dataArray);
                         let sum = 0;
                         for(let i=0; i<dataArray.length; i++) sum += dataArray[i];
                         let avgVolume = sum / dataArray.length; 
-                        
+
                         // --- ИСПРАВЛЕНИЕ: Усиливаем чувствительность ---
                         // Обычный голос выдает 15-30. Делим на 40, чтобы получить сильный буст (до +40% к размеру)
                         let scaleBoost = Math.min(0.4, avgVolume / 40); 
-                        
+
                         if (!isRecordingLocked) {
                             // 1. МЫ ДЕРЖИМ ПАЛЕЦ: пульсирует главная кнопка
                             const mainBtn = document.getElementById('btn-input-action');
@@ -1086,7 +1086,7 @@
                                 plane.style.transform = `scale(${1 + scaleBoost}) rotate(-15deg)`;
                             });
                         }
-                        
+
                         // Сбор истории для вейвформы (без изменений)
                         const now = Date.now();
                         if (now - lastVolumeSampleTime > 100) {
@@ -1099,7 +1099,7 @@
                 trackVolume();
             } catch(e) { console.warn("Аудио анализатор не запустился:", e); }
             // =========================================
-            
+
             // Один таймер на все три слоя
             recTimerInterval = setInterval(() => {
                 if (!isPaused) {
@@ -1107,7 +1107,7 @@
                     document.querySelectorAll('.v-time-text').forEach(el => el.innerText = timeStr);
                 }
             }, 100);
-            
+
         } catch (err) { isPointerDown = false; }
     }
 
@@ -1132,15 +1132,15 @@
         // Блокировка (свайп вверх)
         if (deltaY > 50) {
             isRecordingLocked = true;
-            
+
             // Переключаем слои (прячем удержание, показываем лок)
             document.getElementById('v-hold-ui').classList.remove('active');
             document.getElementById('v-locked-rec-ui').classList.add('active');
-            
+
             // Прячем центральную кнопку-микрофон
             document.getElementById('btn-input-action').style.display = 'none';
             if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
-            
+
             const btn = document.getElementById('btn-input-action');
             try { btn.releasePointerCapture(e.pointerId); } catch(err) {}
             isPointerDown = false;
@@ -1151,7 +1151,7 @@
         isPointerDown = false;
         const btn = document.getElementById('btn-input-action');
         try { if (e && e.pointerId) btn.releasePointerCapture(e.pointerId); } catch(err) {}
-        
+
         if (!isRecording || isCancelled || isRecordingLocked) return;
         window.shouldSendVoice = true;
         mediaRecorder.stop();
@@ -1163,10 +1163,10 @@
         mediaRecorder.pause();
         isPaused = true;
         pauseStartTime = Date.now(); 
-        
+
         document.getElementById('v-locked-rec-ui').classList.remove('active');
         document.getElementById('v-locked-pause-ui').classList.add('active');
-        
+
         // ДОБАВЛЕНА ЭТА СТРОКА: Рисуем график при паузе
         renderWaveform();
     }
@@ -1175,7 +1175,7 @@
         if (!isRecording || !isPaused) return;
         mediaRecorder.resume();
         isPaused = false;
-        
+
         if (pauseStartTime > 0) {
             recStartTime += (Date.now() - pauseStartTime);
             pauseStartTime = 0; 
@@ -1183,17 +1183,17 @@
 
         // ДОБАВЛЕНА ЭТА СТРОКА: Сброс таймера для сбора громкости
         lastVolumeSampleTime = Date.now();
-        
+
         document.getElementById('v-locked-pause-ui').classList.remove('active');
         document.getElementById('v-locked-rec-ui').classList.add('active');
     }
-    
+
     function cancelRecording() {
         isCancelled = true;
         window.shouldSendVoice = false;
         if (isRecording) mediaRecorder.stop();
     }
-    
+
     function stopAndSendRecording() {
         window.shouldSendVoice = true;
         if (isRecording) mediaRecorder.stop();
@@ -1242,7 +1242,7 @@
         payload.set(iv, 0); payload.set(encryptedBytes, iv.length);
 
         await supabaseClient.storage.from('voice_messages').upload(fileName, payload, { contentType: 'application/octet-stream' });
-        
+
         // Вшиваем WF (WaveForm) в маркер!
         const textMarker = `[VOICE]:${fileName}|WF:${wfStr}`; 
         const encryptedPayloadText = await encryptText(textMarker, currentAesKey);
@@ -1285,7 +1285,7 @@
     async function loadAndPlayVoice(fileName, btn) {
         const player = btn.closest('.voice-player');
         const icon = btn.querySelector('i');
-        
+
         // 1. Если этот ГС уже загружен
         if (player.audioObj) {
             const audio = player.audioObj;
@@ -1325,32 +1325,32 @@
 
         icon.className = 'fas fa-spinner fa-spin';
         icon.style.marginLeft = '0';
-        
+
         const { data, error } = await supabaseClient.storage.from('voice_messages').download(fileName);
         if (error) { icon.className = 'fas fa-exclamation-triangle'; return; }
-        
+
         const bytes = new Uint8Array(await data.arrayBuffer());
         try {
             const decryptedBuffer = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.slice(0, 12) }, currentAesKey, bytes.slice(12));
             const audioUrl = URL.createObjectURL(new Blob([decryptedBuffer]));
-            
+
             const audio = new Audio(audioUrl);
             player.audioObj = audio; 
-            
+
             // --- ЛОГИКА ПРОГРЕСС БАРА ---
             audio.addEventListener('timeupdate', () => {
                 if (!audio.duration || player.isScrubbing) return; // <--- ДОБАВЛЕНО ИГНОРИРОВАНИЕ
                 const progress = audio.currentTime / audio.duration;
                 const bars = player.querySelectorAll('.v-bar');
                 const activeCount = Math.floor(progress * bars.length);
-                
+
                 // Закрашиваем палочки в реальном времени
                 bars.forEach((bar, index) => {
                     if (index < activeCount) bar.classList.add('active');
                     else bar.classList.remove('active');
                 });
             });
-            
+
             audio.addEventListener('ended', () => {
                 icon.className = 'fas fa-play';
                 icon.style.marginLeft = '3px';
@@ -1372,60 +1372,60 @@
     // --- ЛОГИКА ПЕРЕМОТКИ И СКРАББИНГА (DRAG) ---
     function handleWaveformPointer(e, waveformEl, fileName) {
         const player = waveformEl.closest('.voice-player');
-        
+
         // Если ГС еще ни разу не включали, по тапу на волну мы его скачаем и запустим
         if (!player.audioObj) {
             loadAndPlayVoice(fileName, player.querySelector('.voice-play-btn'));
             return;
         }
-        
+
         const audio = player.audioObj;
-        
+
         // Вспомогательная функция: ТОЛЬКО красит палочки, но НЕ трогает саму музыку
         const updateVisuals = (clientX) => {
             const rect = waveformEl.getBoundingClientRect();
             let x = clientX - rect.left;
             x = Math.max(0, Math.min(x, rect.width)); 
             const percent = x / rect.width;
-            
+
             const bars = waveformEl.querySelectorAll('.v-bar');
             const activeCount = Math.floor(percent * bars.length);
-            
+
             bars.forEach((bar, index) => {
                 if (index < activeCount) bar.classList.add('active');
                 else bar.classList.remove('active');
             });
-            
+
             return percent;
         };
 
         if (e.type === 'pointerdown') {
             try { waveformEl.setPointerCapture(e.pointerId); } catch(err){}
-            
+
             // 1. Ставим флаг, что мы держим палец (чтобы timeupdate не мешал нам рисовать)
             player.isScrubbing = true; 
-            
+
             // 2. Красим палочки в месте нажатия
             let finalPercent = updateVisuals(e.clientX); 
             if(tg.HapticFeedback) tg.HapticFeedback.selectionChanged();
-            
+
             // 3. Пока ведем пальцем - только перерисовываем картинку! Аудио играет своим чередом
             waveformEl.onpointermove = (ev) => {
                 finalPercent = updateVisuals(ev.clientX);
             };
-            
+
             // 4. Как только ОТПУСТИЛИ палец - перематываем реальное аудио
             waveformEl.onpointerup = waveformEl.onpointercancel = (ev) => {
                 waveformEl.onpointermove = null;
                 waveformEl.onpointerup = null;
                 waveformEl.onpointercancel = null;
                 try { waveformEl.releasePointerCapture(e.pointerId); } catch(err){}
-                
+
                 // Делаем мгновенный скачок аудио в ту точку, где мы отпустили палец
                 if (audio.duration) {
                     audio.currentTime = finalPercent * audio.duration; 
                 }
-                
+
                 // Отдаем контроль за палочками обратно плееру
                 player.isScrubbing = false; 
             };
@@ -1448,7 +1448,7 @@
         const area = document.getElementById('messages-area');
         let div = msgId ? document.getElementById(`msg-${msgId}`) : null;
         let isNew = false;
-        
+
         if (!div) {
             div = document.createElement('div');
             if (msgId) div.id = `msg-${msgId}`;
@@ -1477,13 +1477,13 @@
             const cIdx = senderId.toString().split('').reduce((a,b)=>a+b.charCodeAt(0),0) % colors.length;
             senderHtml = `<div class="sender-name" style="color: ${colors[cIdx]};">${escapeHTML(finalName)}</div>`;
         }
-        
+
         if (text.startsWith('[VOICE]:')) {
             div.classList.add('voice-msg'); // Добавляем класс для широкого облачка
-            
+
             const parts = text.replace('[VOICE]:', '').split('|');
             const fileName = parts[0];
-            
+
             let wfStr = null;
             let transcriptionText = 'ИИ анализирует... ⏳';
             let hasTranscript = false;
@@ -1543,7 +1543,7 @@
             const groupId = parts[0];
             const groupName = parts[1];
             const keysJSON = parts[2];
-            
+
             // Если это отправил я - показываем просто статус "Приглашение отправлено"
             if (isMine) {
                 div.innerHTML = senderHtml + `
@@ -1611,16 +1611,16 @@
     }
 
     async function encryptText(text, aesKey) {
-        // 1. Создаем математическую подпись текста
-        const signature = await signText(text);
 
-        // 2. Упаковываем в объект
-        const payloadObj = { t: text, s: signature };
-        const payloadStr = JSON.stringify(payloadObj);
 
-        // 3. Шифруем (теперь шифруется JSON)
+
+
+
+
+
+
         const iv = window.crypto.getRandomValues(new Uint8Array(12));
-        const encryptedContent = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, aesKey, enc.encode(payloadStr));
+        const encryptedContent = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, aesKey, enc.encode(text));
         const encryptedBytes = new Uint8Array(encryptedContent);
         const payload = new Uint8Array(iv.length + encryptedBytes.length);
         payload.set(iv, 0); payload.set(encryptedBytes, iv.length);
@@ -1631,13 +1631,13 @@
         const input = document.getElementById('chat-input');
         const text = input.value.trim();
         if (!text || !currentAesKey || !currentChatId) return;
-        
+
         input.value = "";
         autoResizeInput(); // Сброс размера поля и кнопки
         input.focus(); // Насильно удерживаем фокус для iOS
-        
+
         const encryptedPayload = await encryptText(text, currentAesKey);
-        
+
         // ФИКС: Возвращаем генерацию вектора, иначе ИИ-поиск не найдет этот текст!
         // На современных телефонах это занимает миллисекунды, так что задержки не будет.
         let encryptedVector = null;
@@ -1646,11 +1646,11 @@
         } catch(e) {
             console.warn("Не удалось сгенерировать вектор, отправляем без него");
         }
-        
+
         await supabaseClient.from('messages').insert([ 
             { chat_id: currentChatId, sender_id: currentUser.id, encrypted_text: encryptedPayload, encrypted_vector: encryptedVector } 
         ]);
-        
+
         if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
     }
 
@@ -1662,114 +1662,124 @@
                 async (payload) => {
                     const newMsg = payload.new;
                     if (!newMsg || !newMsg.encrypted_text) return;
-                    
-                    // Теперь мы используем единую надежную функцию для отрисовки Live-сообщений
-                    await processAndRenderMessage(newMsg, currentAesKey);
-                    
-                    // Дополнительный ИИ триггер для ГС (остается как был)
-                    // Расшифровываем по-быстрому только для того, чтобы понять, ГС это или нет
+                    const msgDate = new Date(newMsg.created_at);
+                    const timeStr = msgDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+
+
+
+
+
                     try {
                         const rawData = atob(newMsg.encrypted_text);
                         const bytes = new Uint8Array(rawData.length);
                         for (let i = 0; i < rawData.length; i++) bytes[i] = rawData.charCodeAt(i);
                         const decryptedBuffer = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.slice(0, 12) }, currentAesKey, bytes.slice(12));
-                        let plainText = dec.decode(decryptedBuffer);
-                        try { plainText = JSON.parse(plainText).t; } catch(e) {} // Достаем текст из JSON
+                        const plainText = dec.decode(decryptedBuffer); 
                         
+                        // ЗДЕСЬ ИСПОЛЬЗУЕМ newMsg.sender_id
+                        const senderName = window.currentGroupUsers ? (window.currentGroupUsers[newMsg.sender_id] || "Участник") : null;
+                        
+                        // Рендерим новое сообщение
+                        renderMessage(plainText, newMsg.sender_id === currentUser.id, timeStr, newMsg.id, msgDate, senderName, newMsg.sender_id);
+
                         if (newMsg.sender_id !== currentUser.id && plainText.startsWith('[VOICE]:') && !plainText.includes('|') && isAiReady) {
                             helpFriendTranscribe(plainText.replace('[VOICE]:', ''), newMsg.id);
                         }
-                    } catch(e) {}
+                    } catch (e) { 
+                        const senderName = window.currentGroupUsers ? (window.currentGroupUsers[newMsg.sender_id] || "Участник") : null;
+                        renderMessage("🔒 [Ошибка расшифровки]", newMsg.sender_id === currentUser.id, timeStr, newMsg.id, msgDate, senderName, newMsg.sender_id); 
+                    }
                 }
             ).subscribe();
     }
 
     async function generatePersonalArmor(userId) {
-        // Ключ для шифрования (RSA)
-        const encKeyPair = await window.crypto.subtle.generateKey({ name: "RSA-OAEP", modulusLength: 4096, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["encrypt", "decrypt"]);
-        // НОВЫЙ: Ключ для ЭЦП и подписи (ECDSA)
-        const signKeyPair = await window.crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+        const keyPair = await window.crypto.subtle.generateKey({ name: "RSA-OAEP", modulusLength: 4096, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["encrypt", "decrypt"]);
+        await idbKeyval.set(`my_private_key_${userId}`, keyPair.privateKey);
+        return await window.crypto.subtle.exportKey("jwk", keyPair.publicKey);
 
-        await idbKeyval.set(`my_private_key_${userId}`, encKeyPair.privateKey);
-        await idbKeyval.set(`my_sign_key_${userId}`, signKeyPair.privateKey); // Сохраняем приватный ключ подписи
 
-        const encJwk = await window.crypto.subtle.exportKey("jwk", encKeyPair.publicKey);
-        const signJwk = await window.crypto.subtle.exportKey("jwk", signKeyPair.publicKey);
-        
-        // Возвращаем оба публичных ключа
-        return { rsa: encJwk, ecdsa: signJwk };
+
+
+
+
+
+
+
+
     }
 
     async function checkCryptoKeys(userId) {
         const deviceId = getDeviceId();
         const privateKey = await idbKeyval.get(`my_private_key_${userId}`);
-        const signKey = await idbKeyval.get(`my_sign_key_${userId}`); // Проверяем наличие ключа подписи
-        
+
+
         const { data: userData } = await supabaseClient.from('users').select('public_key').eq('tg_id', userId).single();
         let publicKeysDict = {};
         if (userData && userData.public_key) {
             try { publicKeysDict = JSON.parse(userData.public_key); if (publicKeysDict.kty) publicKeysDict = { "legacy_dev": publicKeysDict }; } catch (e) { publicKeysDict = {}; }
         }
-        
-        // Если нет приватных ключей локально, ИЛИ в базе нет ключа ECDSA для этого девайса - перегенерируем!
-        if (!privateKey || !signKey || !publicKeysDict[deviceId] || !publicKeysDict[deviceId].ecdsa) {
-            const keysObj = await generatePersonalArmor(userId);
-            publicKeysDict[deviceId] = keysObj;
+        if (!privateKey || !publicKeysDict[deviceId]) {
+            const publicKeyJwk = await generatePersonalArmor(userId);
+            publicKeysDict[deviceId] = publicKeyJwk;
+
+
             await supabaseClient.from('users').update({ public_key: JSON.stringify(publicKeysDict) }).eq('tg_id', userId);
         }
     }
 
-    async function signText(text) {
-        const signPrivKey = await idbKeyval.get(`my_sign_key_${currentUser.id}`);
-        if (!signPrivKey) return null; // Для старых аккаунтов (совместимость)
-        
-        const signatureBuffer = await window.crypto.subtle.sign(
-            { name: "ECDSA", hash: { name: "SHA-256" } },
-            signPrivKey,
-            enc.encode(text)
-        );
-        const sigArray = Array.from(new Uint8Array(signatureBuffer));
-        return btoa(String.fromCharCode.apply(null, sigArray));
-    }
 
-    async function verifySignature(text, signatureB64, senderId) {
-        if (!signatureB64) return false; // Подписи нет, хотя должна быть
-        
-        const { data } = await supabaseClient.from('users').select('public_key').eq('tg_id', senderId).single();
-        if (!data || !data.public_key) return true; // У юзера вообще нет ключей, пропускаем
 
-        let keysDict = {};
-        try { keysDict = JSON.parse(data.public_key); } catch(e) { return true; }
 
-        const sigBytes = Uint8Array.from(atob(signatureB64), c => c.charCodeAt(0));
-        const encodedText = enc.encode(text);
 
-        // Перебираем все устройства отправителя, вдруг он написал с компьютера или второго телефона
-        for (let devId in keysDict) {
-            if (!keysDict[devId].ecdsa) continue;
-            try {
-                const pubKey = await window.crypto.subtle.importKey(
-                    "jwk", keysDict[devId].ecdsa,
-                    { name: "ECDSA", namedCurve: "P-256" },
-                    true, ["verify"]
-                );
-                const isValid = await window.crypto.subtle.verify(
-                    { name: "ECDSA", hash: { name: "SHA-256" } },
-                    pubKey, sigBytes, encodedText
-                );
-                if (isValid) return true; // Подпись совпала!
-            } catch(e) {}
-        }
-        return false; // Ни один ключ девайса не подошел -> 100% подделка!
-    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
     async function generateChatKey() { return await window.crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]); }
 
     async function encryptChatKeyForFriend(chatKey, friendPublicJwk) {
-        // Поддержка старого формата ключей и нового (где RSA лежит внутри объекта)
-        const actualRsaJwk = friendPublicJwk.rsa ? friendPublicJwk.rsa : friendPublicJwk;
-        const friendPublicKey = await window.crypto.subtle.importKey("jwk", actualRsaJwk, { name: "RSA-OAEP", hash: "SHA-256" }, true, ["encrypt"]);
+        const friendPublicKey = await window.crypto.subtle.importKey("jwk", friendPublicJwk, { name: "RSA-OAEP", hash: "SHA-256" }, true, ["encrypt"]);
+
+
         const rawChatKey = await window.crypto.subtle.exportKey("raw", chatKey);
         const encryptedKeyBuffer = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, friendPublicKey, rawChatKey);
         return btoa(String.fromCharCode.apply(null, new Uint8Array(encryptedKeyBuffer)));
@@ -1852,7 +1862,7 @@
     async function createNewPrivateChat(friendId) {
         const { data: friendData } = await supabaseClient.from('users').select('public_key').eq('tg_id', friendId).single();
         const { data: myData } = await supabaseClient.from('users').select('public_key').eq('tg_id', currentUser.id).single();
-        
+
         currentAesKey = await generateChatKey();
         const { data: newChat } = await supabaseClient.from('chats').insert({ name: 'private' }).select().single();
         currentChatId = newChat.id;
@@ -1901,12 +1911,12 @@
         }
 
         currentAesKey = await decryptChatKey(myEncryptedKey);
-        
+
         // 1. Мгновенная отрисовка из Кэша
         const cachedHistory = await getChatFromCache(currentChatId);
         document.getElementById('messages-area').innerHTML = '';
         window.lastRenderedDate = null;
-        
+
         if (cachedHistory && cachedHistory.length > 0) {
             for (const msg of cachedHistory) await processAndRenderMessage(msg, currentAesKey);
         } else {
@@ -1915,7 +1925,7 @@
 
         // 2. Подтягиваем только НОВЫЕ сообщения (чтобы не грузить всё)
         const lastMsgDate = cachedHistory && cachedHistory.length > 0 ? cachedHistory[cachedHistory.length - 1].created_at : null;
-        
+
         let query = supabaseClient.from('messages').select('*').eq('chat_id', currentChatId).order('created_at', { ascending: true });
         if (lastMsgDate) query = query.gt('created_at', lastMsgDate); // Если есть кэш - просим БД дать только свежее!
 
@@ -1936,7 +1946,7 @@
     async function initApp() {
         const isAuth = await authUser();
         if (!isAuth) { document.body.innerHTML = '<div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; color:var(--danger);"><i class="fas fa-lock" style="font-size:48px; margin-bottom:20px;"></i><h2>Доступ запрещен</h2></div>'; return; }
-        
+
         const avatarEl = document.getElementById('my-avatar');
         avatarEl.innerText = currentUser.first_name.charAt(0).toUpperCase();
         avatarEl.style.background = getAvatarGradient(currentUser.id);
@@ -1980,7 +1990,7 @@ async function openSavedMessages() {
     document.getElementById('friend-name-title').innerText = 'Избранное';
     document.getElementById('friend-fingerprint').innerText = 'Личное хранилище';
     document.getElementById('messages-area').innerHTML = '';
-    
+
     switchScreen('screen-friend');
     requestMicrophoneAccess();
 
@@ -2018,7 +2028,7 @@ async function openSavedMessages() {
 async function sendFriendRequest() {
     const input = document.getElementById('friend-tg-id-input');
     const targetId = parseInt(input.value.trim());
-    
+
     // Находим нашу кнопку внутри модалки, чтобы управлять ей
     const btn = document.querySelector('#modal-add-friend .primary-btn');
 
@@ -2071,7 +2081,7 @@ async function sendFriendRequest() {
 function subscribeToFriendships() {
     // Если уже подписаны — отписываемся (чтобы не было дублей)
     if (friendshipsSubscription) supabaseClient.removeChannel(friendshipsSubscription);
-    
+
     friendshipsSubscription = supabaseClient.channel('live-friendships')
         // Слушаем, когда КТО-ТО добавляет НАС, принимает НАС или удаляет НАС
         .on('postgres_changes', { event: '*', schema: 'public', table: 'friendships', filter: `addressee_id=eq.${currentUser.id}` }, () => { 
@@ -2156,7 +2166,7 @@ function renderChatsList(users, groupChats, pendingRequests = []) {
             </div>
         `;
     });
-    
+
     // 4. ДРУЗЬЯ (принятые)
     users.forEach(f => {
         const safeName = escapeHTML(f.first_name);
@@ -2177,14 +2187,14 @@ function renderChatsList(users, groupChats, pendingRequests = []) {
             </div>
         `;
     });
-    
+
     list.innerHTML = html;
 }
 
 // --- НОВАЯ ЗАГРУЗКА ЧАТОВ И ДРУЗЕЙ ---
 async function loadChats() {
     const spinner = document.getElementById('chat-list-spinner');
-    
+
     // Подсказка своего ID для модалки добавления друзей
     document.getElementById('my-tg-id-hint').innerText = currentUser.id;
 
@@ -2205,12 +2215,12 @@ async function loadChats() {
         .or(`requester_id.eq.${currentUser.id},addressee_id.eq.${currentUser.id}`);
 
     const relsArray = rels || [];
-    
+
     // Вычисляем ID принятых друзей
     const friendIds = relsArray
         .filter(r => r.status === 'accepted')
         .map(r => r.requester_id === currentUser.id ? r.addressee_id : r.requester_id);
-        
+
     // Ищем входящие заявки
     const pendingRels = relsArray.filter(r => r.status === 'pending' && r.addressee_id === currentUser.id);
 
@@ -2220,7 +2230,7 @@ async function loadChats() {
         const { data: users } = await supabaseClient.from('users').select('*').in('tg_id', friendIds);
         friendsData = users || [];
     }
-    
+
     // 4. Скачиваем профили тех, кто кинул запрос
     let pendingRequestsData = [];
     if (pendingRels.length > 0) {
@@ -2236,7 +2246,7 @@ async function loadChats() {
 
     window.currentFriendsData = friendsData;
     localStorage.setItem('synd_cached_users', JSON.stringify(friendsData));
-    
+
     // 5. Загружаем группы
     const { data: myKeys } = await supabaseClient.from('chat_keys').select('chat_id').eq('user_id', currentUser.id);
     let groupChats = [];
@@ -2246,7 +2256,7 @@ async function loadChats() {
         if (groups) groupChats = groups;
     }
     localStorage.setItem('synd_cached_groups', JSON.stringify(groupChats));
-    
+
     // 6. Окончательно обновляем экран
     renderChatsList(window.currentFriendsData, groupChats, pendingRequestsData);
     if(spinner) spinner.style.display = 'none';
@@ -2258,39 +2268,39 @@ async function loadChats() {
         currentChatType = 'group';
         currentGroup = { id: groupId, name: name };
         currentChatId = groupId; 
-        
+
         document.getElementById('friend-name-title').innerText = name;
         document.getElementById('btn-header-debts').style.display = 'none'; // Скрываем долги в группе
         document.getElementById('friend-fingerprint').innerText = 'Загрузка...';
         document.getElementById('friend-fingerprint').style.color = 'var(--muted)';
-        
+
         switchScreen('screen-friend');
         requestMicrophoneAccess(); 
-        
+
         // Подтягиваем количество участников
         // Подтягиваем количество участников (БЕЗ head: true, чтобы избежать 406)
         const { data: members } = await supabaseClient.from('chat_keys').select('id').eq('chat_id', groupId);
         const finalCount = members ? members.length : 1; 
         document.getElementById('friend-fingerprint').innerText = `${finalCount} участник${finalCount > 1 ? 'ов' : ''}`;
-        
+
         await loadGroupChatKeys(groupId);
     }
 
     // Загрузка ключей и сообщений группы
     async function loadGroupChatKeys(groupId) {
         document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:var(--muted); margin-top: 40px; font-size: 14px;"><i class="fas fa-shield-alt fa-spin" style="font-size: 24px; color: var(--primary); margin-bottom: 10px;"></i><br>Загрузка крипто-ключей группы...</div>';
-        
+
         // Безопасный запрос без .single()
         const { data: keyDataArr } = await supabaseClient.from('chat_keys').select('encrypted_key').eq('chat_id', groupId).eq('user_id', currentUser.id).limit(1);
         if (!keyDataArr || keyDataArr.length === 0) return alert("Нет доступа к группе");
-        
+
         const keyData = keyDataArr[0];
-        
+
         const deviceId = getDeviceId();
         const keysDict = JSON.parse(keyData.encrypted_key);
         const myEncryptedKey = keysDict[deviceId] || keysDict["legacy_dev"] || keysDict["legacy"];
         currentAesKey = await decryptChatKey(myEncryptedKey);
-        
+
         // Собираем имена участников (для отображения над сообщениями)
         const { data: membersKeys } = await supabaseClient.from('chat_keys').select('user_id').eq('chat_id', groupId);
         const memberIds = membersKeys.map(k => k.user_id);
@@ -2299,10 +2309,10 @@ async function loadChats() {
         usersData.forEach(u => window.currentGroupUsers[u.tg_id] = u.first_name);
 
         const cachedHistory = await getChatFromCache(currentChatId);
-        
+
         document.getElementById('messages-area').innerHTML = '';
         window.lastRenderedDate = null;
-        
+
         if (cachedHistory && cachedHistory.length > 0) {
             for (const msg of cachedHistory) await processAndRenderMessage(msg, currentAesKey);
         } else {
@@ -2310,7 +2320,7 @@ async function loadChats() {
         }
 
         const lastMsgDate = cachedHistory && cachedHistory.length > 0 ? cachedHistory[cachedHistory.length - 1].created_at : null;
-        
+
         let query = supabaseClient.from('messages').select('*').eq('chat_id', currentChatId).order('created_at', { ascending: true });
         if (lastMsgDate) query = query.gt('created_at', lastMsgDate);
 
@@ -2327,22 +2337,22 @@ async function loadChats() {
 
     async function removeFriend() {
         if (!confirm(`Точно удалить ${currentFriend.name} из друзей? Вы больше не сможете писать друг другу.`)) return;
-    
+
         // 1. Делаем два запроса на удаление (на случай, если заявку кидали мы, или если кидали нам - удалится нужная строка)
         await supabaseClient.from('friendships').delete().eq('requester_id', currentUser.id).eq('addressee_id', currentFriend.id);
         await supabaseClient.from('friendships').delete().eq('requester_id', currentFriend.id).eq('addressee_id', currentUser.id);
-    
+
         // 2. Закрываем модалку и возвращаемся на главный экран
         toggleModal('modal-friend-info');
         switchScreen('screen-main');
-    
+
         // 3. Оптимистичное обновление кэша (Мгновенно убираем друга из списка)
         let cachedUsers = JSON.parse(localStorage.getItem('synd_cached_users') || '[]');
         cachedUsers = cachedUsers.filter(u => u.tg_id !== currentFriend.id); // Удаляем из массива
-        
+
         localStorage.setItem('synd_cached_users', JSON.stringify(cachedUsers)); // Сохраняем обратно в LocalStorage
         window.currentFriendsData = cachedUsers; // Обновляем глобальную переменную
-    
+
         // 4. Запускаем фоновое обновление для полной синхронизации
         loadChats();
     }
@@ -2355,15 +2365,15 @@ async function loadChats() {
             document.getElementById('group-info-avatar').innerText = currentGroup.name.charAt(0).toUpperCase();
             document.getElementById('group-info-count').innerText = "Загрузка участников...";
             document.getElementById('group-members-list').innerHTML = '<div style="text-align:center; padding: 15px; color: var(--muted);"><i class="fas fa-spinner fa-spin"></i></div>';
-            
+
             toggleModal('modal-group-info');
-            
+
             const { data: memberKeys } = await supabaseClient.from('chat_keys').select('user_id').eq('chat_id', currentChatId);
             const memberIds = memberKeys.map(k => k.user_id);
             const { data: usersData } = await supabaseClient.from('users').select('*').in('tg_id', memberIds);
-            
+
             document.getElementById('group-info-count').innerText = `${usersData.length} участник${usersData.length > 1 ? 'ов' : ''}`;
-            
+
             const list = document.getElementById('group-members-list');
             list.innerHTML = usersData.map(u => `
                 <div class="list-item" style="margin-bottom:0; background:transparent; border:none; padding: 8px;">
@@ -2380,7 +2390,7 @@ async function loadChats() {
             document.getElementById('friend-info-avatar').innerText = currentFriend.name.charAt(0).toUpperCase();
             document.getElementById('friend-info-avatar').style.background = getAvatarGradient(currentFriend.id);
             document.getElementById('friend-info-id').innerText = `ID: ${currentFriend.id}`;
-            
+
             toggleModal('modal-friend-info');
         }
     }
@@ -2394,7 +2404,7 @@ async function loadChats() {
         const { data, error } = await supabaseClient.from('currencies').select('*').eq('owner_id', currentUser.id);
         const list = document.getElementById('my-currencies-list');
         if (error || !data || data.length === 0) { list.innerHTML = '<p style="color: var(--muted); text-align: center;">Активов пока нет.</p>'; return; }
-        
+
         list.innerHTML = data.map(c => `
             <div class="list-item">
                 <div class="list-item-left">
@@ -2413,10 +2423,10 @@ async function loadChats() {
         const name = document.getElementById('cur-name').value;
         const price = parseFloat(document.getElementById('cur-price').value);
         if(!name || !price) return alert('Заполни поля!');
-        
+
         const { error } = await supabaseClient.from('currencies').insert({ owner_id: currentUser.id, name: name, rub_value: price });
         if (error) { alert('Ошибка БД: ' + error.message); return; }
-        
+
         document.getElementById('cur-name').value = ''; document.getElementById('cur-price').value = '';
         loadMyCurrencies();
     }
@@ -2454,17 +2464,17 @@ async function loadChats() {
     async function handleCreateGroup() {
         const name = document.getElementById('new-group-name').value;
         if (!name) return alert("Введите название!");
-        
+
         // 1. МГНОВЕННО прячем модалку и чистим поле
         toggleModal('modal-create-group');
         document.getElementById('new-group-name').value = '';
-        
+
         // 2. СРАЗУ показываем загрузку в списке чатов
         document.getElementById('friends-list').innerHTML = '<div style="text-align:center; color: var(--primary); padding: 20px;"><i class="fas fa-spinner fa-spin fa-2x"></i><br><span style="font-size:14px; margin-top:10px; display:block; color:var(--text);">Создаем группу "${escapeHTML(name)}"...</span></div>';
-        
+
         // 3. Спокойно делаем тяжелую работу (ключи + БД)
         await createGroup(name);
-        
+
         // 4. Загружаем чаты заново, когда всё готово
         loadChats();
     }
@@ -2495,18 +2505,18 @@ async function loadChats() {
                 btnElement.style.opacity = '0.7';
                 btnElement.disabled = true;
             }
-            
+
             // 2. Ищем личный чат с этим другом
             const { data: pmChatId, error: rpcErr } = await supabaseClient.rpc('get_private_chat', { user1_id: currentUser.id, user2_id: friendId });
             if (rpcErr) throw new Error("Ошибка поиска чата");
-            
+
             let finalPmId = pmChatId;
             let pmAesKey = null;
-            
+
             // Получаем или генерируем AES ключ лички
             if (finalPmId) {
                 const { data: keyData } = await supabaseClient.from('chat_keys').select('encrypted_key').eq('chat_id', finalPmId).eq('user_id', currentUser.id).single();
-                
+
                 // --- ИСПРАВЛЕНИЕ: БЕЗОПАСНЫЙ ПАРСИНГ КЛЮЧА ---
                 let encKey = null;
                 try { 
@@ -2515,54 +2525,54 @@ async function loadChats() {
                 } catch (e) { 
                     encKey = keyData.encrypted_key; 
                 }
-                
+
                 if (!encKey) throw new Error("Не найден ключ от лички");
                 pmAesKey = await decryptChatKey(encKey);
             } else {
                 // Создаем новую личку
                 const { data: friendData } = await supabaseClient.from('users').select('public_key').eq('tg_id', friendId).single();
                 const { data: myData } = await supabaseClient.from('users').select('public_key').eq('tg_id', currentUser.id).single();
-                
+
                 pmAesKey = await generateChatKey();
                 const { data: newChat } = await supabaseClient.from('chats').insert({ name: 'private', type: 'private' }).select().single();
                 finalPmId = newChat.id;
-                
+
                 let friendKeys = JSON.parse(friendData.public_key); if(friendKeys.kty) friendKeys = {"legacy": friendKeys};
                 let encKeysForFriend = {}; for (const [devId, pubJwk] of Object.entries(friendKeys)) encKeysForFriend[devId] = await encryptChatKeyForFriend(pmAesKey, pubJwk);
-                
+
                 let myKeys = JSON.parse(myData.public_key); if(myKeys.kty) myKeys = {"legacy": myKeys};
                 let encKeysForMe = {}; for (const [devId, pubJwk] of Object.entries(myKeys)) encKeysForMe[devId] = await encryptChatKeyForFriend(pmAesKey, pubJwk);
-                
+
                 await supabaseClient.from('chat_keys').insert([
                     { chat_id: finalPmId, user_id: friendId, encrypted_key: JSON.stringify(encKeysForFriend) },
                     { chat_id: finalPmId, user_id: currentUser.id, encrypted_key: JSON.stringify(encKeysForMe) }
                 ]);
             }
-            
+
             // 3. Шифруем ключ ТЕКУЩЕЙ ГРУППЫ для друга
             const { data: friendData } = await supabaseClient.from('users').select('public_key').eq('tg_id', friendId).single();
             let friendKeys = JSON.parse(friendData.public_key); if (friendKeys.kty) friendKeys = { "legacy": friendKeys };
-            
+
             let encGroupKeysForFriend = {}; 
             for (const [devId, pubJwk] of Object.entries(friendKeys)) {
                 encGroupKeysForFriend[devId] = await encryptChatKeyForFriend(currentAesKey, pubJwk); 
             }
-            
+
             // 4. Отправляем инвайт в ЛС
             const invitePayload = `[GROUP_INVITE]:${currentGroup.id}|${currentGroup.name}|${JSON.stringify(encGroupKeysForFriend)}`;
             const encryptedPayloadText = await encryptText(invitePayload, pmAesKey);
-            
+
             const { error: sendErr } = await supabaseClient.from('messages').insert([ 
                 { chat_id: finalPmId, sender_id: currentUser.id, encrypted_text: encryptedPayloadText } 
             ]);
-            
+
             if (sendErr) throw new Error("Ошибка отправки сообщения");
-            
+
             // 5. Завершаем!
             if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
             alert("Приглашение успешно отправлено в ЛС!");
             toggleModal('modal-invite-friend');
-            
+
         } catch (e) {
             console.error(e);
             alert("Произошла ошибка: " + e.message);
@@ -2579,54 +2589,54 @@ async function loadChats() {
     async function editGroupName() {
         const newName = prompt("Введите новое название группы:", currentGroup.name);
         if (!newName || newName.trim() === "" || newName === currentGroup.name) return;
-        
+
         const finalName = newName.trim();
-        
+
         // 1. Оптимистичное обновление UI (Меняется моментально)
         currentGroup.name = finalName;
         document.getElementById('group-info-name').innerHTML = `${escapeHTML(finalName)} <i class="fas fa-pen" style="font-size: 14px; color: var(--muted); cursor: pointer;" onclick="editGroupName()"></i>`;
         document.getElementById('group-info-avatar').innerText = finalName.charAt(0).toUpperCase();
         document.getElementById('friend-name-title').innerText = finalName;
-        
+
         // 2. Отправка в БД
         await supabaseClient.from('chats').update({ name: finalName }).eq('id', currentChatId);
-        
+
         // Обновляем кэш в фоне
         loadChats();
     }
-    
+
     // --- УДАЛЕНИЕ ГРУППЫ ДЛЯ ВСЕХ ---
     async function deleteGroup() {
         if(confirm("ВНИМАНИЕ! Группа будет удалена у всех участников навсегда!\n\nТочно удалить группу?")) {
             // Удаляем из базы
             await supabaseClient.from('chats').delete().eq('id', currentChatId);
-            
+
             toggleModal('modal-group-info');
             switchScreen('screen-main');
-            
+
             // Удаляем из кэша, чтобы пропала мгновенно
             let cachedGroups = JSON.parse(localStorage.getItem('synd_cached_groups') || '[]');
             cachedGroups = cachedGroups.filter(g => g.id !== currentChatId);
             localStorage.setItem('synd_cached_groups', JSON.stringify(cachedGroups));
-            
+
             loadChats(); // Обновляем список чатов
         }
     }
-    
+
     // --- ПЕРЕЗАПИСЫВАЕМ СТАРУЮ ФУНКЦИЮ ВЫХОДА ИЗ ГРУППЫ ---
     async function leaveGroup() {
         if(confirm("Точно выйти из группы? Вы потеряете к ней доступ.")) {
             // Удаляем свой ключ доступа
             await supabaseClient.from('chat_keys').delete().eq('chat_id', currentChatId).eq('user_id', currentUser.id);
-            
+
             toggleModal('modal-group-info');
             switchScreen('screen-main');
-            
+
             // Удаляем из кэша, чтобы пропала мгновенно
             let cachedGroups = JSON.parse(localStorage.getItem('synd_cached_groups') || '[]');
             cachedGroups = cachedGroups.filter(g => g.id !== currentChatId);
             localStorage.setItem('synd_cached_groups', JSON.stringify(cachedGroups));
-            
+
             loadChats();
         }
     }
@@ -2638,13 +2648,13 @@ async function loadChats() {
         currentFriend = { id: tgId, name: name };
         document.getElementById('friend-name-title').innerText = name;
         switchScreen('screen-friend');
-        
+
         await loadDebts(tgId);
         await initPrivateChat(tgId);
-        
+
         // --- ФИКС: Просим микрофон при входе в чат! ---
         requestMicrophoneAccess(); 
-        
+
         const { data: friendData } = await supabaseClient.from('users').select('public_key').eq('tg_id', tgId).single();
         const fingerprint = await getFingerprint(friendData?.public_key);
         document.getElementById('friend-fingerprint').innerText = `Шифр: ${fingerprint}`;
@@ -2663,12 +2673,12 @@ async function loadChats() {
 
     async function saveChatToCache(chatId, newHistory) {
         const existing = await idbKeyval.get(`chat_hist_${chatId}`) || { history: [] };
-        
+
         // Создаем Map, чтобы старые сообщения обновлялись (например, ИИ-переводы)
         const msgMap = new Map();
         existing.history.forEach(m => msgMap.set(m.id, m));
         newHistory.forEach(m => msgMap.set(m.id, m));
-        
+
         // Превращаем обратно в массив и сортируем по времени
         const updatedHistory = Array.from(msgMap.values()).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
@@ -2684,17 +2694,17 @@ async function loadChats() {
     async function enforceCacheLimit() {
         const keys = await idbKeyval.keys();
         const chatKeys = keys.filter(k => k.toString().startsWith('chat_hist_'));
-        
+
         let totalSize = 0;
         let caches = [];
-        
+
         for (let k of chatKeys) {
             const data = await idbKeyval.get(k);
             const size = JSON.stringify(data.history).length * 2; // ~2 байта на символ
             totalSize += size;
             caches.push({ key: k, size: size, updated_at: data.updated_at });
         }
-        
+
         if (totalSize > CACHE_LIMIT_BYTES) {
             caches.sort((a, b) => a.updated_at - b.updated_at); // Самые старые чаты удаляем первыми
             while (totalSize > CACHE_LIMIT_BYTES && caches.length > 0) {
@@ -2710,39 +2720,39 @@ async function loadChats() {
         const msgDate = new Date(msg.created_at);
         const timeStr = msgDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         const senderName = window.currentGroupUsers ? (window.currentGroupUsers[msg.sender_id] || "Участник") : null;
-        
+
         try {
             const rawData = atob(msg.encrypted_text);
             const bytes = new Uint8Array(rawData.length);
             for (let i = 0; i < rawData.length; i++) bytes[i] = rawData.charCodeAt(i);
             const decryptedBuffer = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.slice(0, 12) }, aesKey, bytes.slice(12));
-            const decryptedStr = dec.decode(decryptedBuffer);
-            
-            let finalPlainText = decryptedStr;
-            let isAuthentic = true;
+            renderMessage(dec.decode(decryptedBuffer), msg.sender_id === currentUser.id, timeStr, msg.id, msgDate, senderName, msg.sender_id);
 
-            try {
-                // Пытаемся распарсить новый формат (JSON с подписью)
-                const parsed = JSON.parse(decryptedStr);
-                if (parsed.t !== undefined) {
-                    finalPlainText = parsed.t;
-                    // Если сообщение чужое, проверяем подпись
-                    if (msg.sender_id !== currentUser.id) {
-                        isAuthentic = await verifySignature(parsed.t, parsed.s, msg.sender_id);
-                    }
-                }
-            } catch(e) {
-                // Старое сообщение (чистый текст), пропускаем
-            }
 
-            if (!isAuthentic) {
-                // Хакер спалился
-                renderMessage("🚨 [БЛОКИРОВКА: Цифровая подпись не совпадает! Текст подделан]", msg.sender_id === currentUser.id, timeStr, msg.id, msgDate, senderName, msg.sender_id);
-            } else {
-                renderMessage(finalPlainText, msg.sender_id === currentUser.id, timeStr, msg.id, msgDate, senderName, msg.sender_id);
-            }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         } catch (e) {
-            renderMessage("🔒 [Ошибка расшифровки]", msg.sender_id === currentUser.id, timeStr, msg.id, msgDate, senderName, msg.sender_id);
+            renderMessage("🔒 [Скрыто]", msg.sender_id === currentUser.id, timeStr, msg.id, msgDate, senderName, msg.sender_id);
         }
     }
 
@@ -2752,24 +2762,24 @@ async function loadChats() {
         switchScreen('screen-add-debt');
         const modal = document.getElementById('modal-debts');
         if (modal) modal.classList.remove('active');
-        
+
         // 2. Всю тяжелую работу откладываем на долю секунды, чтобы анимация экрана не залагала
         setTimeout(async () => {
             const rublesInput = document.getElementById('debt-rubles');
             const resultText = document.getElementById('debt-result');
             if (rublesInput) rublesInput.value = '';
             if (resultText) resultText.innerText = '0';
-            
+
             const select = document.getElementById('debt-currency');
             if (!select) return;
             select.innerHTML = '<option value="Руб." data-price="1">Загрузка...</option>';
-            
+
             try {
                 const { data: friendCurrencies } = await supabaseClient
                     .from('currencies')
                     .select('*')
                     .eq('owner_id', currentFriend.id);
-                    
+
                 select.innerHTML = '';
                 if (!friendCurrencies || friendCurrencies.length === 0) {
                     select.innerHTML = `<option value="Руб." data-price="1">Рубли (1 к 1)</option>`;
@@ -2789,11 +2799,11 @@ async function loadChats() {
         const rublesInput = document.getElementById('debt-rubles');
         const rubles = parseFloat(rublesInput.value);
         if (isNaN(rubles) || rubles <= 0) return alert('Введите корректную сумму!');
-        
+
         const select = document.getElementById('debt-currency');
         const price = parseFloat(select.options[select.selectedIndex]?.getAttribute('data-price')) || 1;
         const currencyName = select.value || 'Руб.';
-        
+
         const finalAmount = parseFloat((rubles / price).toFixed(2));
         if (finalAmount > 1000000000) return alert('Сумма превышает лимиты.');
 
@@ -2805,20 +2815,20 @@ async function loadChats() {
         };
 
         const { error } = await supabaseClient.from('debts').insert(payload).select();
-        
+
         if (error) { 
             alert("Ошибка сохранения: " + error.message);
             return; 
         }
-        
+
         if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
-        
+
         // Просто возвращаемся в чат и обновляем долги в фоне. 
         // Не пытаемся насильно открыть модалку, чтобы не багалась анимация
         switchScreen('screen-friend');
         await loadDebts(currentFriend.id);
     }
-    
+
     function calculateDebt() {
         const rubles = parseFloat(document.getElementById('debt-rubles').value) || 0;
         const select = document.getElementById('debt-currency');
