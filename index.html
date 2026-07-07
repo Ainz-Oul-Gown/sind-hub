@@ -1802,27 +1802,35 @@
         }
 
         currentAesKey = await decryptChatKey(myEncryptedKey);
-        document.getElementById('messages-area').innerHTML = '';
         
-        window.lastRenderedDate = null; // <--- ДОБАВИТЬ ЭТУ СТРОКУ
-
-        const { data: history } = await supabaseClient.from('messages').select('*').eq('chat_id', currentChatId).order('created_at', { ascending: true });
-
-        if (history && history.length > 0) {
-            for (const msg of history) {
-                const msgDate = new Date(msg.created_at);
-                const timeStr = msgDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                try {
-                    const rawData = atob(msg.encrypted_text);
-                    const bytes = new Uint8Array(rawData.length);
-                    for (let i = 0; i < rawData.length; i++) bytes[i] = rawData.charCodeAt(i);
-                    const decryptedBuffer = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.slice(0, 12) }, currentAesKey, bytes.slice(12));
-                    renderMessage(dec.decode(decryptedBuffer), msg.sender_id === currentUser.id, timeStr, msg.id, msgDate);
-                } catch (e) {
-                    renderMessage("🔒 [История скрыта]", msg.sender_id === currentUser.id, timeStr, msg.id, msgDate);
-                }
-            }
+        // 1. Мгновенная отрисовка из Кэша
+        const cachedHistory = await getChatFromCache(currentChatId);
+        document.getElementById('messages-area').innerHTML = '';
+        window.lastRenderedDate = null;
+        
+        if (cachedHistory && cachedHistory.length > 0) {
+            for (const msg of cachedHistory) await processAndRenderMessage(msg, currentAesKey);
+        } else {
+            document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:var(--muted); margin-top: 40px;"><i class="fas fa-spinner fa-spin fa-2x"></i></div>';
         }
+
+        // 2. Подтягиваем только НОВЫЕ сообщения (чтобы не грузить всё)
+        const lastMsgDate = cachedHistory && cachedHistory.length > 0 ? cachedHistory[cachedHistory.length - 1].created_at : null;
+        
+        let query = supabaseClient.from('messages').select('*').eq('chat_id', currentChatId).order('created_at', { ascending: true });
+        if (lastMsgDate) query = query.gt('created_at', lastMsgDate); // Если есть кэш - просим БД дать только свежее!
+
+        const { data: newHistory } = await query;
+
+        // 3. Обновляем экран и базу
+        if (newHistory && newHistory.length > 0) {
+            if (!cachedHistory || cachedHistory.length === 0) document.getElementById('messages-area').innerHTML = '';
+            for (const msg of newHistory) await processAndRenderMessage(msg, currentAesKey);
+            await saveChatToCache(currentChatId, newHistory); // дозаписываем в кэш
+        } else if (!cachedHistory || cachedHistory.length === 0) {
+            document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:var(--muted); margin-top:40px;">Чат пуст</div>';
+        }
+
         subscribeToPrivateMessages();
     }
 
@@ -1955,6 +1963,7 @@
 
         // Открытие существующей группы
     async function openGroupChat(groupId, name) {
+        document.getElementById('messages-area').innerHTML = '';
         currentChatType = 'group';
         currentGroup = { id: groupId, name: name };
         currentChatId = groupId; 
@@ -1998,32 +2007,31 @@
         window.currentGroupUsers = {};
         usersData.forEach(u => window.currentGroupUsers[u.tg_id] = u.first_name);
 
+        const cachedHistory = await getChatFromCache(currentChatId);
+        
         document.getElementById('messages-area').innerHTML = '';
         window.lastRenderedDate = null;
-
-        const { data: history } = await supabaseClient.from('messages').select('*').eq('chat_id', currentChatId).order('created_at', { ascending: true });
         
-        if (history && history.length > 0) {
-            for (const msg of history) {
-                const msgDate = new Date(msg.created_at);
-                const timeStr = msgDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                
-                // ЗДЕСЬ ИСПОЛЬЗУЕМ msg.sender_id
-                const senderName = window.currentGroupUsers ? (window.currentGroupUsers[msg.sender_id] || "Участник") : null;
-                
-                try {
-                    const rawData = atob(msg.encrypted_text);
-                    const bytes = new Uint8Array(rawData.length);
-                    for (let i = 0; i < rawData.length; i++) bytes[i] = rawData.charCodeAt(i);
-                    const decryptedBuffer = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.slice(0, 12) }, currentAesKey, bytes.slice(12));
-                    
-                    renderMessage(dec.decode(decryptedBuffer), msg.sender_id === currentUser.id, timeStr, msg.id, msgDate, senderName, msg.sender_id);
-                } catch (e) {
-                    renderMessage("🔒 [Скрыто]", msg.sender_id === currentUser.id, timeStr, msg.id, msgDate, senderName, msg.sender_id);
-                }
-            }
+        if (cachedHistory && cachedHistory.length > 0) {
+            for (const msg of cachedHistory) await processAndRenderMessage(msg, currentAesKey);
+        } else {
+            document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:var(--muted); margin-top: 40px;"><i class="fas fa-spinner fa-spin fa-2x"></i></div>';
         }
-        subscribeToPrivateMessages(); // Работает и для групп
+
+        const lastMsgDate = cachedHistory && cachedHistory.length > 0 ? cachedHistory[cachedHistory.length - 1].created_at : null;
+        
+        let query = supabaseClient.from('messages').select('*').eq('chat_id', currentChatId).order('created_at', { ascending: true });
+        if (lastMsgDate) query = query.gt('created_at', lastMsgDate);
+
+        const { data: newHistory } = await query;
+
+        if (newHistory && newHistory.length > 0) {
+            if (!cachedHistory || cachedHistory.length === 0) document.getElementById('messages-area').innerHTML = '';
+            for (const msg of newHistory) await processAndRenderMessage(msg, currentAesKey);
+            await saveChatToCache(currentChatId, newHistory);
+        }
+
+        subscribeToPrivateMessages();
     }
 
     // Инфо-модалка по клику на шапку
@@ -2305,6 +2313,7 @@
     }
 
     async function openFriend(tgId, name) {
+        document.getElementById('messages-area').innerHTML = '';
         currentChatType = 'private';
         document.getElementById('btn-header-debts').style.display = 'block';
         currentFriend = { id: tgId, name: name };
@@ -2326,6 +2335,72 @@
         if(!confirm('Закрыть этот долг?')) return;
         await supabaseClient.from('debts').delete().eq('id', id);
         await loadDebts(currentFriend.id);
+    }
+
+
+
+    // --- КЭШ ЧАТОВ (Лимит 50 МБ) ---
+    const CACHE_LIMIT_BYTES = 50 * 1024 * 1024; 
+
+    async function saveChatToCache(chatId, newHistory) {
+        const existing = await idbKeyval.get(`chat_hist_${chatId}`) || { history: [] };
+        
+        // Создаем Map, чтобы старые сообщения обновлялись (например, ИИ-переводы)
+        const msgMap = new Map();
+        existing.history.forEach(m => msgMap.set(m.id, m));
+        newHistory.forEach(m => msgMap.set(m.id, m));
+        
+        // Превращаем обратно в массив и сортируем по времени
+        const updatedHistory = Array.from(msgMap.values()).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+        await idbKeyval.set(`chat_hist_${chatId}`, { updated_at: Date.now(), history: updatedHistory });
+        enforceCacheLimit(); // Запускаем чистку мусора
+    }
+
+    async function getChatFromCache(chatId) {
+        const data = await idbKeyval.get(`chat_hist_${chatId}`);
+        return data ? data.history : null;
+    }
+
+    async function enforceCacheLimit() {
+        const keys = await idbKeyval.keys();
+        const chatKeys = keys.filter(k => k.toString().startsWith('chat_hist_'));
+        
+        let totalSize = 0;
+        let caches = [];
+        
+        for (let k of chatKeys) {
+            const data = await idbKeyval.get(k);
+            const size = JSON.stringify(data.history).length * 2; // ~2 байта на символ
+            totalSize += size;
+            caches.push({ key: k, size: size, updated_at: data.updated_at });
+        }
+        
+        if (totalSize > CACHE_LIMIT_BYTES) {
+            caches.sort((a, b) => a.updated_at - b.updated_at); // Самые старые чаты удаляем первыми
+            while (totalSize > CACHE_LIMIT_BYTES && caches.length > 0) {
+                const oldest = caches.shift();
+                await idbKeyval.del(oldest.key);
+                totalSize -= oldest.size;
+            }
+        }
+    }
+
+    // Вспомогательная функция расшифровки и отрисовки 
+    async function processAndRenderMessage(msg, aesKey) {
+        const msgDate = new Date(msg.created_at);
+        const timeStr = msgDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const senderName = window.currentGroupUsers ? (window.currentGroupUsers[msg.sender_id] || "Участник") : null;
+        
+        try {
+            const rawData = atob(msg.encrypted_text);
+            const bytes = new Uint8Array(rawData.length);
+            for (let i = 0; i < rawData.length; i++) bytes[i] = rawData.charCodeAt(i);
+            const decryptedBuffer = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.slice(0, 12) }, aesKey, bytes.slice(12));
+            renderMessage(dec.decode(decryptedBuffer), msg.sender_id === currentUser.id, timeStr, msg.id, msgDate, senderName, msg.sender_id);
+        } catch (e) {
+            renderMessage("🔒 [Скрыто]", msg.sender_id === currentUser.id, timeStr, msg.id, msgDate, senderName, msg.sender_id);
+        }
     }
 
     // --- ЖЕЛЕЗОБЕТОННАЯ ЛОГИКА ДОЛГОВ ---
