@@ -1831,13 +1831,20 @@
     }
 
     async function decryptChatKey(encryptedKeyBase64) {
-        const myPrivateKey = await idbKeyval.get(`my_private_key_${currentUser.id}`);
-        const binaryString = atob(encryptedKeyBase64);
-        const encryptedKeyBuffer = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) encryptedKeyBuffer[i] = binaryString.charCodeAt(i);
-        const rawChatKey = await window.crypto.subtle.decrypt({ name: "RSA-OAEP" }, myPrivateKey, encryptedKeyBuffer);
-        // Заменили false на true вот здесь:
-        return await window.crypto.subtle.importKey("raw", rawChatKey, { name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
+        try {
+            const myPrivateKey = await idbKeyval.get(`my_private_key_${currentUser.id}`);
+            if (!myPrivateKey) return null; // Если ключа нет физически
+            
+            const binaryString = atob(encryptedKeyBase64);
+            const encryptedKeyBuffer = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) encryptedKeyBuffer[i] = binaryString.charCodeAt(i);
+            
+            const rawChatKey = await window.crypto.subtle.decrypt({ name: "RSA-OAEP" }, myPrivateKey, encryptedKeyBuffer);
+            return await window.crypto.subtle.importKey("raw", rawChatKey, { name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
+        } catch (e) {
+            console.warn("🔒 Блокировка: Этот чат был зашифрован для другого ключа.");
+            return null; // Мягко возвращаем null вместо краша
+        }
     }
 
     // --- ОБНОВЛЕННАЯ ЛОГИКА АВТОРИЗАЦИИ ---
@@ -2344,19 +2351,31 @@ async function loadChats() {
     // Загрузка ключей и сообщений группы
     async function loadGroupChatKeys(groupId) {
         document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:var(--muted); margin-top: 40px; font-size: 14px;"><i class="fas fa-shield-alt fa-spin" style="font-size: 24px; color: var(--primary); margin-bottom: 10px;"></i><br>Загрузка крипто-ключей группы...</div>';
-
-        // Безопасный запрос без .single()
+        
         const { data: keyDataArr } = await supabaseClient.from('chat_keys').select('encrypted_key').eq('chat_id', groupId).eq('user_id', currentUser.id).limit(1);
         if (!keyDataArr || keyDataArr.length === 0) return alert("Нет доступа к группе");
-
+        
         const keyData = keyDataArr[0];
-
         const deviceId = getDeviceId();
         const keysDict = JSON.parse(keyData.encrypted_key);
         const myEncryptedKey = keysDict[deviceId] || keysDict["legacy_dev"] || keysDict["legacy"];
+        
         currentAesKey = await decryptChatKey(myEncryptedKey);
+        
+        // --- НОВАЯ ПРОВЕРКА НА ОШИБКУ КЛЮЧА ---
+        if (!currentAesKey) {
+            document.getElementById('messages-area').innerHTML = `
+                <div style="text-align:center; color: var(--danger); margin-top: 60px;">
+                    <i class="fas fa-lock fa-3x" style="margin-bottom: 15px; opacity: 0.8;"></i>
+                    <h3 style="margin: 0 0 8px;">Нет доступа к истории</h3>
+                    <div style="font-size: 14px; color: var(--muted); padding: 0 20px;">
+                        Этот чат зашифрован для вашего прошлого устройства. Вы не можете читать историю с текущего девайса.
+                    </div>
+                </div>`;
+            return; // Останавливаем загрузку сообщений
+        }
 
-        // Собираем имена участников (для отображения над сообщениями)
+        // Собираем имена участников... (дальше идет ваш старый код функции)
         const { data: membersKeys } = await supabaseClient.from('chat_keys').select('user_id').eq('chat_id', groupId);
         const memberIds = membersKeys.map(k => k.user_id);
         const { data: usersData } = await supabaseClient.from('users').select('tg_id, first_name').in('tg_id', memberIds);
