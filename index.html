@@ -1513,7 +1513,7 @@
             }
         } 
         else {
-            div.innerHTML = escapeHTML(text).replace(/\n/g, '<br>');
+            div.innerHTML = senderHtml + escapeHTML(text).replace(/\n/g, '<br>');
         }
 
         if (timeString) {
