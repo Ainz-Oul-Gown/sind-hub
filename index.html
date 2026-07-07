@@ -205,7 +205,7 @@
                 </div>
             </div>
             <button class="icon-btn" onclick="switchScreen('screen-currencies')"><i class="fas fa-cog" style="color: var(--muted);"></i></button>
-            <div class="fab" onclick="toggleModal('modal-create-group')"><i class="fas fa-pencil-alt"></i></div>
+            
         </div>
 
         
@@ -223,6 +223,17 @@
         <h3 class="section-title">Братва</h3>
         <div id="friends-list">
             <div style="text-align:center; color: var(--muted); padding: 20px;"><i class="fas fa-spinner fa-spin"></i> Загрузка...</div>
+        </div>
+        
+        <!-- ПЕРЕНЕСЛИ КНОПКУ СЮДА -->
+        <div class="fab" onclick="toggleModal('modal-create-group')"><i class="fas fa-pencil-alt"></i></div>
+
+        <!-- ПЕРЕНЕСЛИ МОДАЛКУ СЮДА -->
+        <div id="modal-create-group" class="glass-modal">
+            <button class="modal-close" onclick="toggleModal('modal-create-group')"><i class="fas fa-times"></i></button>
+            <h3 style="text-align: center; margin-top: 0; margin-bottom: 20px; font-size: 20px;">Новая группа</h3>
+            <input type="text" id="new-group-name" placeholder="Название группы..." style="background: rgba(0,0,0,0.5);">
+            <button class="primary-btn" onclick="handleCreateGroup()"><i class="fas fa-check"></i> Создать</button>
         </div>
     </div>
 
@@ -273,13 +284,7 @@
                 <button class="primary-btn" style="margin-top: auto;" onclick="openDebtModal()"><i class="fas fa-plus"></i> Оформить долг</button>
             </div>
 
-            <!-- МОДАЛКА: СОЗДАТЬ ГРУППУ (на главном экране) -->
-            <div id="modal-create-group" class="glass-modal">
-                <button class="modal-close" onclick="toggleModal('modal-create-group')"><i class="fas fa-times"></i></button>
-                <h3 style="text-align: center; margin-top: 0; margin-bottom: 20px; font-size: 20px;">Новая группа</h3>
-                <input type="text" id="new-group-name" placeholder="Название группы..." style="background: rgba(0,0,0,0.5);">
-                <button class="primary-btn" onclick="handleCreateGroup()"><i class="fas fa-check"></i> Создать</button>
-            </div>
+            
 
             <!-- МОДАЛКА: ИНФО О ГРУППЕ -->
             <div id="modal-group-info" class="glass-modal">
