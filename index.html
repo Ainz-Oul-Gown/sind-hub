@@ -656,9 +656,25 @@
                 let plainText = dec.decode(decryptedTextBuffer);
                 
                 let displayText = plainText;
+                
+                // Красивое форматирование для ГС
                 if (plainText.startsWith('[VOICE]:')) {
                     const parts = plainText.replace('[VOICE]:', '').split('|');
-                    displayText = parts[1] ? `🎤 ${parts[1]}` : '🎤 ГС';
+                    let transText = 'Голосовое сообщение';
+                    
+                    // Ищем часть, которая НЕ является названием файла и НЕ является графиком (WF:)
+                    for (let i = 1; i < parts.length; i++) {
+                        if (!parts[i].startsWith('WF:')) {
+                            transText = parts[i];
+                        }
+                    }
+                    displayText = `🎤 ${transText}`;
+                } 
+                // Красивое форматирование для приглашений
+                else if (plainText.startsWith('[GROUP_INVITE]:')) {
+                    const parts = plainText.replace('[GROUP_INVITE]:', '').split('|');
+                    const groupName = parts[1] || 'Неизвестная группа';
+                    displayText = `🎫 Приглашение в: ${groupName}`;
                 }
 
                 if (isSemantic && msg.encrypted_vector) {
