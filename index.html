@@ -220,7 +220,7 @@
             </div>
         </div>
 
-        <h3 class="section-title">Братва</h3>
+        <h3 class="section-title">Братва <i class="fas fa-spinner fa-spin" id="chat-list-spinner" style="display: none; font-size: 12px; margin-left: 6px;"></i></h3>
         <div id="friends-list">
             <div style="text-align:center; color: var(--muted); padding: 20px;"><i class="fas fa-spinner fa-spin"></i> Загрузка...</div>
         </div>
@@ -291,7 +291,12 @@
                 <button class="modal-close" onclick="toggleModal('modal-group-info')"><i class="fas fa-times"></i></button>
                 <div style="text-align: center; margin-bottom: 20px;">
                     <div class="avatar" id="group-info-avatar" style="width: 80px; height: 80px; font-size: 32px; margin: 0 auto 12px; background: linear-gradient(135deg, #007AFF, #00C6FF);">Г</div>
-                    <h2 id="group-info-name" style="margin:0; font-size: 22px;">Название</h2>
+                    
+                    <!-- Заголовок с карандашом -->
+                    <h2 id="group-info-name" style="margin:0; font-size: 22px; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                        Название <i class="fas fa-pen" style="font-size: 14px; color: var(--muted); cursor: pointer;" onclick="editGroupName()"></i>
+                    </h2>
+                    
                     <div id="group-info-count" style="color: var(--muted); font-size: 14px; margin-top: 4px;">1 участник</div>
                 </div>
                 
@@ -299,7 +304,9 @@
                 
                 <div id="group-members-list" style="margin-bottom: 16px; background: rgba(0,0,0,0.3); border-radius: 12px; padding: 8px;"></div>
                 
-                <button class="primary-btn" style="background: rgba(255,69,58,0.15); color: var(--danger);" onclick="leaveGroup()"><i class="fas fa-sign-out-alt"></i> Покинуть группу</button>
+                <!-- Кнопки выхода и удаления -->
+                <button class="primary-btn" style="background: rgba(255,69,58,0.15); color: var(--danger); margin-bottom: 8px;" onclick="leaveGroup()"><i class="fas fa-sign-out-alt"></i> Покинуть группу</button>
+                <button class="primary-btn" style="background: transparent; border: 1px solid rgba(255,69,58,0.3); color: var(--danger);" onclick="deleteGroup()"><i class="fas fa-trash-alt"></i> Удалить для всех</button>
             </div>
 
             <!-- МОДАЛКА: ВЫБОР ДРУГА ДЛЯ ИНВАЙТА -->
@@ -1841,42 +1848,25 @@
     }
 
     window.currentFriendsData = [];
-    async function loadChats() {
+    // Вспомогательная функция для мгновенной отрисовки
+    function renderChatsList(users, groupChats) {
         const list = document.getElementById('friends-list');
-        list.innerHTML = '<div style="text-align:center; color: var(--muted); padding: 20px;"><i class="fas fa-spinner fa-spin"></i> Загрузка...</div>';
-        
-        // 1. Грузим всех друзей (для личек)
-        const { data: users } = await supabaseClient.from('users').select('*');
-        window.currentFriendsData = users;
-        
-        // 2. Грузим все группы, в которых я состою
-        const { data: myKeys } = await supabaseClient.from('chat_keys').select('chat_id').eq('user_id', currentUser.id);
-        let groupChats = [];
-        if (myKeys && myKeys.length > 0) {
-            const chatIds = myKeys.map(k => k.chat_id);
-            const { data: groups } = await supabaseClient.from('chats').select('*').eq('type', 'group').in('id', chatIds);
-            if (groups) groupChats = groups;
-        }
-        
-        list.innerHTML = '';
+        let html = '';
         
         // Рендерим группы
         groupChats.forEach(g => {
             const safeName = escapeHTML(g.name);
-            list.innerHTML += `
+            html += `
                 <div class="list-item" onclick="openGroupChat('${g.id}', '${safeName}')">
                     <div class="list-item-left">
                         <div class="avatar-wrap">
                             <div class="avatar" style="background: linear-gradient(135deg, #007AFF, #00C6FF);">${safeName.charAt(0).toUpperCase()}</div>
-                            
-                            <!-- НОВЫЙ КРУЖОК С ИКОНКОЙ ГРУППЫ -->
                             <div class="status-indicator" style="background: var(--primary); width: 18px; height: 18px; bottom: -4px; right: -4px; display: flex; align-items: center; justify-content: center; border-width: 2px;">
                                 <i class="fas fa-users" style="font-size: 9px; color: white;"></i>
                             </div>
                         </div>
                         <div>
                             <div class="list-item-title">${safeName}</div>
-                            <!-- Убрали иконку отсюда, оставили только текст -->
                             <div class="list-item-subtitle" style="color: var(--muted);">Группа</div>
                         </div>
                     </div>
@@ -1890,7 +1880,7 @@
             if(f.tg_id === currentUser.id) return;
             const safeName = escapeHTML(f.first_name);
             const isBusy = f.status?.includes('Занят');
-            list.innerHTML += `
+            html += `
                 <div class="list-item" onclick="safeOpenFriend(${f.tg_id})">
                     <div class="list-item-left">
                         <div class="avatar-wrap">
@@ -1906,6 +1896,45 @@
                 </div>
             `;
         });
+        
+        list.innerHTML = html || '<div style="text-align:center; color: var(--muted); padding: 20px;">Никого нет</div>';
+    }
+    
+    // Новая загрузка с кэшированием
+    async function loadChats() {
+        const spinner = document.getElementById('chat-list-spinner');
+        
+        // 1. Попытка показать данные из кэша МОМЕНТАЛЬНО
+        const cachedUsers = localStorage.getItem('synd_cached_users');
+        const cachedGroups = localStorage.getItem('synd_cached_groups');
+        
+        if (cachedUsers && cachedGroups) {
+            window.currentFriendsData = JSON.parse(cachedUsers);
+            renderChatsList(window.currentFriendsData, JSON.parse(cachedGroups));
+            if(spinner) spinner.style.display = 'inline-block'; // Крутим загрузку тихо в фоне
+        } else {
+            document.getElementById('friends-list').innerHTML = '<div style="text-align:center; color: var(--muted); padding: 20px;"><i class="fas fa-spinner fa-spin"></i> Загрузка...</div>';
+        }
+    
+        // 2. Тихая загрузка свежих данных
+        const { data: users } = await supabaseClient.from('users').select('*');
+        if (users) {
+            window.currentFriendsData = users;
+            localStorage.setItem('synd_cached_users', JSON.stringify(users));
+        }
+        
+        const { data: myKeys } = await supabaseClient.from('chat_keys').select('chat_id').eq('user_id', currentUser.id);
+        let groupChats = [];
+        if (myKeys && myKeys.length > 0) {
+            const chatIds = myKeys.map(k => k.chat_id);
+            const { data: groups } = await supabaseClient.from('chats').select('*').eq('type', 'group').in('id', chatIds);
+            if (groups) groupChats = groups;
+        }
+        localStorage.setItem('synd_cached_groups', JSON.stringify(groupChats));
+        
+        // 3. Бесшовно обновляем экран свежими данными
+        renderChatsList(window.currentFriendsData || [], groupChats);
+        if(spinner) spinner.style.display = 'none';
     }
 
         // Открытие существующей группы
@@ -1985,7 +2014,7 @@
     async function openChatInfo() {
         if (currentChatType === 'group') {
             // 1. МГНОВЕННО подготавливаем окно с загрузкой
-            document.getElementById('group-info-name').innerText = currentGroup.name;
+            document.getElementById('group-info-name').innerHTML = `${escapeHTML(currentGroup.name)} <i class="fas fa-pen" style="font-size: 14px; color: var(--muted); cursor: pointer;" onclick="editGroupName()"></i>`;
             document.getElementById('group-info-avatar').innerText = currentGroup.name.charAt(0).toUpperCase();
             document.getElementById('group-info-count').innerText = "Загрузка участников...";
             document.getElementById('group-members-list').innerHTML = '<div style="text-align:center; padding: 15px; color: var(--muted);"><i class="fas fa-spinner fa-spin"></i></div>';
@@ -2203,11 +2232,58 @@
         }
     }
 
-    async function leaveGroup() {
-        if(confirm("Точно выйти из группы?")) {
-            await supabaseClient.from('chat_keys').delete().eq('chat_id', currentChatId).eq('user_id', currentUser.id);
+    // --- ИЗМЕНЕНИЕ ИМЕНИ ГРУППЫ ---
+    async function editGroupName() {
+        const newName = prompt("Введите новое название группы:", currentGroup.name);
+        if (!newName || newName.trim() === "" || newName === currentGroup.name) return;
+        
+        const finalName = newName.trim();
+        
+        // 1. Оптимистичное обновление UI (Меняется моментально)
+        currentGroup.name = finalName;
+        document.getElementById('group-info-name').innerHTML = `${escapeHTML(finalName)} <i class="fas fa-pen" style="font-size: 14px; color: var(--muted); cursor: pointer;" onclick="editGroupName()"></i>`;
+        document.getElementById('group-info-avatar').innerText = finalName.charAt(0).toUpperCase();
+        document.getElementById('friend-name-title').innerText = finalName;
+        
+        // 2. Отправка в БД
+        await supabaseClient.from('chats').update({ name: finalName }).eq('id', currentChatId);
+        
+        // Обновляем кэш в фоне
+        loadChats();
+    }
+    
+    // --- УДАЛЕНИЕ ГРУППЫ ДЛЯ ВСЕХ ---
+    async function deleteGroup() {
+        if(confirm("ВНИМАНИЕ! Группа будет удалена у всех участников навсегда!\n\nТочно удалить группу?")) {
+            // Удаляем из базы
+            await supabaseClient.from('chats').delete().eq('id', currentChatId);
+            
             toggleModal('modal-group-info');
             switchScreen('screen-main');
+            
+            // Удаляем из кэша, чтобы пропала мгновенно
+            let cachedGroups = JSON.parse(localStorage.getItem('synd_cached_groups') || '[]');
+            cachedGroups = cachedGroups.filter(g => g.id !== currentChatId);
+            localStorage.setItem('synd_cached_groups', JSON.stringify(cachedGroups));
+            
+            loadChats(); // Обновляем список чатов
+        }
+    }
+    
+    // --- ПЕРЕЗАПИСЫВАЕМ СТАРУЮ ФУНКЦИЮ ВЫХОДА ИЗ ГРУППЫ ---
+    async function leaveGroup() {
+        if(confirm("Точно выйти из группы? Вы потеряете к ней доступ.")) {
+            // Удаляем свой ключ доступа
+            await supabaseClient.from('chat_keys').delete().eq('chat_id', currentChatId).eq('user_id', currentUser.id);
+            
+            toggleModal('modal-group-info');
+            switchScreen('screen-main');
+            
+            // Удаляем из кэша, чтобы пропала мгновенно
+            let cachedGroups = JSON.parse(localStorage.getItem('synd_cached_groups') || '[]');
+            cachedGroups = cachedGroups.filter(g => g.id !== currentChatId);
+            localStorage.setItem('synd_cached_groups', JSON.stringify(cachedGroups));
+            
             loadChats();
         }
     }
