@@ -1591,11 +1591,19 @@
     // --- ОСТАЛЬНАЯ ЛОГИКА ---
     const tg = window.Telegram.WebApp;
     tg.expand();
-    const supabaseClient = supabase.createClient(
+    let supabaseClient = supabase.createClient(
         'https://cqhndgtiqdjzzrqdzrfq.supabase.co',
         'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaG5kZ3RpcWRqenpycWR6cmZxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMyODcxNzAsImV4cCI6MjA5ODg2MzE3MH0.Tt432Nn4A9z9IYiVQcePj9v0FEFJNdjGI5pywdFYSOQ'
     );
-    function setSupabaseToken(token) { supabaseClient.rest.headers['Authorization'] = `Bearer ${token}`; }
+    
+    // Пересоздаем клиент с правильным заголовком
+    function setSupabaseToken(token) { 
+        supabaseClient = supabase.createClient(
+            'https://cqhndgtiqdjzzrqdzrfq.supabase.co',
+            'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaG5kZ3RpcWRqenpycWR6cmZxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMyODcxNzAsImV4cCI6MjA5ODg2MzE3MH0.Tt432Nn4A9z9IYiVQcePj9v0FEFJNdjGI5pywdFYSOQ',
+            { global: { headers: { Authorization: `Bearer ${token}` } } }
+        );
+    }
 
     let currentUser = null;
     let currentFriend = null;
