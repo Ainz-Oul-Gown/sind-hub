@@ -160,6 +160,15 @@
         <div class="card profile-card">
             <div class="profile-info">
                 <div class="avatar" id="my-avatar">М</div>
+                    <div>
+                        <div style="font-weight: 600; font-size: 18px; margin-bottom: 4px;">Мой профиль</div>
+    <!-- Добавляем строчку с шифром: -->
+                        <div id="my-fingerprint" style="font-size: 11px; color: var(--success); font-family: monospace; margin-bottom: 6px;">Шифр: Загрузка...</div>
+                        <div id="my-status" class="status-badge" onclick="toggleStatus()">
+                        <i class="fas fa-circle" style="font-size: 8px;"></i> Свободен
+                    </div>
+                </div>
+                
                 <div>
                     <div style="font-weight: 600; font-size: 18px; margin-bottom: 4px;">Мой профиль</div>
                     <div id="my-status" class="status-badge" onclick="toggleStatus()">
@@ -1334,6 +1343,13 @@
         const avatarEl = document.getElementById('my-avatar');
         avatarEl.innerText = currentUser.first_name.charAt(0).toUpperCase();
         avatarEl.style.background = getAvatarGradient(currentUser.id);
+
+        // Получаем свой публичный ключ из БД и вычисляем отпечаток
+
+        const { data: myData } = await supabaseClient.from('users').select('public_key').eq('tg_id', currentUser.id).single();
+        const myFingerprint = await getFingerprint(myData?.public_key);
+        document.getElementById('my-fingerprint').innerText = `Шифр: ${myFingerprint}`;
+
 
         loadMyStatus();
         loadFriends();
