@@ -165,6 +165,13 @@
         
         .transcript-toggle { font-size: 13px; color: rgba(255,255,255,0.8); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.15); width: 100%; user-select: none; }
         .transcript-content { font-size: 14px; color: rgba(255,255,255,0.9); background: rgba(0,0,0,0.15); padding: 10px; border-radius: 8px; margin-top: 8px; display: none; }
+
+        /* Кнопка создания (FAB) */
+        .fab { position: fixed; bottom: 24px; right: 24px; width: 56px; height: 56px; background: var(--primary); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 22px; box-shadow: 0 4px 15px rgba(10,132,255,0.4); cursor: pointer; z-index: 100; transition: 0.2s; }
+        .fab:active { transform: scale(0.9); }
+        
+        /* Имя отправителя в группе */
+        .sender-name { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
         
         /* FIX: Модалки теперь FIXED (не скроллятся вместе с фоном) */
         .glass-modal { position: fixed; inset: 0; z-index: 1000; background: rgba(15, 15, 19, 0.85); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); display: none; flex-direction: column; padding: 20px; animation: fadeIn 0.2s ease; overflow-y: auto;}
@@ -198,6 +205,7 @@
                 </div>
             </div>
             <button class="icon-btn" onclick="switchScreen('screen-currencies')"><i class="fas fa-cog" style="color: var(--muted);"></i></button>
+            <div class="fab" onclick="toggleModal('modal-create-group')"><i class="fas fa-pencil-alt"></i></div>
         </div>
 
         
@@ -243,12 +251,12 @@
         <div class="friend-header-wrap">
             <div class="header-nav" style="margin-bottom: 12px; border: none; padding-bottom: 0;">
                 <button class="back-btn" onclick="switchScreen('screen-main')"><i class="fas fa-chevron-left"></i></button>
-                <div style="text-align: center; flex-grow: 1;">
+                <div style="text-align: center; flex-grow: 1; cursor: pointer;" onclick="openChatInfo()">
                     <div id="friend-name-title" style="font-weight: 600; font-size: 17px;">Друг</div>
-                    <div id="friend-fingerprint" style="font-size: 11px; color: var(--success); font-family: monospace; margin-top: 2px;"></div>
+                    <div id="friend-fingerprint" style="font-size: 13px; color: var(--success); margin-top: 2px;"></div>
                 </div>
                 <div style="display: flex; gap: 8px;">
-                    <button class="icon-btn" onclick="toggleModal('modal-debts')"><i class="fas fa-wallet"></i></button>
+                    <button class="icon-btn" id="btn-header-debts" onclick="toggleModal('modal-debts')"><i class="fas fa-wallet"></i></button>
                     <button class="icon-btn" onclick="toggleModal('modal-search')"><i class="fas fa-search"></i></button>
                 </div>
             </div>
@@ -263,6 +271,37 @@
                     <div id="friend-debts-list">Загрузка...</div>
                 </div>
                 <button class="primary-btn" style="margin-top: auto;" onclick="openDebtModal()"><i class="fas fa-plus"></i> Оформить долг</button>
+            </div>
+
+            <!-- МОДАЛКА: СОЗДАТЬ ГРУППУ (на главном экране) -->
+            <div id="modal-create-group" class="glass-modal">
+                <button class="modal-close" onclick="toggleModal('modal-create-group')"><i class="fas fa-times"></i></button>
+                <h3 style="text-align: center; margin-top: 0; margin-bottom: 20px; font-size: 20px;">Новая группа</h3>
+                <input type="text" id="new-group-name" placeholder="Название группы..." style="background: rgba(0,0,0,0.5);">
+                <button class="primary-btn" onclick="handleCreateGroup()"><i class="fas fa-check"></i> Создать</button>
+            </div>
+
+            <!-- МОДАЛКА: ИНФО О ГРУППЕ -->
+            <div id="modal-group-info" class="glass-modal">
+                <button class="modal-close" onclick="toggleModal('modal-group-info')"><i class="fas fa-times"></i></button>
+                <div style="text-align: center; margin-bottom: 20px;">
+                    <div class="avatar" id="group-info-avatar" style="width: 80px; height: 80px; font-size: 32px; margin: 0 auto 12px; background: linear-gradient(135deg, #007AFF, #00C6FF);">Г</div>
+                    <h2 id="group-info-name" style="margin:0; font-size: 22px;">Название</h2>
+                    <div id="group-info-count" style="color: var(--muted); font-size: 14px; margin-top: 4px;">1 участник</div>
+                </div>
+                
+                <button class="primary-btn" style="margin-bottom: 16px;" onclick="openInviteModal()"><i class="fas fa-user-plus"></i> Добавить участника</button>
+                
+                <div id="group-members-list" style="margin-bottom: 16px; background: rgba(0,0,0,0.3); border-radius: 12px; padding: 8px;"></div>
+                
+                <button class="primary-btn" style="background: rgba(255,69,58,0.15); color: var(--danger);" onclick="leaveGroup()"><i class="fas fa-sign-out-alt"></i> Покинуть группу</button>
+            </div>
+
+            <!-- МОДАЛКА: ВЫБОР ДРУГА ДЛЯ ИНВАЙТА -->
+            <div id="modal-invite-friend" class="glass-modal">
+                <button class="modal-close" onclick="toggleModal('modal-invite-friend')"><i class="fas fa-times"></i></button>
+                <h3 style="text-align: center; margin-top: 0; margin-bottom: 20px; font-size: 20px;">Кого пригласить?</h3>
+                <div id="invite-friends-list"></div>
             </div>
 
             <!-- МОДАЛКА: ПОИСК -->
@@ -356,11 +395,103 @@
 
 <script>
 
+
+    let currentChatType = 'private'; // 'private' или 'group'
+    let currentGroup = null; // {id, name}
+    window.currentGroupUsers = {}; // Словарь { tg_id: "Имя" } для отображения над сообщениями
+    
     function escapeHTML(str) {
         if (typeof str !== 'string') return str;
         return str.replace(/[&<>'"]/g,
             tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag])
         );
+    }
+
+    // --- ГРУППЫ: СОЗДАНИЕ ---
+    async function createGroup(groupName) {
+        // 1. Создаем чат с типом 'group'
+        const { data: newChat, error: chatErr } = await supabaseClient.from('chats')
+            .insert({ name: groupName, type: 'group' })
+            .select().single();
+            
+        if (chatErr) return alert("Ошибка создания группы");
+
+        // 2. Генерируем AES ключ для группы
+        const groupAesKey = await generateChatKey();
+
+        // 3. Шифруем ключ для себя (для всех своих устройств)
+        const { data: myData } = await supabaseClient.from('users').select('public_key').eq('tg_id', currentUser.id).single();
+        let myKeys = JSON.parse(myData.public_key); 
+        if (myKeys.kty) myKeys = { "legacy": myKeys };
+        
+        let encKeysForMe = {}; 
+        for (const [devId, pubJwk] of Object.entries(myKeys)) {
+            encKeysForMe[devId] = await encryptChatKeyForFriend(groupAesKey, pubJwk);
+        }
+
+        // 4. Сохраняем свой доступ в БД
+        await supabaseClient.from('chat_keys').insert([
+            { chat_id: newChat.id, user_id: currentUser.id, encrypted_key: JSON.stringify(encKeysForMe) }
+        ]);
+
+        alert(`Группа "${groupName}" успешно создана!`);
+        // В будущем здесь будет переход в саму группу
+    }
+
+    // --- ГРУППЫ: ОТПРАВКА ПРИГЛАШЕНИЯ В ЛС ---
+    async function sendGroupInvite(groupId, groupName, friendId) {
+        // 1. Убеждаемся, что мы в ЛС с этим другом
+        if (currentFriend.id !== friendId || !currentAesKey || !currentChatId) {
+            return alert("Откройте ЛС с другом, чтобы отправить инвайт.");
+        }
+
+        // 2. Достаем наш зашифрованный ключ от группы и расшифровываем его (получаем сырой AES ключ)
+        const { data: keyData } = await supabaseClient.from('chat_keys')
+            .select('encrypted_key').eq('chat_id', groupId).eq('user_id', currentUser.id).single();
+            
+        const deviceId = getDeviceId();
+        const keysDict = JSON.parse(keyData.encrypted_key);
+        const myEncryptedGroupKey = keysDict[deviceId] || keysDict["legacy_dev"] || keysDict["legacy"];
+        const groupAesKey = await decryptChatKey(myEncryptedGroupKey);
+
+        // 3. Берем публичные ключи друга
+        const { data: friendData } = await supabaseClient.from('users').select('public_key').eq('tg_id', friendId).single();
+        let friendKeys = JSON.parse(friendData.public_key); 
+        if (friendKeys.kty) friendKeys = { "legacy": friendKeys };
+        
+        // 4. Шифруем AES ключ группы ДЛЯ ДРУГА
+        let encKeysForFriend = {}; 
+        for (const [devId, pubJwk] of Object.entries(friendKeys)) {
+            encKeysForFriend[devId] = await encryptChatKeyForFriend(groupAesKey, pubJwk);
+        }
+
+        // 5. Формируем спец-маркер инвайта
+        const invitePayload = `[GROUP_INVITE]:${groupId}|${groupName}|${JSON.stringify(encKeysForFriend)}`;
+        const encryptedPayloadText = await encryptText(invitePayload, currentAesKey);
+
+        // 6. Отправляем в ЛС
+        await supabaseClient.from('messages').insert([ 
+            { chat_id: currentChatId, sender_id: currentUser.id, encrypted_text: encryptedPayloadText } 
+        ]);
+        
+        if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+    }
+
+    // --- ГРУППЫ: ПРИНЯТИЕ ИНВАЙТА ---
+    async function acceptGroupInvite(groupId, keysJSON) {
+        // Проверяем, нет ли нас уже там
+        const { data: existing } = await supabaseClient.from('chat_keys')
+            .select('id').eq('chat_id', groupId).eq('user_id', currentUser.id).single();
+            
+        if (existing) return alert("Вы уже состоите в этой группе!");
+
+        // Записываем полученные ключи в БД
+        const { error } = await supabaseClient.from('chat_keys').insert([
+            { chat_id: groupId, user_id: currentUser.id, encrypted_key: keysJSON }
+        ]);
+
+        if (error) alert("Ошибка вступления");
+        else alert("Вы успешно вступили в группу!");
     }
 
     // Функция для формирования текста "Сегодня", "Вчера" или "5 июля"
@@ -1219,7 +1350,7 @@
         if(tg.HapticFeedback) tg.HapticFeedback.selectionChanged();
     }
 
-    function renderMessage(text, isMine, timeString = "", msgId = null, msgDate = null) {
+    function renderMessage(text, isMine, timeString = "", msgId = null, msgDate = null, senderName = null, senderId = null) {
         const area = document.getElementById('messages-area');
         let div = msgId ? document.getElementById(`msg-${msgId}`) : null;
         let isNew = false;
@@ -1242,6 +1373,14 @@
                 area.appendChild(divider);
                 window.lastRenderedDate = dateStr;
             }
+        }
+
+        // Генерируем цветное имя для групп
+        let senderHtml = '';
+        if (!isMine && currentChatType === 'group' && senderName && senderId) {
+            const colors = ['#FF2D55', '#FF9F0A', '#32D74B', '#0A84FF', '#5E5CE6', '#BF5AF2'];
+            const cIdx = senderId.toString().split('').reduce((a,b)=>a+b.charCodeAt(0),0) % colors.length;
+            senderHtml = `<div class="sender-name" style="color: ${colors[cIdx]};">${escapeHTML(senderName)}</div>`;
         }
         
         if (text.startsWith('[VOICE]:')) {
@@ -1292,7 +1431,7 @@
                 transcriptHtml = `<div class="transcript-toggle" style="cursor:default;">${escapeHTML(transcriptionText)}</div>`;
             }
 
-            div.innerHTML = `
+            div.innerHTML = senderHtml + `
                 <div class="voice-player">
                     <div class="voice-play-btn" onclick="loadAndPlayVoice('${fileName}', this)">
                         <i class="fas fa-play" style="margin-left: 3px;"></i>
@@ -1303,7 +1442,40 @@
                 </div>
                 ${transcriptHtml}
             `;
-        } else {
+        } 
+        else if (text.startsWith('[GROUP_INVITE]:')) {
+            const parts = text.replace('[GROUP_INVITE]:', '').split('|');
+            const groupId = parts[0];
+            const groupName = parts[1];
+            const keysJSON = parts[2];
+            
+            // Если это отправил я - показываем просто статус "Приглашение отправлено"
+            if (isMine) {
+                div.innerHTML = senderHtml + `
+                    <div style="display:flex; align-items:center; gap:10px; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px;">
+                        <div style="width: 40px; height: 40px; border-radius: 50%; background: var(--surface); display:flex; align-items:center; justify-content:center; color: var(--muted);"><i class="fas fa-users"></i></div>
+                        <div>
+                            <div style="font-weight: 600;">${escapeHTML(groupName)}</div>
+                            <div style="font-size: 12px; color: var(--muted);">Приглашение отправлено</div>
+                        </div>
+                    </div>
+                `;
+            } else {
+                // Если прислали мне - показываем кнопку "Вступить"
+                // ВАЖНО: ключи передаем через base64, чтобы кавычки не сломали HTML
+                const safeKeys = btoa(keysJSON);
+                div.innerHTML = senderHtml + `
+                    <div style="display:flex; align-items:center; gap:10px; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px;">
+                        <div style="width: 40px; height: 40px; border-radius: 50%; background: var(--primary); display:flex; align-items:center; justify-content:center; color: white;"><i class="fas fa-users"></i></div>
+                        <div>
+                            <div style="font-weight: 600;">${escapeHTML(groupName)}</div>
+                            <button onclick="acceptGroupInvite('${groupId}', atob('${safeKeys}'))" style="margin-top: 8px; background: var(--success); color: white; border: none; padding: 6px 12px; border-radius: 12px; font-weight: 600; cursor: pointer;">Вступить</button>
+                        </div>
+                    </div>
+                `;
+            }
+        } 
+        else {
             div.innerHTML = escapeHTML(text).replace(/\n/g, '<br>');
         }
 
@@ -1396,13 +1568,19 @@
                         for (let i = 0; i < rawData.length; i++) bytes[i] = rawData.charCodeAt(i);
                         const decryptedBuffer = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.slice(0, 12) }, currentAesKey, bytes.slice(12));
                         const plainText = dec.decode(decryptedBuffer); 
-                        renderMessage(plainText, newMsg.sender_id === currentUser.id, timeStr, newMsg.id, msgDate);
+                        
+                        // ЗДЕСЬ ИСПОЛЬЗУЕМ newMsg.sender_id
+                        const senderName = window.currentGroupUsers ? (window.currentGroupUsers[newMsg.sender_id] || "Участник") : null;
+                        
+                        // Рендерим новое сообщение
+                        renderMessage(plainText, newMsg.sender_id === currentUser.id, timeStr, newMsg.id, msgDate, senderName, newMsg.sender_id);
                         
                         if (newMsg.sender_id !== currentUser.id && plainText.startsWith('[VOICE]:') && !plainText.includes('|') && isAiReady) {
                             helpFriendTranscribe(plainText.replace('[VOICE]:', ''), newMsg.id);
                         }
                     } catch (e) { 
-                        renderMessage("🔒 [Ошибка расшифровки]", newMsg.sender_id === currentUser.id, timeStr, newMsg.id, msgDate);  
+                        const senderName = window.currentGroupUsers ? (window.currentGroupUsers[newMsg.sender_id] || "Участник") : null;
+                        renderMessage("🔒 [Ошибка расшифровки]", newMsg.sender_id === currentUser.id, timeStr, newMsg.id, msgDate, senderName, newMsg.sender_id); 
                     }
                 }
             ).subscribe();
@@ -1603,7 +1781,7 @@
 
 
         loadMyStatus();
-        loadFriends();
+        loadChats();
         loadMyCurrencies();
         setTimeout(() => { aiWorker.postMessage({ type: 'init' }); }, 1000);
     }
@@ -1625,23 +1803,54 @@
     }
 
     window.currentFriendsData = [];
-    async function loadFriends() {
-        const { data } = await supabaseClient.from('users').select('*');
-        window.currentFriendsData = data;
+    async function loadChats() {
         const list = document.getElementById('friends-list');
+        list.innerHTML = '<div style="text-align:center; color: var(--muted); padding: 20px;"><i class="fas fa-spinner fa-spin"></i> Загрузка...</div>';
+        
+        // 1. Грузим всех друзей (для личек)
+        const { data: users } = await supabaseClient.from('users').select('*');
+        window.currentFriendsData = users;
+        
+        // 2. Грузим все группы, в которых я состою
+        const { data: myKeys } = await supabaseClient.from('chat_keys').select('chat_id').eq('user_id', currentUser.id);
+        let groupChats = [];
+        if (myKeys && myKeys.length > 0) {
+            const chatIds = myKeys.map(k => k.chat_id);
+            const { data: groups } = await supabaseClient.from('chats').select('*').eq('type', 'group').in('id', chatIds);
+            if (groups) groupChats = groups;
+        }
+        
         list.innerHTML = '';
-        data.forEach(f => {
+        
+        // Рендерим группы
+        groupChats.forEach(g => {
+            const safeName = escapeHTML(g.name);
+            list.innerHTML += `
+                <div class="list-item" onclick="openGroupChat('${g.id}', '${safeName}')">
+                    <div class="list-item-left">
+                        <div class="avatar-wrap">
+                            <div class="avatar" style="background: linear-gradient(135deg, #007AFF, #00C6FF);">${safeName.charAt(0).toUpperCase()}</div>
+                        </div>
+                        <div>
+                            <div class="list-item-title">${safeName}</div>
+                            <div class="list-item-subtitle" style="color: var(--muted);"><i class="fas fa-users" style="font-size:10px;"></i> Группа</div>
+                        </div>
+                    </div>
+                    <i class="fas fa-chevron-right" style="color: var(--muted); font-size: 14px;"></i>
+                </div>
+            `;
+        });
+        
+        // Рендерим друзей
+        users.forEach(f => {
             if(f.tg_id === currentUser.id) return;
             const safeName = escapeHTML(f.first_name);
             const isBusy = f.status?.includes('Занят');
-            
             list.innerHTML += `
                 <div class="list-item" onclick="safeOpenFriend(${f.tg_id})">
                     <div class="list-item-left">
                         <div class="avatar-wrap">
-                            <div class="avatar" style="background: ${getAvatarGradient(f.tg_id)};">
-                                ${safeName.charAt(0).toUpperCase()}
-                            </div>
+                            <div class="avatar" style="background: ${getAvatarGradient(f.tg_id)};">${safeName.charAt(0).toUpperCase()}</div>
                             <div class="status-indicator ${isBusy ? 'busy' : ''}"></div>
                         </div>
                         <div>
@@ -1653,6 +1862,100 @@
                 </div>
             `;
         });
+    }
+
+        // Открытие существующей группы
+    async function openGroupChat(groupId, name) {
+        currentChatType = 'group';
+        currentGroup = { id: groupId, name: name };
+        currentChatId = groupId; 
+        
+        document.getElementById('friend-name-title').innerText = name;
+        document.getElementById('btn-header-debts').style.display = 'none'; // Скрываем долги в группе
+        document.getElementById('friend-fingerprint').innerText = 'Загрузка...';
+        document.getElementById('friend-fingerprint').style.color = 'var(--muted)';
+        
+        switchScreen('screen-friend');
+        requestMicrophoneAccess(); 
+        
+        // Подтягиваем количество участников
+        const { count } = await supabaseClient.from('chat_keys').select('*', { count: 'exact', head: true }).eq('chat_id', groupId);
+        document.getElementById('friend-fingerprint').innerText = `${count} участник${count > 1 ? 'ов' : ''}`;
+        
+        await loadGroupChatKeys(groupId);
+    }
+
+    // Загрузка ключей и сообщений группы
+    async function loadGroupChatKeys(groupId) {
+        document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:var(--muted); margin-top: 40px; font-size: 14px;"><i class="fas fa-shield-alt fa-spin" style="font-size: 24px; color: var(--primary); margin-bottom: 10px;"></i><br>Загрузка крипто-ключей группы...</div>';
+        
+        const { data: keyData } = await supabaseClient.from('chat_keys').select('encrypted_key').eq('chat_id', groupId).eq('user_id', currentUser.id).single();
+        if (!keyData) return alert("Нет доступа к группе");
+        
+        const deviceId = getDeviceId();
+        const keysDict = JSON.parse(keyData.encrypted_key);
+        const myEncryptedKey = keysDict[deviceId] || keysDict["legacy_dev"] || keysDict["legacy"];
+        currentAesKey = await decryptChatKey(myEncryptedKey);
+        
+        // Собираем имена участников (для отображения над сообщениями)
+        const { data: membersKeys } = await supabaseClient.from('chat_keys').select('user_id').eq('chat_id', groupId);
+        const memberIds = membersKeys.map(k => k.user_id);
+        const { data: usersData } = await supabaseClient.from('users').select('tg_id, first_name').in('tg_id', memberIds);
+        window.currentGroupUsers = {};
+        usersData.forEach(u => window.currentGroupUsers[u.tg_id] = u.first_name);
+
+        document.getElementById('messages-area').innerHTML = '';
+        window.lastRenderedDate = null;
+
+        const { data: history } = await supabaseClient.from('messages').select('*').eq('chat_id', currentChatId).order('created_at', { ascending: true });
+        
+        if (history && history.length > 0) {
+            for (const msg of history) {
+                const msgDate = new Date(msg.created_at);
+                const timeStr = msgDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                
+                // ЗДЕСЬ ИСПОЛЬЗУЕМ msg.sender_id
+                const senderName = window.currentGroupUsers ? (window.currentGroupUsers[msg.sender_id] || "Участник") : null;
+                
+                try {
+                    const rawData = atob(msg.encrypted_text);
+                    const bytes = new Uint8Array(rawData.length);
+                    for (let i = 0; i < rawData.length; i++) bytes[i] = rawData.charCodeAt(i);
+                    const decryptedBuffer = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.slice(0, 12) }, currentAesKey, bytes.slice(12));
+                    
+                    renderMessage(dec.decode(decryptedBuffer), msg.sender_id === currentUser.id, timeStr, msg.id, msgDate, senderName, msg.sender_id);
+                } catch (e) {
+                    renderMessage("🔒 [Скрыто]", msg.sender_id === currentUser.id, timeStr, msg.id, msgDate, senderName, msg.sender_id);
+                }
+            }
+        }
+        subscribeToPrivateMessages(); // Работает и для групп
+    }
+
+    // Инфо-модалка по клику на шапку
+    async function openChatInfo() {
+        if (currentChatType === 'group') {
+            document.getElementById('group-info-name').innerText = currentGroup.name;
+            document.getElementById('group-info-avatar').innerText = currentGroup.name.charAt(0).toUpperCase();
+            
+            const { data: memberKeys } = await supabaseClient.from('chat_keys').select('user_id').eq('chat_id', currentChatId);
+            const memberIds = memberKeys.map(k => k.user_id);
+            const { data: usersData } = await supabaseClient.from('users').select('*').in('tg_id', memberIds);
+            
+            document.getElementById('group-info-count').innerText = `${usersData.length} участник${usersData.length > 1 ? 'ов' : ''}`;
+            
+            const list = document.getElementById('group-members-list');
+            list.innerHTML = usersData.map(u => `
+                <div class="list-item" style="margin-bottom:0; background:transparent; border:none; padding: 8px;">
+                    <div class="list-item-left">
+                        <div class="avatar" style="width:36px; height:36px; font-size:16px; background:${getAvatarGradient(u.tg_id)}">${u.first_name.charAt(0).toUpperCase()}</div>
+                        <div class="list-item-title" style="font-size:15px;">${escapeHTML(u.first_name)} ${u.tg_id === currentUser.id ? '<span style="color:var(--muted);">(Вы)</span>' : ''}</div>
+                    </div>
+                </div>
+            `).join('');
+            
+            toggleModal('modal-group-info');
+        }
     }
 
     function safeOpenFriend(tgId) {
@@ -1720,7 +2023,97 @@
         document.getElementById('friend-debts-list').innerHTML = html || '<div style="color:var(--muted); font-size: 15px; text-align: center; padding: 20px 0;"><i class="fas fa-check-circle" style="font-size:32px; color:var(--success); margin-bottom:10px; opacity:0.7;"></i><br>Никто никому не должен</div>';
     }
 
+        // Обработка кнопки создания группы из модалки
+    async function handleCreateGroup() {
+        const name = document.getElementById('new-group-name').value;
+        if (!name) return alert("Введите название!");
+        await createGroup(name);
+        toggleModal('modal-create-group');
+        loadChats();
+    }
+
+    // Показ списка друзей для инвайта
+    function openInviteModal() {
+        toggleModal('modal-group-info');
+        const list = document.getElementById('invite-friends-list');
+        list.innerHTML = window.currentFriendsData.filter(f => f.tg_id !== currentUser.id).map(f => `
+            <div class="list-item" onclick="backgroundSendGroupInvite(${f.tg_id})">
+                <div class="list-item-left">
+                    <div class="avatar" style="width:40px;height:40px;font-size:16px;background:${getAvatarGradient(f.tg_id)}">${f.first_name.charAt(0).toUpperCase()}</div>
+                    <div class="list-item-title">${escapeHTML(f.first_name)}</div>
+                </div>
+                <button class="primary-btn" style="width:auto; padding: 6px 12px; font-size: 13px;">Позвать</button>
+            </div>
+        `).join('');
+        toggleModal('modal-invite-friend');
+    }
+
+    // Фоновая отправка инвайта (Ищет/создает личку, шифрует ключ группы, отправляет как сообщение)
+    async function backgroundSendGroupInvite(friendId) {
+        // 1. Ищем личный чат с этим другом
+        const { data: pmChatId } = await supabaseClient.rpc('get_private_chat', { user1_id: currentUser.id, user2_id: friendId });
+        let finalPmId = pmChatId;
+        let pmAesKey = null;
+        
+        // 2. Получаем или генерируем AES ключ лички
+        if (finalPmId) {
+            const { data: keyData } = await supabaseClient.from('chat_keys').select('encrypted_key').eq('chat_id', finalPmId).eq('user_id', currentUser.id).single();
+            const keysDict = JSON.parse(keyData.encrypted_key);
+            pmAesKey = await decryptChatKey(keysDict[getDeviceId()] || keysDict["legacy"]);
+        } else {
+            // Если лички еще не было, создаем незаметно в фоне
+            const { data: friendData } = await supabaseClient.from('users').select('public_key').eq('tg_id', friendId).single();
+            const { data: myData } = await supabaseClient.from('users').select('public_key').eq('tg_id', currentUser.id).single();
+            pmAesKey = await generateChatKey();
+            const { data: newChat } = await supabaseClient.from('chats').insert({ name: 'private', type: 'private' }).select().single();
+            finalPmId = newChat.id;
+            
+            let friendKeys = JSON.parse(friendData.public_key); if(friendKeys.kty) friendKeys = {"legacy": friendKeys};
+            let encKeysForFriend = {}; for (const [devId, pubJwk] of Object.entries(friendKeys)) encKeysForFriend[devId] = await encryptChatKeyForFriend(pmAesKey, pubJwk);
+            
+            let myKeys = JSON.parse(myData.public_key); if(myKeys.kty) myKeys = {"legacy": myKeys};
+            let encKeysForMe = {}; for (const [devId, pubJwk] of Object.entries(myKeys)) encKeysForMe[devId] = await encryptChatKeyForFriend(pmAesKey, pubJwk);
+            
+            await supabaseClient.from('chat_keys').insert([
+                { chat_id: finalPmId, user_id: friendId, encrypted_key: JSON.stringify(encKeysForFriend) },
+                { chat_id: finalPmId, user_id: currentUser.id, encrypted_key: JSON.stringify(encKeysForMe) }
+            ]);
+        }
+        
+        // 3. Шифруем ключ ТЕКУЩЕЙ ГРУППЫ для друга
+        const { data: friendData } = await supabaseClient.from('users').select('public_key').eq('tg_id', friendId).single();
+        let friendKeys = JSON.parse(friendData.public_key); if (friendKeys.kty) friendKeys = { "legacy": friendKeys };
+        
+        let encGroupKeysForFriend = {}; 
+        for (const [devId, pubJwk] of Object.entries(friendKeys)) {
+            // currentAesKey сейчас - это ключ открытой группы
+            encGroupKeysForFriend[devId] = await encryptChatKeyForFriend(currentAesKey, pubJwk); 
+        }
+        
+        // 4. Отправляем в ЛС
+        const invitePayload = `[GROUP_INVITE]:${currentGroup.id}|${currentGroup.name}|${JSON.stringify(encGroupKeysForFriend)}`;
+        const encryptedPayloadText = await encryptText(invitePayload, pmAesKey);
+        
+        await supabaseClient.from('messages').insert([ 
+            { chat_id: finalPmId, sender_id: currentUser.id, encrypted_text: encryptedPayloadText } 
+        ]);
+        
+        alert("Приглашение успешно отправлено в ЛС!");
+        toggleModal('modal-invite-friend');
+    }
+
+    async function leaveGroup() {
+        if(confirm("Точно выйти из группы?")) {
+            await supabaseClient.from('chat_keys').delete().eq('chat_id', currentChatId).eq('user_id', currentUser.id);
+            toggleModal('modal-group-info');
+            switchScreen('screen-main');
+            loadChats();
+        }
+    }
+
     async function openFriend(tgId, name) {
+        currentChatType = 'private';
+        document.getElementById('btn-header-debts').style.display = 'block';
         currentFriend = { id: tgId, name: name };
         document.getElementById('friend-name-title').innerText = name;
         switchScreen('screen-friend');
