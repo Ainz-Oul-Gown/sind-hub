@@ -220,7 +220,14 @@
             </div>
         </div>
 
-        <h3 class="section-title">Братва <i class="fas fa-spinner fa-spin" id="chat-list-spinner" style="display: none; font-size: 12px; margin-left: 6px;"></i></h3>
+        <div style="display: flex; align-items: center; justify-content: space-between; padding-right: 8px;">
+            <h3 class="section-title" style="margin-top: 12px;">Братва <i class="fas fa-spinner fa-spin" id="chat-list-spinner" style="display: none; font-size: 12px; margin-left: 6px;"></i></h3>
+            <button class="icon-btn" style="margin-top: 12px; width: 32px; height: 32px; background: rgba(10,132,255,0.15); border-radius: 50%;" onclick="toggleModal('modal-add-friend')">
+                <i class="fas fa-user-plus" style="font-size: 14px;"></i>
+            </button>
+        </div>
+
+        
         <div id="friends-list">
             <div style="text-align:center; color: var(--muted); padding: 20px;"><i class="fas fa-spinner fa-spin"></i> Загрузка...</div>
         </div>
@@ -235,6 +242,18 @@
             <input type="text" id="new-group-name" placeholder="Название группы..." style="background: rgba(0,0,0,0.5);">
             <button class="primary-btn" onclick="handleCreateGroup()"><i class="fas fa-check"></i> Создать</button>
         </div>
+
+        <!-- МОДАЛКА: ДОБАВИТЬ ДРУГА -->
+        <div id="modal-add-friend" class="glass-modal">
+            <button class="modal-close" onclick="toggleModal('modal-add-friend')"><i class="fas fa-times"></i></button>
+            <h3 style="text-align: center; margin-top: 0; margin-bottom: 20px; font-size: 20px;">Найти брата</h3>
+            <p style="text-align: center; color: var(--muted); font-size: 14px; margin-top: -10px; margin-bottom: 20px;">
+                Введите Telegram ID друга.<br>Узнать свой ID: <span style="color: var(--primary);" id="my-tg-id-hint">...</span>
+            </p>
+            <input type="number" id="friend-tg-id-input" placeholder="Например: 123456789" style="background: rgba(0,0,0,0.5); text-align: center; font-weight: bold; letter-spacing: 2px;">
+            <button class="primary-btn" onclick="sendFriendRequest()"><i class="fas fa-paper-plane"></i> Отправить запрос</button>
+        </div>
+        
     </div>
 
     <!-- ЭКРАН 2: ВАЛЮТЫ -->
@@ -1872,94 +1891,239 @@
     }
 
     window.currentFriendsData = [];
-    // Вспомогательная функция для мгновенной отрисовки
-    function renderChatsList(users, groupChats) {
-        const list = document.getElementById('friends-list');
-        let html = '';
-        
-        // Рендерим группы
-        groupChats.forEach(g => {
-            const safeName = escapeHTML(g.name);
-            html += `
-                <div class="list-item" onclick="openGroupChat('${g.id}', '${safeName}')">
-                    <div class="list-item-left">
-                        <div class="avatar-wrap">
-                            <div class="avatar" style="background: linear-gradient(135deg, #007AFF, #00C6FF);">${safeName.charAt(0).toUpperCase()}</div>
-                            <div class="status-indicator" style="background: var(--primary); width: 18px; height: 18px; bottom: -4px; right: -4px; display: flex; align-items: center; justify-content: center; border-width: 2px;">
-                                <i class="fas fa-users" style="font-size: 9px; color: white;"></i>
-                            </div>
-                        </div>
-                        <div>
-                            <div class="list-item-title">${safeName}</div>
-                            <div class="list-item-subtitle" style="color: var(--muted);">Группа</div>
+    // --- ИЗБРАННОЕ (САМОЧАТ) ---
+async function openSavedMessages() {
+    currentChatType = 'private';
+    document.getElementById('btn-header-debts').style.display = 'none';
+    currentFriend = { id: currentUser.id, name: 'Избранное' };
+    document.getElementById('friend-name-title').innerText = 'Избранное';
+    document.getElementById('friend-fingerprint').innerText = 'Личное хранилище';
+    document.getElementById('messages-area').innerHTML = '';
+    
+    switchScreen('screen-friend');
+    requestMicrophoneAccess();
+
+    // Ищем чат типа 'saved'
+    let savedChatId = null;
+    const { data: myKeys } = await supabaseClient.from('chat_keys').select('chat_id').eq('user_id', currentUser.id);
+    if (myKeys && myKeys.length > 0) {
+        const { data: chats } = await supabaseClient.from('chats').select('id').eq('type', 'saved').in('id', myKeys.map(k=>k.chat_id));
+        if (chats && chats.length > 0) savedChatId = chats[0].id;
+    }
+
+    if (savedChatId) {
+        currentChatId = savedChatId;
+        await loadExistingChat();
+    } else {
+        // Создаем Избранное первый раз
+        const { data: myData } = await supabaseClient.from('users').select('public_key').eq('tg_id', currentUser.id).single();
+        currentAesKey = await generateChatKey();
+        const { data: newChat } = await supabaseClient.from('chats').insert({ name: 'saved', type: 'saved' }).select().single();
+        currentChatId = newChat.id;
+
+        let myKeysJson = JSON.parse(myData.public_key); if (myKeysJson.kty) myKeysJson = { "legacy": myKeysJson };
+        let encKeysForMe = {}; for (const [devId, pubJwk] of Object.entries(myKeysJson)) encKeysForMe[devId] = await encryptChatKeyForFriend(currentAesKey, pubJwk);
+
+        await supabaseClient.from('chat_keys').insert([
+            { chat_id: currentChatId, user_id: currentUser.id, encrypted_key: JSON.stringify(encKeysForMe) }
+        ]);
+        document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:var(--primary); margin-top: 40px;"><i class="fas fa-bookmark" style="font-size: 32px; margin-bottom:10px;"></i><br>Хранилище зашифровано</div>';
+        subscribeToPrivateMessages();
+    }
+}
+
+// --- УПРАВЛЕНИЕ ДРУЗЬЯМИ ---
+async function sendFriendRequest() {
+    const input = document.getElementById('friend-tg-id-input');
+    const targetId = parseInt(input.value.trim());
+    
+    if (!targetId || isNaN(targetId)) return alert("Введите корректный ID!");
+    if (targetId === currentUser.id) return alert("Это ваш собственный ID!");
+
+    const { data: user } = await supabaseClient.from('users').select('id').eq('tg_id', targetId).single();
+    if (!user) return alert("Пользователь с таким ID еще не зарегистрирован в Синдикате!");
+
+    const { error } = await supabaseClient.from('friendships').insert({
+        requester_id: currentUser.id,
+        addressee_id: targetId,
+        status: 'pending'
+    });
+
+    if (error) {
+        alert("Запрос уже отправлен или вы уже друзья!");
+    } else {
+        alert("Запрос отправлен!");
+        input.value = '';
+        toggleModal('modal-add-friend');
+    }
+}
+
+async function acceptFriend(reqId) {
+    await supabaseClient.from('friendships').update({ status: 'accepted' }).eq('id', reqId);
+    loadChats();
+}
+
+async function rejectFriend(reqId) {
+    await supabaseClient.from('friendships').delete().eq('id', reqId);
+    loadChats();
+}
+
+// --- ОТРИСОВКА ЧАТОВ С УЧЕТОМ ЗАПРОСОВ И ИЗБРАННОГО ---
+function renderChatsList(users, groupChats, pendingRequests = []) {
+    const list = document.getElementById('friends-list');
+    let html = '';
+
+    // 1. ИЗБРАННОЕ (Всегда сверху)
+    html += `
+        <div class="list-item" onclick="openSavedMessages()">
+            <div class="list-item-left">
+                <div class="avatar-wrap">
+                    <div class="avatar" style="background: var(--primary);"><i class="fas fa-bookmark"></i></div>
+                </div>
+                <div>
+                    <div class="list-item-title">Избранное</div>
+                    <div class="list-item-subtitle" style="color: var(--primary);">Заметки и файлы</div>
+                </div>
+            </div>
+            <i class="fas fa-chevron-right" style="color: var(--muted); font-size: 14px;"></i>
+        </div>
+    `;
+
+    // 2. ВХОДЯЩИЕ ЗАПРОСЫ В ДРУЗЬЯ
+    pendingRequests.forEach(req => {
+        html += `
+            <div class="list-item" style="background: rgba(255, 159, 10, 0.1); border-color: rgba(255, 159, 10, 0.3);">
+                <div class="list-item-left">
+                    <div class="avatar" style="background: #FF9F0A; width: 40px; height: 40px; font-size: 16px;"><i class="fas fa-user-clock"></i></div>
+                    <div>
+                        <div class="list-item-title">${escapeHTML(req.user.first_name)}</div>
+                        <div class="list-item-subtitle" style="color: #FF9F0A;">Хочет добавить вас</div>
+                    </div>
+                </div>
+                <div style="display:flex; gap: 6px;">
+                    <button class="primary-btn" style="width: 32px; height: 32px; padding: 0; background: var(--success);" onclick="acceptFriend('${req.id}')"><i class="fas fa-check"></i></button>
+                    <button class="primary-btn" style="width: 32px; height: 32px; padding: 0; background: rgba(255,69,58,0.2); color: var(--danger);" onclick="rejectFriend('${req.id}')"><i class="fas fa-times"></i></button>
+                </div>
+            </div>
+        `;
+    });
+
+    // 3. ГРУППЫ
+    groupChats.forEach(g => {
+        const safeName = escapeHTML(g.name);
+        html += `
+            <div class="list-item" onclick="openGroupChat('${g.id}', '${safeName}')">
+                <div class="list-item-left">
+                    <div class="avatar-wrap">
+                        <div class="avatar" style="background: linear-gradient(135deg, #007AFF, #00C6FF);">${safeName.charAt(0).toUpperCase()}</div>
+                        <div class="status-indicator" style="background: var(--primary); width: 18px; height: 18px; bottom: -4px; right: -4px; display: flex; align-items: center; justify-content: center; border-width: 2px;">
+                            <i class="fas fa-users" style="font-size: 9px; color: white;"></i>
                         </div>
                     </div>
-                    <i class="fas fa-chevron-right" style="color: var(--muted); font-size: 14px;"></i>
-                </div>
-            `;
-        });
-        
-        // Рендерим друзей
-        users.forEach(f => {
-            if(f.tg_id === currentUser.id) return;
-            const safeName = escapeHTML(f.first_name);
-            const isBusy = f.status?.includes('Занят');
-            html += `
-                <div class="list-item" onclick="safeOpenFriend(${f.tg_id})">
-                    <div class="list-item-left">
-                        <div class="avatar-wrap">
-                            <div class="avatar" style="background: ${getAvatarGradient(f.tg_id)};">${safeName.charAt(0).toUpperCase()}</div>
-                            <div class="status-indicator ${isBusy ? 'busy' : ''}"></div>
-                        </div>
-                        <div>
-                            <div class="list-item-title">${safeName}</div>
-                            <div class="list-item-subtitle" style="color: var(--muted);">${isBusy ? 'Занят' : 'В сети'}</div>
-                        </div>
+                    <div>
+                        <div class="list-item-title">${safeName}</div>
+                        <div class="list-item-subtitle" style="color: var(--muted);">Группа</div>
                     </div>
-                    <i class="fas fa-chevron-right" style="color: var(--muted); font-size: 14px;"></i>
                 </div>
-            `;
-        });
+                <i class="fas fa-chevron-right" style="color: var(--muted); font-size: 14px;"></i>
+            </div>
+        `;
+    });
+    
+    // 4. ДРУЗЬЯ (принятые)
+    users.forEach(f => {
+        const safeName = escapeHTML(f.first_name);
+        const isBusy = f.status?.includes('Занят');
+        html += `
+            <div class="list-item" onclick="safeOpenFriend(${f.tg_id})">
+                <div class="list-item-left">
+                    <div class="avatar-wrap">
+                        <div class="avatar" style="background: ${getAvatarGradient(f.tg_id)};">${safeName.charAt(0).toUpperCase()}</div>
+                        <div class="status-indicator ${isBusy ? 'busy' : ''}"></div>
+                    </div>
+                    <div>
+                        <div class="list-item-title">${safeName}</div>
+                        <div class="list-item-subtitle" style="color: var(--muted);">${isBusy ? 'Занят' : 'В сети'}</div>
+                    </div>
+                </div>
+                <i class="fas fa-chevron-right" style="color: var(--muted); font-size: 14px;"></i>
+            </div>
+        `;
+    });
+    
+    list.innerHTML = html;
+}
+
+// --- НОВАЯ ЗАГРУЗКА ЧАТОВ И ДРУЗЕЙ ---
+async function loadChats() {
+    const spinner = document.getElementById('chat-list-spinner');
+    
+    // Подсказка своего ID для модалки добавления друзей
+    document.getElementById('my-tg-id-hint').innerText = currentUser.id;
+
+    // 1. Отрисовка из Кэша (Мгновенно)
+    const cachedUsers = localStorage.getItem('synd_cached_users');
+    const cachedGroups = localStorage.getItem('synd_cached_groups');
+    if (cachedUsers && cachedGroups) {
+        window.currentFriendsData = JSON.parse(cachedUsers);
+        renderChatsList(window.currentFriendsData, JSON.parse(cachedGroups), []);
+        if(spinner) spinner.style.display = 'inline-block'; 
+    } else {
+        document.getElementById('friends-list').innerHTML = '<div style="text-align:center; color: var(--muted); padding: 20px;"><i class="fas fa-spinner fa-spin"></i> Загрузка...</div>';
+    }
+
+    // 2. Скачиваем связи из БД
+    const { data: rels } = await supabaseClient.from('friendships')
+        .select('*')
+        .or(`requester_id.eq.${currentUser.id},addressee_id.eq.${currentUser.id}`);
+
+    const relsArray = rels || [];
+    
+    // Вычисляем ID принятых друзей
+    const friendIds = relsArray
+        .filter(r => r.status === 'accepted')
+        .map(r => r.requester_id === currentUser.id ? r.addressee_id : r.requester_id);
         
-        list.innerHTML = html || '<div style="text-align:center; color: var(--muted); padding: 20px;">Никого нет</div>';
+    // Ищем входящие заявки
+    const pendingRels = relsArray.filter(r => r.status === 'pending' && r.addressee_id === currentUser.id);
+
+    // 3. Скачиваем профили друзей
+    let friendsData = [];
+    if (friendIds.length > 0) {
+        const { data: users } = await supabaseClient.from('users').select('*').in('tg_id', friendIds);
+        friendsData = users || [];
     }
     
-    // Новая загрузка с кэшированием
-    async function loadChats() {
-        const spinner = document.getElementById('chat-list-spinner');
-        
-        // 1. Попытка показать данные из кэша МОМЕНТАЛЬНО
-        const cachedUsers = localStorage.getItem('synd_cached_users');
-        const cachedGroups = localStorage.getItem('synd_cached_groups');
-        
-        if (cachedUsers && cachedGroups) {
-            window.currentFriendsData = JSON.parse(cachedUsers);
-            renderChatsList(window.currentFriendsData, JSON.parse(cachedGroups));
-            if(spinner) spinner.style.display = 'inline-block'; // Крутим загрузку тихо в фоне
-        } else {
-            document.getElementById('friends-list').innerHTML = '<div style="text-align:center; color: var(--muted); padding: 20px;"><i class="fas fa-spinner fa-spin"></i> Загрузка...</div>';
+    // 4. Скачиваем профили тех, кто кинул запрос
+    let pendingRequestsData = [];
+    if (pendingRels.length > 0) {
+        const reqUserIds = pendingRels.map(r => r.requester_id);
+        const { data: pUsers } = await supabaseClient.from('users').select('*').in('tg_id', reqUserIds);
+        if (pUsers) {
+            pendingRequestsData = pendingRels.map(rel => ({
+                id: rel.id,
+                user: pUsers.find(u => u.tg_id === rel.requester_id)
+            })).filter(r => r.user);
         }
-    
-        // 2. Тихая загрузка свежих данных
-        const { data: users } = await supabaseClient.from('users').select('*');
-        if (users) {
-            window.currentFriendsData = users;
-            localStorage.setItem('synd_cached_users', JSON.stringify(users));
-        }
-        
-        const { data: myKeys } = await supabaseClient.from('chat_keys').select('chat_id').eq('user_id', currentUser.id);
-        let groupChats = [];
-        if (myKeys && myKeys.length > 0) {
-            const chatIds = myKeys.map(k => k.chat_id);
-            const { data: groups } = await supabaseClient.from('chats').select('*').eq('type', 'group').in('id', chatIds);
-            if (groups) groupChats = groups;
-        }
-        localStorage.setItem('synd_cached_groups', JSON.stringify(groupChats));
-        
-        // 3. Бесшовно обновляем экран свежими данными
-        renderChatsList(window.currentFriendsData || [], groupChats);
-        if(spinner) spinner.style.display = 'none';
     }
+
+    window.currentFriendsData = friendsData;
+    localStorage.setItem('synd_cached_users', JSON.stringify(friendsData));
+    
+    // 5. Загружаем группы
+    const { data: myKeys } = await supabaseClient.from('chat_keys').select('chat_id').eq('user_id', currentUser.id);
+    let groupChats = [];
+    if (myKeys && myKeys.length > 0) {
+        const chatIds = myKeys.map(k => k.chat_id);
+        const { data: groups } = await supabaseClient.from('chats').select('*').eq('type', 'group').in('id', chatIds);
+        if (groups) groupChats = groups;
+    }
+    localStorage.setItem('synd_cached_groups', JSON.stringify(groupChats));
+    
+    // 6. Окончательно обновляем экран
+    renderChatsList(window.currentFriendsData, groupChats, pendingRequestsData);
+    if(spinner) spinner.style.display = 'none';
+}
 
         // Открытие существующей группы
     async function openGroupChat(groupId, name) {
