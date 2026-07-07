@@ -1868,10 +1868,16 @@
                     <div class="list-item-left">
                         <div class="avatar-wrap">
                             <div class="avatar" style="background: linear-gradient(135deg, #007AFF, #00C6FF);">${safeName.charAt(0).toUpperCase()}</div>
+                            
+                            <!-- НОВЫЙ КРУЖОК С ИКОНКОЙ ГРУППЫ -->
+                            <div class="status-indicator" style="background: var(--primary); width: 18px; height: 18px; bottom: -4px; right: -4px; display: flex; align-items: center; justify-content: center; border-width: 2px;">
+                                <i class="fas fa-users" style="font-size: 9px; color: white;"></i>
+                            </div>
                         </div>
                         <div>
                             <div class="list-item-title">${safeName}</div>
-                            <div class="list-item-subtitle" style="color: var(--muted);"><i class="fas fa-users" style="font-size:10px;"></i> Группа</div>
+                            <!-- Убрали иконку отсюда, оставили только текст -->
+                            <div class="list-item-subtitle" style="color: var(--muted);">Группа</div>
                         </div>
                     </div>
                     <i class="fas fa-chevron-right" style="color: var(--muted); font-size: 14px;"></i>
