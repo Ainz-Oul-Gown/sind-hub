@@ -491,11 +491,11 @@
             btnElement.style.opacity = '0.7';
         }
 
-        // 2. ИСПРАВЛЕНИЕ 406 ОШИБКИ: используем maybeSingle() вместо single()
+        // 2. Ищем, есть ли мы уже в группе (используем limit(1), чтобы не было 406 ошибки)
         const { data: existing } = await supabaseClient.from('chat_keys')
-            .select('id').eq('chat_id', groupId).eq('user_id', currentUser.id).maybeSingle();
+            .select('id').eq('chat_id', groupId).eq('user_id', currentUser.id).limit(1);
             
-        if (existing) {
+        if (existing && existing.length > 0) {
             if (btnElement) {
                 btnElement.innerHTML = '<i class="fas fa-check"></i> Уже в группе';
                 btnElement.style.background = 'var(--surface)';
@@ -1917,8 +1917,9 @@
         requestMicrophoneAccess(); 
         
         // Подтягиваем количество участников
-        const { count, error } = await supabaseClient.from('chat_keys').select('id', { count: 'exact', head: true }).eq('chat_id', groupId);
-        const finalCount = count || 1; // Защита от пустоты
+        // Подтягиваем количество участников (БЕЗ head: true, чтобы избежать 406)
+        const { data: members } = await supabaseClient.from('chat_keys').select('id').eq('chat_id', groupId);
+        const finalCount = members ? members.length : 1; 
         document.getElementById('friend-fingerprint').innerText = `${finalCount} участник${finalCount > 1 ? 'ов' : ''}`;
         
         await loadGroupChatKeys(groupId);
@@ -1926,10 +1927,14 @@
 
     // Загрузка ключей и сообщений группы
     async function loadGroupChatKeys(groupId) {
+        async function loadGroupChatKeys(groupId) {
         document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:var(--muted); margin-top: 40px; font-size: 14px;"><i class="fas fa-shield-alt fa-spin" style="font-size: 24px; color: var(--primary); margin-bottom: 10px;"></i><br>Загрузка крипто-ключей группы...</div>';
         
-        const { data: keyData } = await supabaseClient.from('chat_keys').select('encrypted_key').eq('chat_id', groupId).eq('user_id', currentUser.id).single();
-        if (!keyData) return alert("Нет доступа к группе");
+        // Безопасный запрос без .single()
+        const { data: keyDataArr } = await supabaseClient.from('chat_keys').select('encrypted_key').eq('chat_id', groupId).eq('user_id', currentUser.id).limit(1);
+        if (!keyDataArr || keyDataArr.length === 0) return alert("Нет доступа к группе");
+        
+        const keyData = keyDataArr[0];
         
         const deviceId = getDeviceId();
         const keysDict = JSON.parse(keyData.encrypted_key);
