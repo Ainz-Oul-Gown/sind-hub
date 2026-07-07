@@ -1887,6 +1887,7 @@
         loadMyStatus();
         loadChats();
         loadMyCurrencies();
+        subscribeToFriendships();
         setTimeout(() => { aiWorker.postMessage({ type: 'init' }); }, 1000);
     }
 
@@ -1949,29 +1950,75 @@ async function openSavedMessages() {
 }
 
 // --- УПРАВЛЕНИЕ ДРУЗЬЯМИ ---
+// --- УПРАВЛЕНИЕ ДРУЗЬЯМИ ---
 async function sendFriendRequest() {
     const input = document.getElementById('friend-tg-id-input');
     const targetId = parseInt(input.value.trim());
     
+    // Находим нашу кнопку внутри модалки, чтобы управлять ей
+    const btn = document.querySelector('#modal-add-friend .primary-btn');
+
     if (!targetId || isNaN(targetId)) return alert("Введите корректный ID!");
     if (targetId === currentUser.id) return alert("Это ваш собственный ID!");
 
-    const { data: user } = await supabaseClient.from('users').select('id').eq('tg_id', targetId).single();
-    if (!user) return alert("Пользователь с таким ID еще не зарегистрирован в Синдикате!");
+    // 1. Включаем режим загрузки на кнопке
+    const originalBtnHtml = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Поиск...';
+    btn.disabled = true;
+    btn.style.opacity = '0.7';
 
-    const { error } = await supabaseClient.from('friendships').insert({
-        requester_id: currentUser.id,
-        addressee_id: targetId,
-        status: 'pending'
-    });
+    try {
+        // Проверяем, есть ли юзер в базе
+        const { data: user } = await supabaseClient.from('users').select('id').eq('tg_id', targetId).single();
+        if (!user) {
+            alert("Пользователь с таким ID еще не зарегистрирован в Синдикате!");
+            return;
+        }
 
-    if (error) {
-        alert("Запрос уже отправлен или вы уже друзья!");
-    } else {
-        alert("Запрос отправлен!");
-        input.value = '';
-        toggleModal('modal-add-friend');
+        // Меняем текст на отправку
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Отправка...';
+
+        const { error } = await supabaseClient.from('friendships').insert({
+            requester_id: currentUser.id,
+            addressee_id: targetId,
+            status: 'pending'
+        });
+
+        if (error) {
+            alert("Запрос уже отправлен или вы уже друзья!");
+        } else {
+            alert("Запрос успешно отправлен!");
+            input.value = '';
+            toggleModal('modal-add-friend');
+        }
+    } catch (err) {
+        alert("Произошла ошибка связи с сервером.");
+    } finally {
+        // 2. Возвращаем кнопку в исходное состояние
+        btn.innerHTML = originalBtnHtml;
+        btn.disabled = false;
+        btn.style.opacity = '1';
     }
+}
+
+    let friendshipsSubscription = null;
+
+// Функция подписки на изменения в друзьях
+function subscribeToFriendships() {
+    // Если уже подписаны — отписываемся (чтобы не было дублей)
+    if (friendshipsSubscription) supabaseClient.removeChannel(friendshipsSubscription);
+    
+    friendshipsSubscription = supabaseClient.channel('live-friendships')
+        // Слушаем, когда КТО-ТО добавляет НАС, принимает НАС или удаляет НАС
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'friendships', filter: `addressee_id=eq.${currentUser.id}` }, () => { 
+            loadChats(); // Тихо обновляем список в фоне!
+            if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+        })
+        // Слушаем, когда МЫ кого-то добавили, и он ПРИНЯЛ/УДАЛИЛ заявку
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'friendships', filter: `requester_id=eq.${currentUser.id}` }, () => { 
+            loadChats(); 
+        })
+        .subscribe();
 }
 
 async function acceptFriend(reqId) {
