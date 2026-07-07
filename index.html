@@ -2159,60 +2159,6 @@
         }
     }
 
-    // Фоновая отправка инвайта (Ищет/создает личку, шифрует ключ группы, отправляет как сообщение)
-    async function backgroundSendGroupInvite(friendId) {
-        // 1. Ищем личный чат с этим другом
-        const { data: pmChatId } = await supabaseClient.rpc('get_private_chat', { user1_id: currentUser.id, user2_id: friendId });
-        let finalPmId = pmChatId;
-        let pmAesKey = null;
-        
-        // 2. Получаем или генерируем AES ключ лички
-        if (finalPmId) {
-            const { data: keyData } = await supabaseClient.from('chat_keys').select('encrypted_key').eq('chat_id', finalPmId).eq('user_id', currentUser.id).single();
-            const keysDict = JSON.parse(keyData.encrypted_key);
-            pmAesKey = await decryptChatKey(keysDict[getDeviceId()] || keysDict["legacy"]);
-        } else {
-            // Если лички еще не было, создаем незаметно в фоне
-            const { data: friendData } = await supabaseClient.from('users').select('public_key').eq('tg_id', friendId).single();
-            const { data: myData } = await supabaseClient.from('users').select('public_key').eq('tg_id', currentUser.id).single();
-            pmAesKey = await generateChatKey();
-            const { data: newChat } = await supabaseClient.from('chats').insert({ name: 'private', type: 'private' }).select().single();
-            finalPmId = newChat.id;
-            
-            let friendKeys = JSON.parse(friendData.public_key); if(friendKeys.kty) friendKeys = {"legacy": friendKeys};
-            let encKeysForFriend = {}; for (const [devId, pubJwk] of Object.entries(friendKeys)) encKeysForFriend[devId] = await encryptChatKeyForFriend(pmAesKey, pubJwk);
-            
-            let myKeys = JSON.parse(myData.public_key); if(myKeys.kty) myKeys = {"legacy": myKeys};
-            let encKeysForMe = {}; for (const [devId, pubJwk] of Object.entries(myKeys)) encKeysForMe[devId] = await encryptChatKeyForFriend(pmAesKey, pubJwk);
-            
-            await supabaseClient.from('chat_keys').insert([
-                { chat_id: finalPmId, user_id: friendId, encrypted_key: JSON.stringify(encKeysForFriend) },
-                { chat_id: finalPmId, user_id: currentUser.id, encrypted_key: JSON.stringify(encKeysForMe) }
-            ]);
-        }
-        
-        // 3. Шифруем ключ ТЕКУЩЕЙ ГРУППЫ для друга
-        const { data: friendData } = await supabaseClient.from('users').select('public_key').eq('tg_id', friendId).single();
-        let friendKeys = JSON.parse(friendData.public_key); if (friendKeys.kty) friendKeys = { "legacy": friendKeys };
-        
-        let encGroupKeysForFriend = {}; 
-        for (const [devId, pubJwk] of Object.entries(friendKeys)) {
-            // currentAesKey сейчас - это ключ открытой группы
-            encGroupKeysForFriend[devId] = await encryptChatKeyForFriend(currentAesKey, pubJwk); 
-        }
-        
-        // 4. Отправляем в ЛС
-        const invitePayload = `[GROUP_INVITE]:${currentGroup.id}|${currentGroup.name}|${JSON.stringify(encGroupKeysForFriend)}`;
-        const encryptedPayloadText = await encryptText(invitePayload, pmAesKey);
-        
-        await supabaseClient.from('messages').insert([ 
-            { chat_id: finalPmId, sender_id: currentUser.id, encrypted_text: encryptedPayloadText } 
-        ]);
-        
-        alert("Приглашение успешно отправлено в ЛС!");
-        toggleModal('modal-invite-friend');
-    }
-
     async function leaveGroup() {
         if(confirm("Точно выйти из группы?")) {
             await supabaseClient.from('chat_keys').delete().eq('chat_id', currentChatId).eq('user_id', currentUser.id);
