@@ -685,7 +685,11 @@
         }
 
         const btn = document.getElementById('btn-input-action');
-        if (btn.classList.contains('mode-send')) { sendPrivateMessage(); return; }
+        if (btn.classList.contains('mode-send')) { 
+            e.preventDefault(); // Запрещаем браузеру забирать фокус с инпута
+            sendPrivateMessage(); 
+            return; 
+        }
         if (isRecordingLocked || isRecording || isPointerDown) return;
         
         isPointerDown = true;
@@ -1355,6 +1359,7 @@
         
         input.value = "";
         autoResizeInput(); // Сброс размера поля и кнопки
+        input.focus(); // Насильно удерживаем фокус для iOS
         
         const encryptedPayload = await encryptText(text, currentAesKey);
         
