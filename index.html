@@ -136,12 +136,16 @@
         .voice-play-btn { width: 42px; height: 42px; background: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--primary); font-size: 16px; transition: 0.2s; box-shadow: 0 2px 5px rgba(0,0,0,0.15); flex-shrink: 0;}
         .msg-other .voice-play-btn { background: var(--primary); color: white; }
         
-        .voice-waveform { display: flex; align-items: center; gap: 2.5px; flex-grow: 1; height: 32px; margin-right: 4px; }
-        .v-bar { flex: 1; border-radius: 2px; transition: 0.2s; min-width: 2px; }
+        /* ДОБАВЛЕН touch-action: none; ДЛЯ ПЕРЕМОТКИ ПАЛЬЦЕМ */
+        .voice-waveform { display: flex; align-items: center; gap: 2.5px; flex-grow: 1; height: 32px; margin-right: 4px; cursor: pointer; touch-action: none; }
+        .v-bar { flex: 1; border-radius: 2px; transition: 0.1s; min-width: 2px; }
         
-        /* Цвета палочек для меня и друга */
-        .msg-mine .v-bar { background: rgba(255,255,255,0.9); }
-        .msg-other .v-bar { background: var(--primary); opacity: 0.6; }
+        /* Цвета палочек: Непрослушанные и Прослушанные (.active) */
+        .msg-mine .v-bar { background: rgba(255,255,255,0.4); }
+        .msg-mine .v-bar.active { background: #ffffff; box-shadow: 0 0 2px rgba(255,255,255,0.5); }
+        
+        .msg-other .v-bar { background: var(--primary); opacity: 0.3; }
+        .msg-other .v-bar.active { opacity: 1; box-shadow: 0 0 2px var(--primary); }
         
         .transcript-toggle { font-size: 13px; color: rgba(255,255,255,0.8); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.15); width: 100%; user-select: none; }
         .transcript-content { font-size: 14px; color: rgba(255,255,255,0.9); background: rgba(0,0,0,0.15); padding: 10px; border-radius: 8px; margin-top: 8px; display: none; }
@@ -1012,22 +1016,54 @@
 
 
     // --- КАСТОМНЫЙ ПЛЕЕР ---
-    async function loadAndPlayVoice(fileName, element) {
-        const icon = element.querySelector('.voice-play-btn i');
+    // --- ГЛОБАЛЬНЫЙ КОНТРОЛЬ ПЛЕЕРА ---
+    let currentAudioObj = null;
+    let currentAudioIcon = null;
+
+    async function loadAndPlayVoice(fileName, btn) {
+        const player = btn.closest('.voice-player');
+        const icon = btn.querySelector('i');
         
-        if (element.audioObj) {
-            if (element.audioObj.paused) { 
-                element.audioObj.play(); 
-                icon.className = 'fas fa-pause'; 
-            } else { 
-                element.audioObj.pause(); 
-                icon.className = 'fas fa-play'; 
+        // 1. Если этот ГС уже загружен
+        if (player.audioObj) {
+            const audio = player.audioObj;
+            if (audio.paused) {
+                // Если играл другой ГС - ставим его на паузу
+                if (currentAudioObj && currentAudioObj !== audio) {
+                    currentAudioObj.pause();
+                    if (currentAudioIcon) {
+                        currentAudioIcon.className = 'fas fa-play';
+                        currentAudioIcon.style.marginLeft = '3px';
+                    }
+                }
+                audio.play();
+                icon.className = 'fas fa-pause';
+                icon.style.marginLeft = '0';
+                currentAudioObj = audio;
+                currentAudioIcon = icon;
+            } else {
+                audio.pause();
+                icon.className = 'fas fa-play';
+                icon.style.marginLeft = '3px';
+                currentAudioObj = null;
+                currentAudioIcon = null;
             }
             if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
             return;
         }
 
+        // 2. Если грузим совершенно новый ГС - стопаем старый
+        if (currentAudioObj) {
+            currentAudioObj.pause();
+            if (currentAudioIcon) {
+                currentAudioIcon.className = 'fas fa-play';
+                currentAudioIcon.style.marginLeft = '3px';
+            }
+        }
+
         icon.className = 'fas fa-spinner fa-spin';
+        icon.style.marginLeft = '0';
+        
         const { data, error } = await supabaseClient.storage.from('voice_messages').download(fileName);
         if (error) { icon.className = 'fas fa-exclamation-triangle'; return; }
         
@@ -1037,13 +1073,82 @@
             const audioUrl = URL.createObjectURL(new Blob([decryptedBuffer]));
             
             const audio = new Audio(audioUrl);
-            element.audioObj = audio; 
+            player.audioObj = audio; 
             
-            audio.onended = () => { icon.className = 'fas fa-play'; };
+            // --- ЛОГИКА ПРОГРЕСС БАРА ---
+            audio.addEventListener('timeupdate', () => {
+                if (!audio.duration) return;
+                const progress = audio.currentTime / audio.duration;
+                const bars = player.querySelectorAll('.v-bar');
+                const activeCount = Math.floor(progress * bars.length);
+                
+                // Закрашиваем палочки в реальном времени
+                bars.forEach((bar, index) => {
+                    if (index < activeCount) bar.classList.add('active');
+                    else bar.classList.remove('active');
+                });
+            });
+            
+            audio.addEventListener('ended', () => {
+                icon.className = 'fas fa-play';
+                icon.style.marginLeft = '3px';
+                currentAudioObj = null;
+                currentAudioIcon = null;
+                player.querySelectorAll('.v-bar').forEach(bar => bar.classList.remove('active'));
+            });
+
             audio.play();
             icon.className = 'fas fa-pause';
+            icon.style.marginLeft = '0';
+            currentAudioObj = audio;
+            currentAudioIcon = icon;
             if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
         } catch (e) { icon.className = 'fas fa-lock'; }
+    }
+
+    // --- ЛОГИКА ПЕРЕМОТКИ И СКРАББИНГА (DRAG) ---
+    function handleWaveformPointer(e, waveformEl, fileName) {
+        const player = waveformEl.closest('.voice-player');
+        
+        // Если ГС еще ни разу не включали, по тапу на волну мы его скачаем и запустим
+        if (!player.audioObj) {
+            loadAndPlayVoice(fileName, player.querySelector('.voice-play-btn'));
+            return;
+        }
+        
+        const audio = player.audioObj;
+        
+        // Функция расчета позиции
+        const updateTime = (clientX) => {
+            const rect = waveformEl.getBoundingClientRect();
+            let x = clientX - rect.left;
+            x = Math.max(0, Math.min(x, rect.width)); // Жесткие рамки от 0 до 100%
+            const percent = x / rect.width;
+            
+            if (audio.duration) {
+                audio.currentTime = percent * audio.duration;
+                // Звук продолжает играть, а timeupdate сам перерисует прогресс-бар
+            }
+        };
+
+        if (e.type === 'pointerdown') {
+            try { waveformEl.setPointerCapture(e.pointerId); } catch(err){}
+            updateTime(e.clientX); // Прыгаем на место тапа
+            if(tg.HapticFeedback) tg.HapticFeedback.selectionChanged();
+            
+            // Если ведем пальцем - обновляем время без остановки воспроизведения
+            waveformEl.onpointermove = (ev) => {
+                updateTime(ev.clientX);
+            };
+            
+            // Отпускаем палец - стираем слежку
+            waveformEl.onpointerup = waveformEl.onpointercancel = (ev) => {
+                waveformEl.onpointermove = null;
+                waveformEl.onpointerup = null;
+                waveformEl.onpointercancel = null;
+                try { waveformEl.releasePointerCapture(e.pointerId); } catch(err){}
+            };
+        }
     }
 
     function toggleTranscript(btn) {
@@ -1119,9 +1224,13 @@
             }
 
             div.innerHTML = `
-                <div class="voice-player" onclick="loadAndPlayVoice('${fileName}', this)">
-                    <div class="voice-play-btn"><i class="fas fa-play" style="margin-left: 3px;"></i></div>
-                    <div class="voice-waveform">${barsHtml}</div>
+                <div class="voice-player">
+                    <div class="voice-play-btn" onclick="loadAndPlayVoice('${fileName}', this)">
+                        <i class="fas fa-play" style="margin-left: 3px;"></i>
+                    </div>
+                    <div class="voice-waveform" onpointerdown="handleWaveformPointer(event, this, '${fileName}')">
+                        ${barsHtml}
+                    </div>
                 </div>
                 ${transcriptHtml}
             `;
