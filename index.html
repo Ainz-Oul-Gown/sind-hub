@@ -1591,18 +1591,55 @@
     // --- ОСТАЛЬНАЯ ЛОГИКА ---
     const tg = window.Telegram.WebApp;
     tg.expand();
-    let supabaseClient = supabase.createClient(
+    // --- ПРАВИЛЬНАЯ ИНИЦИАЛИЗАЦИЯ SUPABASE ---
+    let currentToken = localStorage.getItem('synd_token');
+
+    // Удаляем старый токен, если это не JWT (JWT всегда начинается с 'eyJ')
+    if (currentToken && !currentToken.startsWith('eyJ')) {
+        localStorage.removeItem('synd_token');
+        currentToken = null;
+    }
+
+    const supabaseClient = supabase.createClient(
         'https://cqhndgtiqdjzzrqdzrfq.supabase.co',
-        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaG5kZ3RpcWRqenpycWR6cmZxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMyODcxNzAsImV4cCI6MjA5ODg2MzE3MH0.Tt432Nn4A9z9IYiVQcePj9v0FEFJNdjGI5pywdFYSOQ'
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaG5kZ3RpcWRqenpycWR6cmZxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMyODcxNzAsImV4cCI6MjA5ODg2MzE3MH0.Tt432Nn4A9z9IYiVQcePj9v0FEFJNdjGI5pywdFYSOQ',
+        {
+            global: {
+                fetch: (url, options) => {
+                    // Перехватываем каждый запрос и подшиваем к нему токен
+                    if (currentToken) {
+                        options.headers = new Headers(options.headers);
+                        options.headers.set('Authorization', `Bearer ${currentToken}`);
+                    }
+                    return fetch(url, options);
+                }
+            }
+        }
     );
-    
-    // Пересоздаем клиент с правильным заголовком
-    function setSupabaseToken(token) { 
-        supabaseClient = supabase.createClient(
-            'https://cqhndgtiqdjzzrqdzrfq.supabase.co',
-            'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaG5kZ3RpcWRqenpycWR6cmZxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMyODcxNzAsImV4cCI6MjA5ODg2MzE3MH0.Tt432Nn4A9z9IYiVQcePj9v0FEFJNdjGI5pywdFYSOQ',
-            { global: { headers: { Authorization: `Bearer ${token}` } } }
-        );
+
+    function setSupabaseToken(token) {
+        currentToken = token;
+        if (token) {
+            localStorage.setItem('synd_token', token);
+            // Чтобы вебсокеты тоже обновились и чаты работали в реальном времени
+            supabaseClient.realtime.setAuth(token); 
+        } else {
+            localStorage.removeItem('synd_token');
+        }
+    }
+
+    // Вспомогательная функция для чтения JWT токена
+    function parseJwt(token) {
+        try {
+            const base64Url = token.split('.')[1];
+            const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+            const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+                return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+            }).join(''));
+            return JSON.parse(jsonPayload);
+        } catch (e) {
+            return null;
+        }
     }
 
     let currentUser = null;
@@ -1803,46 +1840,56 @@
         return await window.crypto.subtle.importKey("raw", rawChatKey, { name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
     }
 
+    // --- ОБНОВЛЕННАЯ ЛОГИКА АВТОРИЗАЦИИ ---
     async function authUser() {
         const hashParams = new URLSearchParams(window.location.hash.substring(1));
         const urlToken = hashParams.get('token');
         const tgInitData = window.Telegram.WebApp.initData;
-        let isAuthorized = false;
 
+        // Если зашли через Telegram - получаем новый JWT токен из Edge Function
         if (tgInitData) {
             try {
+                // Временно отключаем токен, чтобы функция не отбила запрос 401-й ошибкой
+                const oldToken = currentToken; 
+                currentToken = null; 
+                
                 const { data: result, error: fetchErr } = await supabaseClient.functions.invoke('tg-auth', { body: { initData: tgInitData } });
+                
                 if (result && result.token) {
+                    setSupabaseToken(result.token);
                     currentUser = { id: result.id, first_name: result.first_name };
-                    localStorage.setItem('synd_token', result.token);
-                    setSupabaseToken(result.token); 
-                    isAuthorized = true;
+                    return true;
+                } else {
+                    currentToken = oldToken; // Возвращаем, если что-то пошло не так
                 }
-            } catch(e) {}
-        }
-        else if (urlToken) {
-            localStorage.setItem('synd_token', urlToken);
-            window.history.replaceState({}, document.title, window.location.pathname);
-            isAuthorized = await fetchUserByToken(urlToken);
-        }
-        else if (localStorage.getItem('synd_token')) {
-            isAuthorized = await fetchUserByToken(localStorage.getItem('synd_token'));
+            } catch(e) {
+                console.error("Ошибка TG-авторизации:", e);
+            }
         }
 
-        if (isAuthorized && currentUser && currentUser.id) { await checkCryptoKeys(currentUser.id); return true; }
+        // Если открыли по PWA ссылке или уже есть сохраненный JWT
+        let tokenToUse = (urlToken && urlToken.startsWith('eyJ')) ? urlToken : currentToken;
+        
+        if (tokenToUse) {
+            setSupabaseToken(tokenToUse);
+            const payload = parseJwt(tokenToUse); // Достаем tg_id прямо из токена
+            
+            if (payload && payload.tg_id) {
+                // Спрашиваем у базы наше имя (теперь база нас пустит!)
+                const { data } = await supabaseClient.from('users').select('first_name').eq('tg_id', payload.tg_id).single();
+                if (data) {
+                    currentUser = { id: payload.tg_id, first_name: data.first_name };
+                    document.getElementById('btn-pwa').style.display = 'none';
+                    if (urlToken) window.history.replaceState({}, document.title, window.location.pathname); // Прячем токен из URL
+                    return true;
+                }
+            }
+        }
+
         return false;
     }
 
-    async function fetchUserByToken(token) {
-        const { data } = await supabaseClient.from('users').select('tg_id, first_name').eq('auth_token', token).single();
-        if (data) {
-            currentUser = { id: data.tg_id, first_name: data.first_name };
-            setSupabaseToken(token); 
-            document.getElementById('btn-pwa').style.display = 'none';
-            return true;
-        }
-        return false;
-    }
+    
 
     async function getFingerprint(jwkKeyString) {
         if (!jwkKeyString) return "НЕТ КЛЮЧА";
