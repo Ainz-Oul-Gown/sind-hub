@@ -526,11 +526,13 @@
 
 
     // Функция для форматирования миллисекунд в формат М:СС
+    // Функция для форматирования миллисекунд в формат М:СС,д
     function formatTime(ms) {
         const totalSeconds = Math.floor(ms / 1000);
         const minutes = Math.floor(totalSeconds / 60);
         const seconds = totalSeconds % 60;
-        return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+        const tenths = Math.floor((ms % 1000) / 100); // Получаем десятые доли (0-9)
+        return `${minutes}:${seconds.toString().padStart(2, '0')},${tenths}`;
     }
     
 
@@ -617,18 +619,21 @@
                 .v-dot { width: 8px; height: 8px; background: var(--danger); border-radius: 50%; animation: v-blink 1s infinite; }
                 .v-cancel-hint { flex-grow: 1; text-align: center; color: var(--muted); font-size: 15px; display: flex; align-items: center; justify-content: center; gap: 8px; margin-right: 30px; animation: v-swipe-left 1.5s infinite; user-select: none; pointer-events: none;}
                 .v-lock-hint { position: absolute; right: -5px; bottom: 80px; width: 50px; height: 50px; background: var(--surface); border: 1px solid var(--border); border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--muted); animation: v-swipe-up 1.5s infinite; box-shadow: 0 4px 15px rgba(0,0,0,0.3); z-index: 100; user-select: none; pointer-events: none;}
-
-                /* Залоченный режим (Идет запись) */
-                .v-trash { color: var(--muted); font-size: 20px; cursor: pointer; padding: 10px; margin-left: -8px;}
-                .v-pause { color: var(--primary); font-size: 26px; cursor: pointer; padding: 10px; margin-right: 15px;}
-                .v-send { background: var(--primary); color: white; width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 16px; cursor: pointer; flex-shrink:0; transform: rotate(-15deg); }
-
+                
+                /* НОВЫЙ ДИЗАЙН: Залоченный режим (Идет запись) */
+                .v-timer-left { display: flex; align-items: center; gap: 8px; width: 85px; font-variant-numeric: tabular-nums; font-weight: 500; font-size: 15px;}
+                .v-cancel-text { flex-grow: 1; text-align: center; color: var(--primary); font-weight: 500; font-size: 14px; letter-spacing: 0.5px; cursor: pointer; user-select: none; text-transform: uppercase;}
+                .v-actions-right { display: flex; align-items: center; justify-content: flex-end; gap: 12px; width: 90px;}
+                .v-pause-btn { background: rgba(255,255,255,0.1); color: white; width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; cursor: pointer; flex-shrink: 0; transition: 0.2s;}
+                .v-send { background: var(--primary); color: white; width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 18px; cursor: pointer; flex-shrink: 0; transform: rotate(-15deg); margin-right: -4px;}
+                
                 /* Залоченный режим (Пауза) - Та самая капсула */
-                .v-capsule { display: flex; align-items: center; gap: 10px; background: rgba(255,255,255,0.08); padding: 6px 12px; border-radius: 20px; flex-grow: 1; margin: 0 15px; overflow:hidden;}
+                .v-capsule { display: flex; align-items: center; gap: 10px; background: rgba(255,255,255,0.08); padding: 6px 12px; border-radius: 20px; flex-grow: 1; margin: 0 15px 0 0; overflow:hidden;}
                 .v-capsule .v-play { background: var(--primary); color: white; border: none; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; cursor: pointer; flex-shrink: 0;}
                 .v-capsule span { font-size: 13px; font-variant-numeric: tabular-nums; color: white;}
                 .v-wave { color: rgba(255,255,255,0.3); font-size: 10px; letter-spacing: 2px; white-space: nowrap; overflow:hidden; user-select:none; flex-grow:1;}
-
+                .v-trash { color: var(--muted); font-size: 20px; cursor: pointer; padding: 10px; margin-left: -8px;}
+                
                 @keyframes v-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
                 @keyframes v-swipe-left { 0%, 100% { transform: translateX(0); opacity: 0.5; } 50% { transform: translateX(-10px); opacity: 1; } }
                 @keyframes v-swipe-up { 0%, 100% { transform: translateY(0); opacity: 0.5; } 50% { transform: translateY(-10px); opacity: 1; } }
@@ -713,10 +718,16 @@
 
                 <!-- Слой 2: Залочили (Запись идет) -->
                 <div id="v-locked-rec-ui" class="v-ui-layer">
-                    <i class="fas fa-trash-alt v-trash" onclick="cancelRecording()"></i>
-                    <div class="v-timer" style="margin: 0 auto;"><div class="v-dot"></div> <span class="v-time-text">0:00</span></div>
-                    <i class="fas fa-pause-circle v-pause" onclick="pauseRecording()"></i>
-                    <div class="v-send" onclick="stopAndSendRecording()"><i class="fas fa-paper-plane"></i></div>
+                    <div class="v-timer-left">
+                        <div class="v-dot"></div> <span class="v-time-text">0:00,0</span>
+                    </div>
+                    
+                    <div class="v-cancel-text" onclick="cancelRecording()">ОТМЕНА</div>
+                    
+                    <div class="v-actions-right">
+                        <div class="v-pause-btn" onclick="pauseRecording()"><i class="fas fa-pause"></i></div>
+                        <div class="v-send" onclick="stopAndSendRecording()"><i class="fas fa-paper-plane"></i></div>
+                    </div>
                 </div>
 
                 <!-- Слой 3: Залочили (Пауза) - Та самая капсула -->
@@ -803,7 +814,7 @@
                     const timeStr = formatTime(Date.now() - recStartTime);
                     document.querySelectorAll('.v-time-text').forEach(el => el.innerText = timeStr);
                 }
-            }, 500);
+            }, 100);
             
         } catch (err) { isPointerDown = false; }
     }
