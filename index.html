@@ -1938,15 +1938,24 @@
     }
 
     // Инфо-модалка по клику на шапку
+    / Инфо-модалка по клику на шапку
     async function openChatInfo() {
         if (currentChatType === 'group') {
+            // 1. МГНОВЕННО подготавливаем окно с загрузкой
             document.getElementById('group-info-name').innerText = currentGroup.name;
             document.getElementById('group-info-avatar').innerText = currentGroup.name.charAt(0).toUpperCase();
+            document.getElementById('group-info-count').innerText = "Загрузка участников...";
+            document.getElementById('group-members-list').innerHTML = '<div style="text-align:center; padding: 15px; color: var(--muted);"><i class="fas fa-spinner fa-spin"></i></div>';
             
+            // 2. СРАЗУ ОТКРЫВАЕМ ОКНО
+            toggleModal('modal-group-info');
+            
+            // 3. Делаем запросы в базу данных
             const { data: memberKeys } = await supabaseClient.from('chat_keys').select('user_id').eq('chat_id', currentChatId);
             const memberIds = memberKeys.map(k => k.user_id);
             const { data: usersData } = await supabaseClient.from('users').select('*').in('tg_id', memberIds);
             
+            // 4. Обновляем окно, когда данные прилетели
             document.getElementById('group-info-count').innerText = `${usersData.length} участник${usersData.length > 1 ? 'ов' : ''}`;
             
             const list = document.getElementById('group-members-list');
@@ -1958,8 +1967,6 @@
                     </div>
                 </div>
             `).join('');
-            
-            toggleModal('modal-group-info');
         }
     }
 
@@ -2028,12 +2035,22 @@
         document.getElementById('friend-debts-list').innerHTML = html || '<div style="color:var(--muted); font-size: 15px; text-align: center; padding: 20px 0;"><i class="fas fa-check-circle" style="font-size:32px; color:var(--success); margin-bottom:10px; opacity:0.7;"></i><br>Никто никому не должен</div>';
     }
 
-        // Обработка кнопки создания группы из модалки
+    // Обработка кнопки создания группы из модалки
     async function handleCreateGroup() {
         const name = document.getElementById('new-group-name').value;
         if (!name) return alert("Введите название!");
-        await createGroup(name);
+        
+        // 1. МГНОВЕННО прячем модалку и чистим поле
         toggleModal('modal-create-group');
+        document.getElementById('new-group-name').value = '';
+        
+        // 2. СРАЗУ показываем загрузку в списке чатов
+        document.getElementById('friends-list').innerHTML = '<div style="text-align:center; color: var(--primary); padding: 20px;"><i class="fas fa-spinner fa-spin fa-2x"></i><br><span style="font-size:14px; margin-top:10px; display:block; color:var(--text);">Создаем группу "${escapeHTML(name)}"...</span></div>';
+        
+        // 3. Спокойно делаем тяжелую работу (ключи + БД)
+        await createGroup(name);
+        
+        // 4. Загружаем чаты заново, когда всё готово
         loadChats();
     }
 
@@ -2042,14 +2059,75 @@
         toggleModal('modal-group-info');
         const list = document.getElementById('invite-friends-list');
         list.innerHTML = window.currentFriendsData.filter(f => f.tg_id !== currentUser.id).map(f => `
-            <div class="list-item" onclick="backgroundSendGroupInvite(${f.tg_id})">
+            <div class="list-item">
                 <div class="list-item-left">
                     <div class="avatar" style="width:40px;height:40px;font-size:16px;background:${getAvatarGradient(f.tg_id)}">${f.first_name.charAt(0).toUpperCase()}</div>
                     <div class="list-item-title">${escapeHTML(f.first_name)}</div>
                 </div>
-                <button class="primary-btn" style="width:auto; padding: 6px 12px; font-size: 13px;">Позвать</button>
+                <!-- ПЕРЕДАЕМ КНОПКУ (this) В ФУНКЦИЮ -->
+                <button class="primary-btn" style="width:auto; padding: 6px 12px; font-size: 13px;" onclick="backgroundSendGroupInvite(${f.tg_id}, this)">Позвать</button>
             </div>
         `).join('');
+        toggleModal('modal-invite-friend');
+    }
+
+    // Фоновая отправка инвайта
+    async function backgroundSendGroupInvite(friendId, btnElement) {
+        // 1. МГНОВЕННО показываем загрузку на кнопке
+        if (btnElement) {
+            btnElement.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            btnElement.style.opacity = '0.7';
+            btnElement.disabled = true;
+        }
+        
+        // 2. Ищем личный чат с этим другом
+        const { data: pmChatId } = await supabaseClient.rpc('get_private_chat', { user1_id: currentUser.id, user2_id: friendId });
+        let finalPmId = pmChatId;
+        let pmAesKey = null;
+        
+        // Получаем или генерируем AES ключ лички
+        if (finalPmId) {
+            const { data: keyData } = await supabaseClient.from('chat_keys').select('encrypted_key').eq('chat_id', finalPmId).eq('user_id', currentUser.id).single();
+            const keysDict = JSON.parse(keyData.encrypted_key);
+            pmAesKey = await decryptChatKey(keysDict[getDeviceId()] || keysDict["legacy"]);
+        } else {
+            const { data: friendData } = await supabaseClient.from('users').select('public_key').eq('tg_id', friendId).single();
+            const { data: myData } = await supabaseClient.from('users').select('public_key').eq('tg_id', currentUser.id).single();
+            pmAesKey = await generateChatKey();
+            const { data: newChat } = await supabaseClient.from('chats').insert({ name: 'private', type: 'private' }).select().single();
+            finalPmId = newChat.id;
+            
+            let friendKeys = JSON.parse(friendData.public_key); if(friendKeys.kty) friendKeys = {"legacy": friendKeys};
+            let encKeysForFriend = {}; for (const [devId, pubJwk] of Object.entries(friendKeys)) encKeysForFriend[devId] = await encryptChatKeyForFriend(pmAesKey, pubJwk);
+            
+            let myKeys = JSON.parse(myData.public_key); if(myKeys.kty) myKeys = {"legacy": myKeys};
+            let encKeysForMe = {}; for (const [devId, pubJwk] of Object.entries(myKeys)) encKeysForMe[devId] = await encryptChatKeyForFriend(pmAesKey, pubJwk);
+            
+            await supabaseClient.from('chat_keys').insert([
+                { chat_id: finalPmId, user_id: friendId, encrypted_key: JSON.stringify(encKeysForFriend) },
+                { chat_id: finalPmId, user_id: currentUser.id, encrypted_key: JSON.stringify(encKeysForMe) }
+            ]);
+        }
+        
+        // 3. Шифруем ключ ТЕКУЩЕЙ ГРУППЫ для друга
+        const { data: friendData } = await supabaseClient.from('users').select('public_key').eq('tg_id', friendId).single();
+        let friendKeys = JSON.parse(friendData.public_key); if (friendKeys.kty) friendKeys = { "legacy": friendKeys };
+        
+        let encGroupKeysForFriend = {}; 
+        for (const [devId, pubJwk] of Object.entries(friendKeys)) {
+            encGroupKeysForFriend[devId] = await encryptChatKeyForFriend(currentAesKey, pubJwk); 
+        }
+        
+        // 4. Отправляем в ЛС
+        const invitePayload = `[GROUP_INVITE]:${currentGroup.id}|${currentGroup.name}|${JSON.stringify(encGroupKeysForFriend)}`;
+        const encryptedPayloadText = await encryptText(invitePayload, pmAesKey);
+        
+        await supabaseClient.from('messages').insert([ 
+            { chat_id: finalPmId, sender_id: currentUser.id, encrypted_text: encryptedPayloadText } 
+        ]);
+        
+        // 5. Завершаем!
+        alert("Приглашение успешно отправлено в ЛС!");
         toggleModal('modal-invite-friend');
     }
 
