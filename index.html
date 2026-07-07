@@ -1611,8 +1611,16 @@
     }
 
     async function encryptText(text, aesKey) {
+        // 1. Создаем математическую подпись текста
+        const signature = await signText(text);
+
+        // 2. Упаковываем в объект
+        const payloadObj = { t: text, s: signature };
+        const payloadStr = JSON.stringify(payloadObj);
+
+        // 3. Шифруем (теперь шифруется JSON)
         const iv = window.crypto.getRandomValues(new Uint8Array(12));
-        const encryptedContent = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, aesKey, enc.encode(text));
+        const encryptedContent = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, aesKey, enc.encode(payloadStr));
         const encryptedBytes = new Uint8Array(encryptedContent);
         const payload = new Uint8Array(iv.length + encryptedBytes.length);
         payload.set(iv, 0); payload.set(encryptedBytes, iv.length);
@@ -1654,58 +1662,114 @@
                 async (payload) => {
                     const newMsg = payload.new;
                     if (!newMsg || !newMsg.encrypted_text) return;
-                    const msgDate = new Date(newMsg.created_at);
-                    const timeStr = msgDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                     
+                    // Теперь мы используем единую надежную функцию для отрисовки Live-сообщений
+                    await processAndRenderMessage(newMsg, currentAesKey);
+                    
+                    // Дополнительный ИИ триггер для ГС (остается как был)
+                    // Расшифровываем по-быстрому только для того, чтобы понять, ГС это или нет
                     try {
                         const rawData = atob(newMsg.encrypted_text);
                         const bytes = new Uint8Array(rawData.length);
                         for (let i = 0; i < rawData.length; i++) bytes[i] = rawData.charCodeAt(i);
                         const decryptedBuffer = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.slice(0, 12) }, currentAesKey, bytes.slice(12));
-                        const plainText = dec.decode(decryptedBuffer); 
-                        
-                        // ЗДЕСЬ ИСПОЛЬЗУЕМ newMsg.sender_id
-                        const senderName = window.currentGroupUsers ? (window.currentGroupUsers[newMsg.sender_id] || "Участник") : null;
-                        
-                        // Рендерим новое сообщение
-                        renderMessage(plainText, newMsg.sender_id === currentUser.id, timeStr, newMsg.id, msgDate, senderName, newMsg.sender_id);
+                        let plainText = dec.decode(decryptedBuffer);
+                        try { plainText = JSON.parse(plainText).t; } catch(e) {} // Достаем текст из JSON
                         
                         if (newMsg.sender_id !== currentUser.id && plainText.startsWith('[VOICE]:') && !plainText.includes('|') && isAiReady) {
                             helpFriendTranscribe(plainText.replace('[VOICE]:', ''), newMsg.id);
                         }
-                    } catch (e) { 
-                        const senderName = window.currentGroupUsers ? (window.currentGroupUsers[newMsg.sender_id] || "Участник") : null;
-                        renderMessage("🔒 [Ошибка расшифровки]", newMsg.sender_id === currentUser.id, timeStr, newMsg.id, msgDate, senderName, newMsg.sender_id); 
-                    }
+                    } catch(e) {}
                 }
             ).subscribe();
     }
 
     async function generatePersonalArmor(userId) {
-        const keyPair = await window.crypto.subtle.generateKey({ name: "RSA-OAEP", modulusLength: 4096, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["encrypt", "decrypt"]);
-        await idbKeyval.set(`my_private_key_${userId}`, keyPair.privateKey);
-        return await window.crypto.subtle.exportKey("jwk", keyPair.publicKey);
+        // Ключ для шифрования (RSA)
+        const encKeyPair = await window.crypto.subtle.generateKey({ name: "RSA-OAEP", modulusLength: 4096, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["encrypt", "decrypt"]);
+        // НОВЫЙ: Ключ для ЭЦП и подписи (ECDSA)
+        const signKeyPair = await window.crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+
+        await idbKeyval.set(`my_private_key_${userId}`, encKeyPair.privateKey);
+        await idbKeyval.set(`my_sign_key_${userId}`, signKeyPair.privateKey); // Сохраняем приватный ключ подписи
+
+        const encJwk = await window.crypto.subtle.exportKey("jwk", encKeyPair.publicKey);
+        const signJwk = await window.crypto.subtle.exportKey("jwk", signKeyPair.publicKey);
+        
+        // Возвращаем оба публичных ключа
+        return { rsa: encJwk, ecdsa: signJwk };
     }
 
     async function checkCryptoKeys(userId) {
         const deviceId = getDeviceId();
         const privateKey = await idbKeyval.get(`my_private_key_${userId}`);
+        const signKey = await idbKeyval.get(`my_sign_key_${userId}`); // Проверяем наличие ключа подписи
+        
         const { data: userData } = await supabaseClient.from('users').select('public_key').eq('tg_id', userId).single();
         let publicKeysDict = {};
         if (userData && userData.public_key) {
             try { publicKeysDict = JSON.parse(userData.public_key); if (publicKeysDict.kty) publicKeysDict = { "legacy_dev": publicKeysDict }; } catch (e) { publicKeysDict = {}; }
         }
-        if (!privateKey || !publicKeysDict[deviceId]) {
-            const publicKeyJwk = await generatePersonalArmor(userId);
-            publicKeysDict[deviceId] = publicKeyJwk;
+        
+        // Если нет приватных ключей локально, ИЛИ в базе нет ключа ECDSA для этого девайса - перегенерируем!
+        if (!privateKey || !signKey || !publicKeysDict[deviceId] || !publicKeysDict[deviceId].ecdsa) {
+            const keysObj = await generatePersonalArmor(userId);
+            publicKeysDict[deviceId] = keysObj;
             await supabaseClient.from('users').update({ public_key: JSON.stringify(publicKeysDict) }).eq('tg_id', userId);
         }
     }
 
+    async function signText(text) {
+        const signPrivKey = await idbKeyval.get(`my_sign_key_${currentUser.id}`);
+        if (!signPrivKey) return null; // Для старых аккаунтов (совместимость)
+        
+        const signatureBuffer = await window.crypto.subtle.sign(
+            { name: "ECDSA", hash: { name: "SHA-256" } },
+            signPrivKey,
+            enc.encode(text)
+        );
+        const sigArray = Array.from(new Uint8Array(signatureBuffer));
+        return btoa(String.fromCharCode.apply(null, sigArray));
+    }
+
+    async function verifySignature(text, signatureB64, senderId) {
+        if (!signatureB64) return false; // Подписи нет, хотя должна быть
+        
+        const { data } = await supabaseClient.from('users').select('public_key').eq('tg_id', senderId).single();
+        if (!data || !data.public_key) return true; // У юзера вообще нет ключей, пропускаем
+
+        let keysDict = {};
+        try { keysDict = JSON.parse(data.public_key); } catch(e) { return true; }
+
+        const sigBytes = Uint8Array.from(atob(signatureB64), c => c.charCodeAt(0));
+        const encodedText = enc.encode(text);
+
+        // Перебираем все устройства отправителя, вдруг он написал с компьютера или второго телефона
+        for (let devId in keysDict) {
+            if (!keysDict[devId].ecdsa) continue;
+            try {
+                const pubKey = await window.crypto.subtle.importKey(
+                    "jwk", keysDict[devId].ecdsa,
+                    { name: "ECDSA", namedCurve: "P-256" },
+                    true, ["verify"]
+                );
+                const isValid = await window.crypto.subtle.verify(
+                    { name: "ECDSA", hash: { name: "SHA-256" } },
+                    pubKey, sigBytes, encodedText
+                );
+                if (isValid) return true; // Подпись совпала!
+            } catch(e) {}
+        }
+        return false; // Ни один ключ девайса не подошел -> 100% подделка!
+    }
+
+
     async function generateChatKey() { return await window.crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]); }
 
     async function encryptChatKeyForFriend(chatKey, friendPublicJwk) {
-        const friendPublicKey = await window.crypto.subtle.importKey("jwk", friendPublicJwk, { name: "RSA-OAEP", hash: "SHA-256" }, true, ["encrypt"]);
+        // Поддержка старого формата ключей и нового (где RSA лежит внутри объекта)
+        const actualRsaJwk = friendPublicJwk.rsa ? friendPublicJwk.rsa : friendPublicJwk;
+        const friendPublicKey = await window.crypto.subtle.importKey("jwk", actualRsaJwk, { name: "RSA-OAEP", hash: "SHA-256" }, true, ["encrypt"]);
         const rawChatKey = await window.crypto.subtle.exportKey("raw", chatKey);
         const encryptedKeyBuffer = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, friendPublicKey, rawChatKey);
         return btoa(String.fromCharCode.apply(null, new Uint8Array(encryptedKeyBuffer)));
@@ -2652,9 +2716,33 @@ async function loadChats() {
             const bytes = new Uint8Array(rawData.length);
             for (let i = 0; i < rawData.length; i++) bytes[i] = rawData.charCodeAt(i);
             const decryptedBuffer = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.slice(0, 12) }, aesKey, bytes.slice(12));
-            renderMessage(dec.decode(decryptedBuffer), msg.sender_id === currentUser.id, timeStr, msg.id, msgDate, senderName, msg.sender_id);
+            const decryptedStr = dec.decode(decryptedBuffer);
+            
+            let finalPlainText = decryptedStr;
+            let isAuthentic = true;
+
+            try {
+                // Пытаемся распарсить новый формат (JSON с подписью)
+                const parsed = JSON.parse(decryptedStr);
+                if (parsed.t !== undefined) {
+                    finalPlainText = parsed.t;
+                    // Если сообщение чужое, проверяем подпись
+                    if (msg.sender_id !== currentUser.id) {
+                        isAuthentic = await verifySignature(parsed.t, parsed.s, msg.sender_id);
+                    }
+                }
+            } catch(e) {
+                // Старое сообщение (чистый текст), пропускаем
+            }
+
+            if (!isAuthentic) {
+                // Хакер спалился
+                renderMessage("🚨 [БЛОКИРОВКА: Цифровая подпись не совпадает! Текст подделан]", msg.sender_id === currentUser.id, timeStr, msg.id, msgDate, senderName, msg.sender_id);
+            } else {
+                renderMessage(finalPlainText, msg.sender_id === currentUser.id, timeStr, msg.id, msgDate, senderName, msg.sender_id);
+            }
         } catch (e) {
-            renderMessage("🔒 [Скрыто]", msg.sender_id === currentUser.id, timeStr, msg.id, msgDate, senderName, msg.sender_id);
+            renderMessage("🔒 [Ошибка расшифровки]", msg.sender_id === currentUser.id, timeStr, msg.id, msgDate, senderName, msg.sender_id);
         }
     }
 
