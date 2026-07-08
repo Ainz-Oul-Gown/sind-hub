@@ -2390,12 +2390,16 @@ async function loadChats() {
             return; // Останавливаем загрузку сообщений
         }
 
-        // Собираем имена участников... (дальше идет ваш старый код функции)
+        // Собираем имена участников с безопасной проверкой
         const { data: membersKeys } = await supabaseClient.from('chat_keys').select('user_id').eq('chat_id', groupId);
         const memberIds = membersKeys.map(k => k.user_id);
         const { data: usersData } = await supabaseClient.from('users').select('tg_id, first_name').in('tg_id', memberIds);
+        
         window.currentGroupUsers = {};
-        usersData.forEach(u => window.currentGroupUsers[u.tg_id] = u.first_name);
+        // БЕЗОПАСНАЯ ПРОВЕРКА НА NULL:
+        if (usersData) {
+            usersData.forEach(u => window.currentGroupUsers[u.tg_id] = u.first_name);
+        }
 
         const cachedHistory = await getChatFromCache(currentChatId);
 
@@ -2419,6 +2423,9 @@ async function loadChats() {
             if (!cachedHistory || cachedHistory.length === 0) document.getElementById('messages-area').innerHTML = '';
             for (const msg of newHistory) await processAndRenderMessage(msg, currentAesKey);
             await saveChatToCache(currentChatId, newHistory);
+        } else if (!cachedHistory || cachedHistory.length === 0) {
+            // ВОТ ТУТ МЫ УБИРАЕМ ВЕЧНУЮ ЗАГРУЗКУ ДЛЯ ПУСТЫХ ГРУПП:
+            document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:var(--muted); margin-top:40px;">Чат пуст</div>';
         }
 
         subscribeToPrivateMessages();
