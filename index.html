@@ -1600,22 +1600,37 @@
         currentToken = null;
     }
 
+    // Вынесем твой anon_key в константу для удобства
+    const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaG5kZ3RpcWRqenpycWR6cmZxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMyODcxNzAsImV4cCI6MjA5ODg2MzE3MH0.Tt432Nn4A9z9IYiVQcePj9v0FEFJNdjGI5pywdFYSOQ';
+    
     const supabaseClient = supabase.createClient(
         'https://cqhndgtiqdjzzrqdzrfq.supabase.co',
-        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaG5kZ3RpcWRqenpycWR6cmZxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMyODcxNzAsImV4cCI6MjA5ODg2MzE3MH0.Tt432Nn4A9z9IYiVQcePj9v0FEFJNdjGI5pywdFYSOQ',
+        ANON_KEY,
         {
             global: {
                 fetch: (url, options) => {
-                    // Перехватываем каждый запрос и подшиваем к нему токен
+                    // Безопасно собираем заголовки
+                    const newHeaders = new Headers(options?.headers || {});
+                    
+                    // Принудительно возвращаем apikey на место, чтобы база не ругалась
+                    newHeaders.set('apikey', ANON_KEY);
+                    
                     if (currentToken) {
-                        options.headers = new Headers(options.headers);
-                        options.headers.set('Authorization', `Bearer ${currentToken}`);
+                        newHeaders.set('Authorization', `Bearer ${currentToken}`);
+                    } else {
+                        // Если кастомного токена нет, ставим стандартный
+                        newHeaders.set('Authorization', `Bearer ${ANON_KEY}`);
                     }
+                    
+                    // Перезаписываем объект заголовков в options
+                    options.headers = newHeaders;
+                    
                     return fetch(url, options);
                 }
             }
         }
     );
+    
 
     function setSupabaseToken(token) {
         currentToken = token;
