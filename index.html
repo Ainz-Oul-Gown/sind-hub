@@ -1594,13 +1594,11 @@
     // --- ПРАВИЛЬНАЯ ИНИЦИАЛИЗАЦИЯ SUPABASE ---
     let currentToken = localStorage.getItem('synd_token');
 
-    // Удаляем старый токен, если это не JWT (JWT всегда начинается с 'eyJ')
     if (currentToken && !currentToken.startsWith('eyJ')) {
         localStorage.removeItem('synd_token');
         currentToken = null;
     }
 
-    // Вынесем твой anon_key в константу для удобства
     const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaG5kZ3RpcWRqenpycWR6cmZxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMyODcxNzAsImV4cCI6MjA5ODg2MzE3MH0.Tt432Nn4A9z9IYiVQcePj9v0FEFJNdjGI5pywdFYSOQ';
     
     const supabaseClient = supabase.createClient(
@@ -1609,24 +1607,22 @@
         {
             global: {
                 fetch: (url, options) => {
-                    // Безопасно собираем заголовки
                     const newHeaders = new Headers(options?.headers || {});
-                    
-                    // Принудительно возвращаем apikey на место, чтобы база не ругалась
                     newHeaders.set('apikey', ANON_KEY);
-                    
                     if (currentToken) {
                         newHeaders.set('Authorization', `Bearer ${currentToken}`);
                     } else {
-                        // Если кастомного токена нет, ставим стандартный
                         newHeaders.set('Authorization', `Bearer ${ANON_KEY}`);
                     }
-                    
-                    // Перезаписываем объект заголовков в options
                     options.headers = newHeaders;
-                    
                     return fetch(url, options);
                 }
+            },
+            // --- НОВОЕ: МАГИЯ ДЛЯ WEBSOCKETS ---
+            // Этот параметр заставляет вебсокеты всегда брать самый свежий токен 
+            // при каждом подключении и переподключении.
+            accessToken: async () => {
+                return currentToken || ANON_KEY;
             }
         }
     );
