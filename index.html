@@ -1984,7 +1984,11 @@
 
             document.getElementById('messages-area').innerHTML += '<div style="text-align:center; color:var(--success); margin-top: 10px;">Готово!</div>';
             subscribeToPrivateMessages();
+            
+            document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:var(--muted); margin-top:40px;">История зашифрована старым ключом или чат пуст</div>';
+            subscribeToPrivateMessages();
             return;
+
         }
 
         currentAesKey = await decryptChatKey(myEncryptedKey);
