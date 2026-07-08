@@ -1711,43 +1711,50 @@
     }
 
     let currentChatSubscription = null;
-    function subscribeToPrivateMessages() {
-        if (currentChatSubscription) supabaseClient.removeChannel(currentChatSubscription);
+    async function subscribeToPrivateMessages() {
+        // 1. АСИНХРОННО и безопасно удаляем старую подписку, если она есть
+        if (currentChatSubscription) {
+            await supabaseClient.removeChannel(currentChatSubscription);
+            currentChatSubscription = null;
+        }
+
+        console.log(`📡 Подключаем вебсокеты для чата: ${currentChatId}`);
+
+        // 2. Создаем новую чистую подписку
         currentChatSubscription = supabaseClient.channel(`chat-${currentChatId}`)
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `chat_id=eq.${currentChatId}` },
+            .on('postgres_changes', { 
+                event: 'INSERT', // <-- Слушаем только новые сообщения, это надежнее чем '*'
+                schema: 'public', 
+                table: 'messages', 
+                filter: `chat_id=eq.${currentChatId}` 
+            },
                 async (payload) => {
+                    console.log("🔥 ПРИШЛО НОВОЕ СООБЩЕНИЕ ИЗ WEBSOCKET:", payload);
+                    
                     const newMsg = payload.new;
                     if (!newMsg || !newMsg.encrypted_text) return;
 
-
-
-                    // Теперь мы используем единую надежную функцию для отрисовки Live-сообщений
                     await processAndRenderMessage(newMsg, currentAesKey);
                     
-                    // Дополнительный ИИ триггер для ГС (остается как был)
-                    // Расшифровываем по-быстрому только для того, чтобы понять, ГС это или нет
+                    // Дополнительный ИИ триггер для ГС
                     try {
                         const rawData = atob(newMsg.encrypted_text);
                         const bytes = new Uint8Array(rawData.length);
                         for (let i = 0; i < rawData.length; i++) bytes[i] = rawData.charCodeAt(i);
                         const decryptedBuffer = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.slice(0, 12) }, currentAesKey, bytes.slice(12));
                         let plainText = dec.decode(decryptedBuffer);
-                        try { plainText = JSON.parse(plainText).t; } catch(e) {} // Достаем текст из JSON
-
-
-
-
-
+                        try { plainText = JSON.parse(plainText).t; } catch(e) {} 
 
                         if (newMsg.sender_id !== currentUser.id && plainText.startsWith('[VOICE]:') && !plainText.includes('|') && isAiReady) {
                             helpFriendTranscribe(plainText.replace('[VOICE]:', ''), newMsg.id);
                         }
                     } catch(e) {}
-
-
-
                 }
-            ).subscribe();
+            )
+            .subscribe((status, err) => {
+                // Этот лог покажет нам, пустил ли сервер нас в канал!
+                console.log(`🔌 Статус канала [${currentChatId}]:`, status, err || '');
+            });
     }
 
     async function generatePersonalArmor(userId) {
