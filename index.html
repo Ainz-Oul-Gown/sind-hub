@@ -1766,6 +1766,64 @@
             });
     }
 
+    async function requestDeviceAccess() {
+    // 1. Показываем красивый экран ожидания
+    document.body.innerHTML = `
+        <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; text-align:center; padding: 20px;">
+            <i class="fas fa-desktop fa-beat" style="font-size:48px; color:var(--primary); margin-bottom:20px;"></i>
+            <h3>Авторизация устройства</h3>
+            <p style="color:var(--muted); font-size:14px;">Мы отправили запрос на ваше основное устройство (в Избранное). Нажмите «Подтвердить», чтобы передать ключи шифрования.</p>
+        </div>
+    `;
+
+    // 2. Генерируем временный ключ (Транзитный)
+    const tempKeyPair = await window.crypto.subtle.generateKey(
+        { name: "RSA-OAEP", modulusLength: 4096, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, 
+        true, ["encrypt", "decrypt"]
+    );
+    await idbKeyval.set('temp_sync_priv_key', tempKeyPair.privateKey);
+    const tempPubJwk = await window.crypto.subtle.exportKey("jwk", tempKeyPair.publicKey);
+
+    // 3. Отправляем в Supabase
+    let platform = tg.initDataUnsafe?.receiver?.platform || navigator.platform || "Неизвестное устройство";
+    const { data: requestData, error } = await supabaseClient.from('device_requests').insert([
+        { user_id: currentUser.id, device_name: platform, temp_pub_key: JSON.stringify(tempPubJwk), status: 'pending' }
+    ]).select().single();
+
+    if (error) return alert("Ошибка отправки запроса");
+
+    // 4. Ждем ответа по веб-сокету
+    supabaseClient.channel(`sync-waiter-${requestData.id}`)
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'device_requests', filter: `id=eq.${requestData.id}` }, 
+        async (payload) => {
+            if (payload.new.status === 'approved') {
+                document.body.innerHTML += '<div style="color:var(--success); margin-top:20px;">Доступ разрешен! Расшифровываем ключи...</div>';
+                
+                // Расшифровываем Мастер-ключи
+                const tempPrivKey = await idbKeyval.get('temp_sync_priv_key');
+                const encryptedData = atob(payload.new.encrypted_master_keys);
+                const encryptedBuffer = new Uint8Array(encryptedData.length);
+                for (let i = 0; i < encryptedData.length; i++) encryptedBuffer[i] = encryptedData.charCodeAt(i);
+                
+                const masterKeysRaw = await window.crypto.subtle.decrypt({ name: "RSA-OAEP" }, tempPrivKey, encryptedBuffer);
+                const masterKeysJson = JSON.parse(dec.decode(masterKeysRaw));
+
+                // Сохраняем в IndexedDB и перезагружаемся
+                const rsaKey = await window.crypto.subtle.importKey("jwk", masterKeysJson.rsa, { name: "RSA-OAEP", hash: "SHA-256" }, true, ["decrypt"]);
+                const ecdsaKey = await window.crypto.subtle.importKey("jwk", masterKeysJson.ecdsa, { name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+
+                await idbKeyval.set(`my_private_key_${currentUser.id}`, rsaKey);
+                await idbKeyval.set(`my_sign_key_${currentUser.id}`, ecdsaKey);
+                await idbKeyval.del('temp_sync_priv_key'); 
+                
+                window.location.reload(); // Перезапускаем приложение уже с ключами
+            } else if (payload.new.status === 'rejected') {
+                document.body.innerHTML += '<div style="color:var(--danger); margin-top:20px;">Запрос отклонен.</div>';
+            }
+        }).subscribe();
+    }
+
+
     async function generatePersonalArmor(userId) {
         // Ключ для шифрования (RSA)
         const encKeyPair = await window.crypto.subtle.generateKey({ name: "RSA-OAEP", modulusLength: 4096, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["encrypt", "decrypt"]);
@@ -1782,24 +1840,60 @@
         return { rsa: encJwk, ecdsa: signJwk };
     }
 
-    async function checkCryptoKeys(userId) {
-        const deviceId = getDeviceId();
-        const privateKey = await idbKeyval.get(`my_private_key_${userId}`);
-        const signKey = await idbKeyval.get(`my_sign_key_${userId}`); // Проверяем наличие ключа подписи
-        
-        const { data: userData } = await supabaseClient.from('users').select('public_key').eq('tg_id', userId).single();
-        let publicKeysDict = {};
-        if (userData && userData.public_key) {
-            try { publicKeysDict = JSON.parse(userData.public_key); if (publicKeysDict.kty) publicKeysDict = { "legacy_dev": publicKeysDict }; } catch (e) { publicKeysDict = {}; }
-        }
-        
-        // Если нет приватных ключей локально, ИЛИ в базе нет ключа ECDSA для этого девайса - перегенерируем!
-        if (!privateKey || !signKey || !publicKeysDict[deviceId] || !publicKeysDict[deviceId].ecdsa) {
-            const keysObj = await generatePersonalArmor(userId);
-            publicKeysDict[deviceId] = keysObj;
-            await supabaseClient.from('users').update({ public_key: JSON.stringify(publicKeysDict) }).eq('tg_id', userId);
+
+
+async function checkCryptoKeys(userId) {
+    // 1. Ищем ключи локально (в памяти текущего браузера/устройства)
+    const privateKey = await idbKeyval.get(`my_private_key_${userId}`);
+    const signKey = await idbKeyval.get(`my_sign_key_${userId}`);
+
+    // 2. Смотрим, есть ли ключи у этого аккаунта глобально в базе
+    const { data: userData } = await supabaseClient.from('users').select('public_key').eq('tg_id', userId).single();
+    
+    let publicKeysDict = {};
+    let hasKeysInDatabase = false;
+
+    if (userData && userData.public_key) {
+        try { 
+            publicKeysDict = JSON.parse(userData.public_key); 
+            // Если словарь не пустой, значит аккаунт уже существует и ключи были созданы
+            if (publicKeysDict.kty || Object.keys(publicKeysDict).length > 0) {
+                hasKeysInDatabase = true;
+            }
+        } catch (e) { 
+            publicKeysDict = {}; 
         }
     }
+
+    // --- 3. ЛОГИКА ПРИНЯТИЯ РЕШЕНИЙ ---
+
+    if (!hasKeysInDatabase) {
+        // СЦЕНАРИЙ А: Абсолютно новый аккаунт (первый вход в жизни)
+        // Генерируем ключи с нуля
+        const keysObj = await generatePersonalArmor(userId);
+        
+        // Теперь у нас один Мастер-ключ на весь аккаунт, записываем его под ключом "master"
+        publicKeysDict["master"] = keysObj; 
+        await supabaseClient.from('users').update({ public_key: JSON.stringify(publicKeysDict) }).eq('tg_id', userId);
+        return true; 
+    } 
+    else if (!privateKey || !signKey) {
+        // СЦЕНАРИЙ Б: В базе ключи ЕСТЬ, а на телефоне НЕТ
+        // Это значит, что мы зашли с нового устройства (PWA/другой браузер).
+        // Генерировать новые Мастер-ключи КАТЕГОРИЧЕСКИ НЕЛЬЗЯ! 
+        
+        // Вызываем функцию отправки заявки на Основное устройство (которую написали выше)
+        await requestDeviceAccess(); 
+        
+        // Возвращаем false, чтобы остановить загрузку чатов
+        return false; 
+    } 
+    else {
+        // СЦЕНАРИЙ В: Ключи есть и в базе, и на телефоне. 
+        // Всё отлично, можно грузить историю.
+        return true; 
+    }
+}
 
     async function signText(text) {
         const signPrivKey = await idbKeyval.get(`my_sign_key_${currentUser.id}`);
@@ -2051,12 +2145,105 @@
         document.getElementById('my-fingerprint').innerText = `Шифр: ${myFingerprint}`;
 
 
-        loadMyStatus();
-        loadChats();
-        loadMyCurrencies();
-        subscribeToFriendships();
-        setTimeout(() => { aiWorker.postMessage({ type: 'init' }); }, 1000);
+    
+
+// Вызываем проверку ключей
+const isCryptoReady = await checkCryptoKeys(currentUser.id);
+
+if (!isCryptoReady) {
+    // Если вернуло false, значит мы отправили запрос на Основное устройство.
+    // Функция requestDeviceAccess уже нарисовала экран ожидания, 
+    // поэтому мы просто прерываем initApp, чтобы не грузить пустые чаты.
+    return; 
+}
+
+// Если ключи на месте, грузим интерфейс дальше
+loadMyStatus();
+loadChats();
+loadMyCurrencies();
+subscribeToFriendships();
+listenForDeviceRequests(); // <-- Не забудь добавить прослушку новых девайсов для Основного устройства
+setTimeout(() => { aiWorker.postMessage({ type: 'init' }); }, 1000);
     }
+
+function listenForDeviceRequests() {
+    supabaseClient.channel('admin-device-requests')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'device_requests', filter: `user_id=eq.${currentUser.id}` }, 
+        (payload) => {
+            const req = payload.new;
+            if (req.status === 'pending') {
+                // Если у тебя открыт чат "Избранное", рисуем плашку прямо там.
+                // Иначе показываем всплывающее уведомление сверху.
+                renderDeviceRequestBubble(req);
+            }
+        }).subscribe();
+}
+
+
+function renderDeviceRequestBubble(requestData) {
+    const area = document.getElementById('messages-area');
+    if (!area) return; // Если мы не в чате, можно сделать глобальный alert
+
+    // Упаковываем публичный ключ в base64, чтобы не сломать HTML кавычками
+    const safePubKey = btoa(requestData.temp_pub_key);
+
+    const div = document.createElement('div');
+    div.className = 'msg-bubble msg-other'; // Делаем визуально как входящее системное сообщение
+    div.id = `device-req-${requestData.id}`;
+    
+    div.innerHTML = `
+        <div style="display:flex; align-items:center; gap:10px; background: rgba(255, 159, 10, 0.1); border: 1px solid rgba(255, 159, 10, 0.3); padding: 12px; border-radius: 12px;">
+            <div style="width: 40px; height: 40px; border-radius: 50%; background: var(--surface); display:flex; align-items:center; justify-content:center; color: #FF9F0A;"><i class="fas fa-shield-alt"></i></div>
+            <div style="flex-grow: 1;">
+                <div style="font-weight: 600; margin-bottom: 2px;">Новый вход</div>
+                <div style="font-size: 12px; color: var(--muted); margin-bottom: 8px;">Устройство: ${escapeHTML(requestData.device_name)}</div>
+                <div style="display: flex; gap: 8px;">
+                    <button onclick="handleDeviceDecision('${requestData.id}', '${safePubKey}', 'approved', this)" style="background: var(--success); color: white; border: none; padding: 6px 12px; border-radius: 8px; font-weight: 600; cursor: pointer; flex-grow: 1;">Разрешить</button>
+                    <button onclick="handleDeviceDecision('${requestData.id}', '', 'rejected', this)" style="background: var(--surface); color: var(--danger); border: 1px solid var(--border); padding: 6px 12px; border-radius: 8px; font-weight: 600; cursor: pointer; flex-grow: 1;">Отклонить</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    area.appendChild(div);
+    area.scrollTo({ top: area.scrollHeight, behavior: 'smooth' });
+    if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('warning');
+}
+
+// Финальная магия: Обработка нажатия
+async function handleDeviceDecision(requestId, safePubKey, status, btnElement) {
+    btnElement.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    btnElement.disabled = true;
+
+    let updatePayload = { status: status };
+
+    if (status === 'approved') {
+        // 1. Достаем НАШИ реальные ключи
+        const myPrivRsa = await idbKeyval.get(`my_private_key_${currentUser.id}`);
+        const myPrivEcdsa = await idbKeyval.get(`my_sign_key_${currentUser.id}`);
+        
+        const rsaJwk = await window.crypto.subtle.exportKey("jwk", myPrivRsa);
+        const ecdsaJwk = await window.crypto.subtle.exportKey("jwk", myPrivEcdsa);
+        const keysPayload = JSON.stringify({ rsa: rsaJwk, ecdsa: ecdsaJwk });
+
+        // 2. Шифруем их транзитным ключом нового устройства
+        const tempPubKeyJson = atob(safePubKey);
+        const newDevicePubKey = await window.crypto.subtle.importKey("jwk", JSON.parse(tempPubKeyJson), { name: "RSA-OAEP", hash: "SHA-256" }, true, ["encrypt"]);
+        
+        const encryptedBuffer = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, newDevicePubKey, enc.encode(keysPayload));
+        updatePayload.encrypted_master_keys = btoa(String.fromCharCode.apply(null, new Uint8Array(encryptedBuffer)));
+    }
+
+    // 3. Отправляем ответ в БД (новое устройство получит его по сокету)
+    await supabaseClient.from('device_requests').update(updatePayload).eq('id', requestId);
+
+    // 4. Красим интерфейс
+    const container = btnElement.closest('.msg-bubble').querySelector('div');
+    container.innerHTML = status === 'approved' 
+        ? `<div style="color:var(--success); font-weight: 600;"><i class="fas fa-check-circle"></i> Доступ разрешен</div>`
+        : `<div style="color:var(--danger); font-weight: 600;"><i class="fas fa-times-circle"></i> Доступ отклонен</div>`;
+}
+
 
     async function loadMyStatus() {
         const { data } = await supabaseClient.from('users').select('status').eq('tg_id', currentUser.id).single();
