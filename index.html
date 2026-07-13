@@ -1812,7 +1812,8 @@
             const masterKeysJson = JSON.parse(dec.decode(masterKeysRaw));
 
             const rsaKey = await window.crypto.subtle.importKey("jwk", masterKeysJson.rsa, { name: "RSA-OAEP", hash: "SHA-256" }, true, ["decrypt"]);
-            const ecdsaKey = await window.crypto.subtle.importKey("jwk", masterKeysJson.ecdsa, { name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+            // ИСПРАВЛЕННАЯ СТРОКА: Убрали "verify" из массива в самом конце
+            const ecdsaKey = await window.crypto.subtle.importKey("jwk", masterKeysJson.ecdsa, { name: "ECDSA", namedCurve: "P-256" }, true, ["sign"]);
 
             await idbKeyval.set(`my_private_key_${currentUser.id}`, rsaKey);
             await idbKeyval.set(`my_sign_key_${currentUser.id}`, ecdsaKey);
