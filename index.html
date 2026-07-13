@@ -2105,72 +2105,90 @@ async function checkCryptoKeys(userId) {
     }
 
     async function loadExistingChat() {
-        const { data: keyData } = await supabaseClient.from('chat_keys').select('encrypted_key').eq('chat_id', currentChatId).eq('user_id', currentUser.id).single();
-        const deviceId = getDeviceId();
-        let myEncryptedKey = null;
+    const { data: keyData } = await supabaseClient.from('chat_keys').select('encrypted_key').eq('chat_id', currentChatId).eq('user_id', currentUser.id).single();
+    const deviceId = getDeviceId();
+    
+    let successfullyDecryptedAes = null;
 
-        try { 
-            const keysDict = JSON.parse(keyData.encrypted_key); 
-            // Добавляем проверку на "master" в самое начало!
-            myEncryptedKey = keysDict["master"] || keysDict[deviceId] || keysDict["legacy_dev"] || keysDict["legacy"]; 
-        } catch (e) { myEncryptedKey = keyData.encrypted_key; }
+    try { 
+        const keysDict = JSON.parse(keyData.encrypted_key);
 
-        if (!myEncryptedKey) {
-            document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:#ff9800; padding: 20px; font-size: 14px;"><i class="fas fa-key" style="font-size: 24px; margin-bottom: 10px;"></i><br>Синхронизация ключей...</div>';
-            currentAesKey = await generateChatKey();
-            const { data: friendData } = await supabaseClient.from('users').select('public_key').eq('tg_id', currentFriend.id).single();
-            const { data: myData } = await supabaseClient.from('users').select('public_key').eq('tg_id', currentUser.id).single();
-
-            let friendKeys = JSON.parse(friendData.public_key); if (friendKeys.kty) friendKeys = { "legacy": friendKeys };
-            let encKeysForFriend = {}; for (const [devId, pubJwk] of Object.entries(friendKeys)) encKeysForFriend[devId] = await encryptChatKeyForFriend(currentAesKey, pubJwk);
-
-            let myKeys = JSON.parse(myData.public_key); if (myKeys.kty) myKeys = { "legacy": myKeys };
-            let encKeysForMe = {}; for (const [devId, pubJwk] of Object.entries(myKeys)) encKeysForMe[devId] = await encryptChatKeyForFriend(currentAesKey, pubJwk);
-
-            await supabaseClient.from('chat_keys').update({ encrypted_key: JSON.stringify(encKeysForFriend) }).eq('chat_id', currentChatId).eq('user_id', currentFriend.id);
-            await supabaseClient.from('chat_keys').update({ encrypted_key: JSON.stringify(encKeysForMe) }).eq('chat_id', currentChatId).eq('user_id', currentUser.id);
-
-            document.getElementById('messages-area').innerHTML += '<div style="text-align:center; color:var(--success); margin-top: 10px;">Готово!</div>';
-            subscribeToPrivateMessages();
-            
-            document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:var(--muted); margin-top:40px;">История зашифрована старым ключом или чат пуст</div>';
-            subscribeToPrivateMessages();
-            return;
-
+        // 1. Изящный перебор ключей (используем твою готовую функцию decryptChatKey)
+        for (const [keyName, encKeyString] of Object.entries(keysDict)) {
+            try {
+                // Пытаемся расшифровать. Если ключ чужой, функция выбросит ошибку, и мы уйдем в catch
+                const tempKey = await decryptChatKey(encKeyString);
+                if (tempKey) {
+                    successfullyDecryptedAes = tempKey;
+                    console.log(`✅ Успешно расшифрован ключ из слота: ${keyName}`);
+                    break; // Отмычка подошла, прерываем цикл!
+                }
+            } catch (err) {
+                // Ключ от другого устройства, просто игнорируем и пробуем следующий
+                continue; 
+            }
         }
-
-        currentAesKey = await decryptChatKey(myEncryptedKey);
-
-        // 1. Мгновенная отрисовка из Кэша
-        const cachedHistory = await getChatFromCache(currentChatId);
-        document.getElementById('messages-area').innerHTML = '';
-        window.lastRenderedDate = null;
-
-        if (cachedHistory && cachedHistory.length > 0) {
-            for (const msg of cachedHistory) await processAndRenderMessage(msg, currentAesKey);
-        } else {
-            document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:var(--muted); margin-top: 40px;"><i class="fas fa-spinner fa-spin fa-2x"></i></div>';
-        }
-
-        // 2. Подтягиваем только НОВЫЕ сообщения (чтобы не грузить всё)
-        const lastMsgDate = cachedHistory && cachedHistory.length > 0 ? cachedHistory[cachedHistory.length - 1].created_at : null;
-
-        let query = supabaseClient.from('messages').select('*').eq('chat_id', currentChatId).order('created_at', { ascending: true });
-        if (lastMsgDate) query = query.gt('created_at', lastMsgDate); // Если есть кэш - просим БД дать только свежее!
-
-        const { data: newHistory } = await query;
-
-        // 3. Обновляем экран и базу
-        if (newHistory && newHistory.length > 0) {
-            if (!cachedHistory || cachedHistory.length === 0) document.getElementById('messages-area').innerHTML = '';
-            for (const msg of newHistory) await processAndRenderMessage(msg, currentAesKey);
-            await saveChatToCache(currentChatId, newHistory); // дозаписываем в кэш
-        } else if (!cachedHistory || cachedHistory.length === 0) {
-            document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:var(--muted); margin-top:40px;">Чат пуст</div>';
-        }
-
-        subscribeToPrivateMessages();
+    } catch (e) { 
+        // На случай, если в базе лежит просто строка, а не JSON (наследие старых версий)
+        console.warn("Не удалось распарсить JSON ключей, пробуем как строку");
+        try { successfullyDecryptedAes = await decryptChatKey(keyData.encrypted_key); } catch (err) {}
     }
+
+    // 2. Если ни один ключ не подошел (или чат новый) — генерируем заново
+    if (!successfullyDecryptedAes) {
+        console.error("❌ Ни один ключ не подошел, запускаем синхронизацию");
+        document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:#ff9800; padding: 20px; font-size: 14px;"><i class="fas fa-key" style="font-size: 24px; margin-bottom: 10px;"></i><br>Синхронизация ключей...</div>';
+        
+        currentAesKey = await generateChatKey();
+        const { data: friendData } = await supabaseClient.from('users').select('public_key').eq('tg_id', currentFriend.id).single();
+        const { data: myData } = await supabaseClient.from('users').select('public_key').eq('tg_id', currentUser.id).single();
+
+        let friendKeys = JSON.parse(friendData.public_key); if (friendKeys.kty) friendKeys = { "legacy": friendKeys };
+        let encKeysForFriend = {}; for (const [devId, pubJwk] of Object.entries(friendKeys)) encKeysForFriend[devId] = await encryptChatKeyForFriend(currentAesKey, pubJwk);
+
+        let myKeys = JSON.parse(myData.public_key); if (myKeys.kty) myKeys = { "legacy": myKeys };
+        let encKeysForMe = {}; for (const [devId, pubJwk] of Object.entries(myKeys)) encKeysForMe[devId] = await encryptChatKeyForFriend(currentAesKey, pubJwk);
+
+        await supabaseClient.from('chat_keys').update({ encrypted_key: JSON.stringify(encKeysForFriend) }).eq('chat_id', currentChatId).eq('user_id', currentFriend.id);
+        await supabaseClient.from('chat_keys').update({ encrypted_key: JSON.stringify(encKeysForMe) }).eq('chat_id', currentChatId).eq('user_id', currentUser.id);
+
+        document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:var(--muted); margin-top:40px;">История зашифрована старым ключом или чат пуст</div>';
+        subscribeToPrivateMessages();
+        return;
+    }
+
+    // 3. Сохраняем успешно расшифрованный ключ в глобальную переменную
+    currentAesKey = successfullyDecryptedAes;
+
+    // 4. Отрисовка сообщений (твой оригинальный рабочий код)
+    const cachedHistory = await getChatFromCache(currentChatId);
+    document.getElementById('messages-area').innerHTML = '';
+    window.lastRenderedDate = null;
+
+    if (cachedHistory && cachedHistory.length > 0) {
+        for (const msg of cachedHistory) await processAndRenderMessage(msg, currentAesKey);
+    } else {
+        document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:var(--muted); margin-top: 40px;"><i class="fas fa-spinner fa-spin fa-2x"></i></div>';
+    }
+
+    const lastMsgDate = cachedHistory && cachedHistory.length > 0 ? cachedHistory[cachedHistory.length - 1].created_at : null;
+
+    let query = supabaseClient.from('messages').select('*').eq('chat_id', currentChatId).order('created_at', { ascending: true });
+    if (lastMsgDate) query = query.gt('created_at', lastMsgDate); 
+
+    const { data: newHistory } = await query;
+
+    if (newHistory && newHistory.length > 0) {
+        if (!cachedHistory || cachedHistory.length === 0) document.getElementById('messages-area').innerHTML = '';
+        for (const msg of newHistory) await processAndRenderMessage(msg, currentAesKey);
+        await saveChatToCache(currentChatId, newHistory); 
+    } else if (!cachedHistory || cachedHistory.length === 0) {
+        document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:var(--muted); margin-top:40px;">Чат пуст</div>';
+    }
+
+    subscribeToPrivateMessages();
+}
+
 
     async function initApp() {
         const isAuth = await authUser();
