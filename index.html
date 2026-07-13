@@ -1813,13 +1813,15 @@
 
 
             // --- РЕШЕНИЕ ПРОБЛЕМЫ ---
-            // Удаляем строгие метки прав из самих ключей перед импортом
-            delete masterKeysJson.rsa.key_ops;
-            if (masterKeysJson.ecdsa) delete masterKeysJson.ecdsa.key_ops;
+            // Жестко прописываем права прямо в JSON, чтобы браузер не смел сомневаться
+            masterKeysJson.rsa.key_ops = ["decrypt"];
+            
+            if (masterKeysJson.ecdsa) {
+                masterKeysJson.ecdsa.key_ops = ["sign"];
+            }
             // -------------------------
             
             const rsaKey = await window.crypto.subtle.importKey("jwk", masterKeysJson.rsa, { name: "RSA-OAEP", hash: "SHA-256" }, true, ["decrypt"]);
-            // ИСПРАВЛЕННАЯ СТРОКА: Убрали "verify" из массива в самом конце
             const ecdsaKey = await window.crypto.subtle.importKey("jwk", masterKeysJson.ecdsa, { name: "ECDSA", namedCurve: "P-256" }, true, ["sign"]);
 
             await idbKeyval.set(`my_private_key_${currentUser.id}`, rsaKey);
