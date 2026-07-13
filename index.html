@@ -2170,12 +2170,19 @@ setTimeout(() => { aiWorker.postMessage({ type: 'init' }); }, 1000);
     }
 
 async function listenForDeviceRequests() {
-    // 1. Сначала ищем пропущенные (оффлайн) заявки
-    const { data: pendingRequests } = await supabaseClient
+    console.log("🔍 Начинаем поиск заявок для пользователя:", currentUser.id);
+
+    const { data: pendingRequests, error } = await supabaseClient
         .from('device_requests')
         .select('*')
         .eq('user_id', currentUser.id)
         .eq('status', 'pending');
+
+    if (error) {
+        console.error("❌ Ошибка при поиске заявок:", error);
+    } else {
+        console.log("✅ Найдено заявок:", pendingRequests?.length || 0);
+    }
 
     if (pendingRequests && pendingRequests.length > 0) {
         // Рендерим плашки для всех висящих заявок
