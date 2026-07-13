@@ -1767,24 +1767,21 @@
     }
 
     async function requestDeviceAccess() {
-    // 1. Показываем красивый экран ожидания
+    // 1. Отрисовка UI
     document.body.innerHTML = `
         <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; text-align:center; padding: 20px;">
             <i class="fas fa-desktop fa-beat" style="font-size:48px; color:var(--primary); margin-bottom:20px;"></i>
-            <h3>Авторизация устройства</h3>
-            <p style="color:var(--muted); font-size:14px;">Мы отправили запрос на ваше основное устройство (в Избранное). Нажмите «Подтвердить», чтобы передать ключи шифрования.</p>
+            <h3 id="sync-title">Авторизация устройства</h3>
+            <p id="sync-desc" style="color:var(--muted); font-size:14px;">Мы отправили запрос на ваше основное устройство. Нажмите «Разрешить», чтобы передать ключи.</p>
         </div>
     `;
 
-    // 2. Генерируем временный ключ (Транзитный)
-    const tempKeyPair = await window.crypto.subtle.generateKey(
-        { name: "RSA-OAEP", modulusLength: 4096, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, 
-        true, ["encrypt", "decrypt"]
-    );
+    // 2. Генерация одноразового ключа
+    const tempKeyPair = await window.crypto.subtle.generateKey( { name: "RSA-OAEP", modulusLength: 4096, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["encrypt", "decrypt"]);
     await idbKeyval.set('temp_sync_priv_key', tempKeyPair.privateKey);
     const tempPubJwk = await window.crypto.subtle.exportKey("jwk", tempKeyPair.publicKey);
 
-    // 3. Отправляем в Supabase
+    // 3. Отправка в БД
     let platform = tg.initDataUnsafe?.receiver?.platform || navigator.platform || "Неизвестное устройство";
     const { data: requestData, error } = await supabaseClient.from('device_requests').insert([
         { user_id: currentUser.id, device_name: platform, temp_pub_key: JSON.stringify(tempPubJwk), status: 'pending' }
@@ -1792,57 +1789,68 @@
 
     if (error) return alert("Ошибка отправки запроса");
 
-    // 4. Ждем ответа по веб-сокету
+    // === ФУНКЦИЯ РАСШИФРОВКИ (Сработает при успехе) ===
+    async function processApprovedRequest(payloadData) {
+        document.getElementById('sync-title').innerText = "Расшифровка...";
+        document.getElementById('sync-title').style.color = "var(--success)";
+        document.getElementById('sync-desc').innerText = "Доступ разрешен. Устанавливаем ключи.";
+
+        try {
+            const tempPrivKey = await idbKeyval.get('temp_sync_priv_key');
+            const finalPayload = JSON.parse(payloadData.encrypted_master_keys);
+            
+            const encryptedAesKeyBuffer = new Uint8Array(finalPayload.encryptedAesKey);
+            const iv = new Uint8Array(finalPayload.iv);
+            const encryptedMasterKeysBuffer = new Uint8Array(finalPayload.encryptedMasterKeys);
+
+            // Вскрываем матрешку
+            const rawAesKey = await window.crypto.subtle.decrypt({ name: "RSA-OAEP" }, tempPrivKey, encryptedAesKeyBuffer);
+            const tempAesKey = await window.crypto.subtle.importKey("raw", rawAesKey, { name: "AES-GCM" }, false, ["decrypt"]);
+            
+            const masterKeysRaw = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: iv }, tempAesKey, encryptedMasterKeysBuffer);
+            const dec = new TextDecoder();
+            const masterKeysJson = JSON.parse(dec.decode(masterKeysRaw));
+
+            const rsaKey = await window.crypto.subtle.importKey("jwk", masterKeysJson.rsa, { name: "RSA-OAEP", hash: "SHA-256" }, true, ["decrypt"]);
+            const ecdsaKey = await window.crypto.subtle.importKey("jwk", masterKeysJson.ecdsa, { name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+
+            await idbKeyval.set(`my_private_key_${currentUser.id}`, rsaKey);
+            await idbKeyval.set(`my_sign_key_${currentUser.id}`, ecdsaKey);
+            await idbKeyval.del('temp_sync_priv_key'); 
+            
+            // Чистим за собой БД (удаляем отработанную заявку)
+            await supabaseClient.from('device_requests').delete().eq('id', requestData.id);
+            
+            window.location.reload(); 
+        } catch (err) {
+            console.error(err);
+            document.getElementById('sync-title').innerText = "Ошибка повреждения ключей";
+            document.getElementById('sync-title').style.color = "var(--danger)";
+        }
+    }
+
+    // === СТРАТЕГИЯ 1: Веб-сокеты (Быстро, но может уснуть) ===
     supabaseClient.channel(`sync-waiter-${requestData.id}`)
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'device_requests', filter: `id=eq.${requestData.id}` }, 
-        async (payload) => {
-            if (payload.new.status === 'approved') {
-    document.body.innerHTML += '<div style="color:var(--success); margin-top:20px;">Доступ разрешен! Расшифровываем ключи...</div>';
-    
-    try {
-        const tempPrivKey = await idbKeyval.get('temp_sync_priv_key');
-        
-        // Разбираем нашу "матрёшку"
-        const finalPayload = JSON.parse(payload.new.encrypted_master_keys);
-        const encryptedAesKeyBuffer = new Uint8Array(finalPayload.encryptedAesKey);
-        const iv = new Uint8Array(finalPayload.iv);
-        const encryptedMasterKeysBuffer = new Uint8Array(finalPayload.encryptedMasterKeys);
-
-        // Шаг 1: Расшифровываем AES-ключ нашей временной RSA
-        const rawAesKey = await window.crypto.subtle.decrypt(
-            { name: "RSA-OAEP" }, tempPrivKey, encryptedAesKeyBuffer
-        );
-        const tempAesKey = await window.crypto.subtle.importKey(
-            "raw", rawAesKey, { name: "AES-GCM" }, false, ["decrypt"]
-        );
-
-        // Шаг 2: Расшифровываем главные ключи с помощью AES
-        const masterKeysRaw = await window.crypto.subtle.decrypt(
-            { name: "AES-GCM", iv: iv }, tempAesKey, encryptedMasterKeysBuffer
-        );
-
-        const dec = new TextDecoder();
-        const masterKeysJson = JSON.parse(dec.decode(masterKeysRaw));
-
-        // Шаг 3: Сохраняем в память и радуемся
-        const rsaKey = await window.crypto.subtle.importKey("jwk", masterKeysJson.rsa, { name: "RSA-OAEP", hash: "SHA-256" }, true, ["decrypt"]);
-        const ecdsaKey = await window.crypto.subtle.importKey("jwk", masterKeysJson.ecdsa, { name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
-
-        await idbKeyval.set(`my_private_key_${currentUser.id}`, rsaKey);
-        await idbKeyval.set(`my_sign_key_${currentUser.id}`, ecdsaKey);
-        await idbKeyval.del('temp_sync_priv_key'); 
-        
-        window.location.reload(); 
-        
-    } catch (err) {
-        console.error("Ошибка расшифровки:", err);
-        document.body.innerHTML += '<div style="color:var(--danger); margin-top:20px;">Ошибка повреждения ключей!</div>';
-    }
-} else if (payload.new.status === 'rejected') {
-                document.body.innerHTML += '<div style="color:var(--danger); margin-top:20px;">Запрос отклонен.</div>';
-            }
+        (payload) => {
+            if (payload.new.status === 'approved') processApprovedRequest(payload.new);
+            else if (payload.new.status === 'rejected') document.getElementById('sync-title').innerText = "Отклонено";
         }).subscribe();
-    }
+
+    // === СТРАТЕГИЯ 2: Polling (Надежно, проверяет БД каждые 3 секунды) ===
+    const pollInterval = setInterval(async () => {
+        const { data } = await supabaseClient.from('device_requests').select('*').eq('id', requestData.id).single();
+        if (data && data.status === 'approved') {
+            clearInterval(pollInterval);
+            processApprovedRequest(data);
+        } else if (data && data.status === 'rejected') {
+            clearInterval(pollInterval);
+            document.getElementById('sync-title').innerText = "Отклонено";
+            document.getElementById('sync-desc').innerText = "Основное устройство запретило доступ.";
+        }
+    }, 3000);
+}
+
 
 
     async function generatePersonalArmor(userId) {
