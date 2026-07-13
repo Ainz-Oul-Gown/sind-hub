@@ -507,7 +507,7 @@
 
         const deviceId = getDeviceId();
         const keysDict = JSON.parse(keyData.encrypted_key);
-        const myEncryptedGroupKey = keysDict[deviceId] || keysDict["legacy_dev"] || keysDict["legacy"];
+        const myEncryptedGroupKey = keysDict["master"] || keysDict[deviceId] || keysDict["legacy_dev"] || keysDict["legacy"];
         const groupAesKey = await decryptChatKey(myEncryptedGroupKey);
 
         // 3. Берем публичные ключи друга
@@ -2070,8 +2070,11 @@ async function checkCryptoKeys(userId) {
         const deviceId = getDeviceId();
         let myEncryptedKey = null;
 
-        try { const keysDict = JSON.parse(keyData.encrypted_key); myEncryptedKey = keysDict[deviceId] || keysDict["legacy_dev"] || keysDict["legacy"]; } 
-        catch (e) { myEncryptedKey = keyData.encrypted_key; }
+        try { 
+            const keysDict = JSON.parse(keyData.encrypted_key); 
+            // Добавляем проверку на "master" в самое начало!
+            myEncryptedKey = keysDict["master"] || keysDict[deviceId] || keysDict["legacy_dev"] || keysDict["legacy"]; 
+        } catch (e) { myEncryptedKey = keyData.encrypted_key; }
 
         if (!myEncryptedKey) {
             document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:#ff9800; padding: 20px; font-size: 14px;"><i class="fas fa-key" style="font-size: 24px; margin-bottom: 10px;"></i><br>Синхронизация ключей...</div>';
