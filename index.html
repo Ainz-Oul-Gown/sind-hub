@@ -2169,18 +2169,32 @@ listenForDeviceRequests(); // <-- Не забудь добавить просл�
 setTimeout(() => { aiWorker.postMessage({ type: 'init' }); }, 1000);
     }
 
-function listenForDeviceRequests() {
+async function listenForDeviceRequests() {
+    // 1. Сначала ищем пропущенные (оффлайн) заявки
+    const { data: pendingRequests } = await supabaseClient
+        .from('device_requests')
+        .select('*')
+        .eq('user_id', currentUser.id)
+        .eq('status', 'pending');
+
+    if (pendingRequests && pendingRequests.length > 0) {
+        // Рендерим плашки для всех висящих заявок
+        for (const req of pendingRequests) {
+            renderDeviceRequestBubble(req);
+        }
+    }
+
+    // 2. Подписываемся на веб-сокеты для новых (онлайн) заявок
     supabaseClient.channel('admin-device-requests')
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'device_requests', filter: `user_id=eq.${currentUser.id}` }, 
         (payload) => {
             const req = payload.new;
             if (req.status === 'pending') {
-                // Если у тебя открыт чат "Избранное", рисуем плашку прямо там.
-                // Иначе показываем всплывающее уведомление сверху.
                 renderDeviceRequestBubble(req);
             }
         }).subscribe();
 }
+
 
 
 function renderDeviceRequestBubble(requestData) {
