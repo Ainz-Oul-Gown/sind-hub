@@ -2205,34 +2205,42 @@ async function listenForDeviceRequests() {
 
 
 function renderDeviceRequestBubble(requestData) {
-    const area = document.getElementById('messages-area');
-    if (!area) return; // Если мы не в чате, можно сделать глобальный alert
+    // Ждем 1.5 секунды, чтобы твой основной интерфейс (и AI Loading) точно успел прогрузиться
+    setTimeout(() => {
+        // Защита от дублей, если функция вызовется дважды
+        if (document.getElementById(`device-req-${requestData.id}`)) return;
 
-    // Упаковываем публичный ключ в base64, чтобы не сломать HTML кавычками
-    const safePubKey = btoa(requestData.temp_pub_key);
-
-    const div = document.createElement('div');
-    div.className = 'msg-bubble msg-other'; // Делаем визуально как входящее системное сообщение
-    div.id = `device-req-${requestData.id}`;
-    
-    div.innerHTML = `
-        <div style="display:flex; align-items:center; gap:10px; background: rgba(255, 159, 10, 0.1); border: 1px solid rgba(255, 159, 10, 0.3); padding: 12px; border-radius: 12px;">
-            <div style="width: 40px; height: 40px; border-radius: 50%; background: var(--surface); display:flex; align-items:center; justify-content:center; color: #FF9F0A;"><i class="fas fa-shield-alt"></i></div>
-            <div style="flex-grow: 1;">
-                <div style="font-weight: 600; margin-bottom: 2px;">Новый вход</div>
-                <div style="font-size: 12px; color: var(--muted); margin-bottom: 8px;">Устройство: ${escapeHTML(requestData.device_name)}</div>
-                <div style="display: flex; gap: 8px;">
-                    <button onclick="handleDeviceDecision('${requestData.id}', '${safePubKey}', 'approved', this)" style="background: var(--success); color: white; border: none; padding: 6px 12px; border-radius: 8px; font-weight: 600; cursor: pointer; flex-grow: 1;">Разрешить</button>
-                    <button onclick="handleDeviceDecision('${requestData.id}', '', 'rejected', this)" style="background: var(--surface); color: var(--danger); border: 1px solid var(--border); padding: 6px 12px; border-radius: 8px; font-weight: 600; cursor: pointer; flex-grow: 1;">Отклонить</button>
+        const safePubKey = btoa(requestData.temp_pub_key);
+        
+        const alertDiv = document.createElement('div');
+        alertDiv.id = `device-req-${requestData.id}`;
+        
+        // Максимальный z-index и позиционирование, чтобы перекрыть вообще всё
+        alertDiv.style.cssText = "position: fixed; top: 15px; left: 15px; right: 15px; z-index: 2147483647; background: var(--surface, #2b2b2b); border: 2px solid #FF9F0A; padding: 16px; border-radius: 16px; box-shadow: 0 15px 30px rgba(0,0,0,0.8); transition: 0.3s;";
+        
+        alertDiv.innerHTML = `
+            <div style="display:flex; align-items:center; gap:12px; margin-bottom: 12px;">
+                <div style="width: 40px; height: 40px; border-radius: 50%; background: rgba(255, 159, 10, 0.2); display:flex; align-items:center; justify-content:center; color: #FF9F0A; font-size: 20px; flex-shrink: 0;">
+                    <i class="fas fa-mobile-alt"></i>
+                </div>
+                <div>
+                    <div style="font-weight: bold; font-size: 16px; color: #fff;">Запрос на вход</div>
+                    <div style="font-size: 13px; color: var(--muted, #aaa); line-height: 1.2;">Новое устройство пытается получить доступ к ключам шифрования.<br><br><b>${escapeHTML(requestData.device_name)}</b></div>
                 </div>
             </div>
-        </div>
-    `;
+            <div style="display: flex; gap: 8px;">
+                <button onclick="handleDeviceDecision('${requestData.id}', '${safePubKey}', 'approved', this)" style="background: var(--success, #34c759); color: white; border: none; padding: 10px; border-radius: 8px; font-weight: 600; cursor: pointer; flex-grow: 1;">Разрешить</button>
+                <button onclick="handleDeviceDecision('${requestData.id}', '', 'rejected', this)" style="background: rgba(255,255,255,0.1); color: var(--danger, #ff3b30); border: none; padding: 10px; border-radius: 8px; font-weight: 600; cursor: pointer; flex-grow: 1;">Отклонить</button>
+            </div>
+        `;
 
-    area.appendChild(div);
-    area.scrollTo({ top: area.scrollHeight, behavior: 'smooth' });
-    if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('warning');
+        // Добавляем прямо в корень документа, чтобы не зависеть от body
+        document.documentElement.appendChild(alertDiv);
+        
+        if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('warning');
+    }, 1500); // Задержка 1.5 сек
 }
+
 
 // Финальная магия: Обработка нажатия
 async function handleDeviceDecision(requestId, safePubKey, status, btnElement) {
