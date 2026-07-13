@@ -1797,27 +1797,48 @@
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'device_requests', filter: `id=eq.${requestData.id}` }, 
         async (payload) => {
             if (payload.new.status === 'approved') {
-                document.body.innerHTML += '<div style="color:var(--success); margin-top:20px;">Доступ разрешен! Расшифровываем ключи...</div>';
-                
-                // Расшифровываем Мастер-ключи
-                const tempPrivKey = await idbKeyval.get('temp_sync_priv_key');
-                const encryptedData = atob(payload.new.encrypted_master_keys);
-                const encryptedBuffer = new Uint8Array(encryptedData.length);
-                for (let i = 0; i < encryptedData.length; i++) encryptedBuffer[i] = encryptedData.charCodeAt(i);
-                
-                const masterKeysRaw = await window.crypto.subtle.decrypt({ name: "RSA-OAEP" }, tempPrivKey, encryptedBuffer);
-                const masterKeysJson = JSON.parse(dec.decode(masterKeysRaw));
+    document.body.innerHTML += '<div style="color:var(--success); margin-top:20px;">Доступ разрешен! Расшифровываем ключи...</div>';
+    
+    try {
+        const tempPrivKey = await idbKeyval.get('temp_sync_priv_key');
+        
+        // Разбираем нашу "матрёшку"
+        const finalPayload = JSON.parse(payload.new.encrypted_master_keys);
+        const encryptedAesKeyBuffer = new Uint8Array(finalPayload.encryptedAesKey);
+        const iv = new Uint8Array(finalPayload.iv);
+        const encryptedMasterKeysBuffer = new Uint8Array(finalPayload.encryptedMasterKeys);
 
-                // Сохраняем в IndexedDB и перезагружаемся
-                const rsaKey = await window.crypto.subtle.importKey("jwk", masterKeysJson.rsa, { name: "RSA-OAEP", hash: "SHA-256" }, true, ["decrypt"]);
-                const ecdsaKey = await window.crypto.subtle.importKey("jwk", masterKeysJson.ecdsa, { name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+        // Шаг 1: Расшифровываем AES-ключ нашей временной RSA
+        const rawAesKey = await window.crypto.subtle.decrypt(
+            { name: "RSA-OAEP" }, tempPrivKey, encryptedAesKeyBuffer
+        );
+        const tempAesKey = await window.crypto.subtle.importKey(
+            "raw", rawAesKey, { name: "AES-GCM" }, false, ["decrypt"]
+        );
 
-                await idbKeyval.set(`my_private_key_${currentUser.id}`, rsaKey);
-                await idbKeyval.set(`my_sign_key_${currentUser.id}`, ecdsaKey);
-                await idbKeyval.del('temp_sync_priv_key'); 
-                
-                window.location.reload(); // Перезапускаем приложение уже с ключами
-            } else if (payload.new.status === 'rejected') {
+        // Шаг 2: Расшифровываем главные ключи с помощью AES
+        const masterKeysRaw = await window.crypto.subtle.decrypt(
+            { name: "AES-GCM", iv: iv }, tempAesKey, encryptedMasterKeysBuffer
+        );
+
+        const dec = new TextDecoder();
+        const masterKeysJson = JSON.parse(dec.decode(masterKeysRaw));
+
+        // Шаг 3: Сохраняем в память и радуемся
+        const rsaKey = await window.crypto.subtle.importKey("jwk", masterKeysJson.rsa, { name: "RSA-OAEP", hash: "SHA-256" }, true, ["decrypt"]);
+        const ecdsaKey = await window.crypto.subtle.importKey("jwk", masterKeysJson.ecdsa, { name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+
+        await idbKeyval.set(`my_private_key_${currentUser.id}`, rsaKey);
+        await idbKeyval.set(`my_sign_key_${currentUser.id}`, ecdsaKey);
+        await idbKeyval.del('temp_sync_priv_key'); 
+        
+        window.location.reload(); 
+        
+    } catch (err) {
+        console.error("Ошибка расшифровки:", err);
+        document.body.innerHTML += '<div style="color:var(--danger); margin-top:20px;">Ошибка повреждения ключей!</div>';
+    }
+} else if (payload.new.status === 'rejected') {
                 document.body.innerHTML += '<div style="color:var(--danger); margin-top:20px;">Запрос отклонен.</div>';
             }
         }).subscribe();
@@ -2242,7 +2263,6 @@ function renderDeviceRequestBubble(requestData) {
 }
 
 
-// Финальная магия: Обработка нажатия
 async function handleDeviceDecision(requestId, safePubKey, status, btnElement) {
     btnElement.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
     btnElement.disabled = true;
@@ -2250,31 +2270,63 @@ async function handleDeviceDecision(requestId, safePubKey, status, btnElement) {
     let updatePayload = { status: status };
 
     if (status === 'approved') {
-        // 1. Достаем НАШИ реальные ключи
-        const myPrivRsa = await idbKeyval.get(`my_private_key_${currentUser.id}`);
-        const myPrivEcdsa = await idbKeyval.get(`my_sign_key_${currentUser.id}`);
-        
-        const rsaJwk = await window.crypto.subtle.exportKey("jwk", myPrivRsa);
-        const ecdsaJwk = await window.crypto.subtle.exportKey("jwk", myPrivEcdsa);
-        const keysPayload = JSON.stringify({ rsa: rsaJwk, ecdsa: ecdsaJwk });
+        try {
+            // 1. Достаем наши ключи и делаем из них строку
+            const myPrivRsa = await idbKeyval.get(`my_private_key_${currentUser.id}`);
+            const myPrivEcdsa = await idbKeyval.get(`my_sign_key_${currentUser.id}`);
+            
+            const rsaJwk = await window.crypto.subtle.exportKey("jwk", myPrivRsa);
+            const ecdsaJwk = await window.crypto.subtle.exportKey("jwk", myPrivEcdsa);
+            const keysPayload = JSON.stringify({ rsa: rsaJwk, ecdsa: ecdsaJwk });
+            const enc = new TextEncoder();
+            const encodedPayload = enc.encode(keysPayload);
 
-        // 2. Шифруем их транзитным ключом нового устройства
-        const tempPubKeyJson = atob(safePubKey);
-        const newDevicePubKey = await window.crypto.subtle.importKey("jwk", JSON.parse(tempPubKeyJson), { name: "RSA-OAEP", hash: "SHA-256" }, true, ["encrypt"]);
-        
-        const encryptedBuffer = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, newDevicePubKey, enc.encode(keysPayload));
-        updatePayload.encrypted_master_keys = btoa(String.fromCharCode.apply(null, new Uint8Array(encryptedBuffer)));
+            // 2. Генерируем одноразовый AES-ключ (потому что RSA не тянет большой вес)
+            const tempAesKey = await window.crypto.subtle.generateKey(
+                { name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]
+            );
+
+            // 3. Шифруем наши огромные ключи этим маленьким AES-ключом
+            const iv = window.crypto.getRandomValues(new Uint8Array(12));
+            const encryptedMasterKeysBuffer = await window.crypto.subtle.encrypt(
+                { name: "AES-GCM", iv: iv }, tempAesKey, encodedPayload
+            );
+
+            // 4. Экспортируем AES-ключ и шифруем ЕГО с помощью RSA нового устройства
+            const exportedAesKey = await window.crypto.subtle.exportKey("raw", tempAesKey);
+            const tempPubKeyJson = atob(safePubKey);
+            const newDevicePubKey = await window.crypto.subtle.importKey("jwk", JSON.parse(tempPubKeyJson), { name: "RSA-OAEP", hash: "SHA-256" }, true, ["encrypt"]);
+            
+            const encryptedAesKeyBuffer = await window.crypto.subtle.encrypt(
+                { name: "RSA-OAEP" }, newDevicePubKey, exportedAesKey
+            );
+
+            // 5. Упаковываем всё в массив чисел (самый надежный способ передачи без лимитов base64)
+            const finalPayload = {
+                encryptedAesKey: Array.from(new Uint8Array(encryptedAesKeyBuffer)),
+                iv: Array.from(iv),
+                encryptedMasterKeys: Array.from(new Uint8Array(encryptedMasterKeysBuffer))
+            };
+            
+            updatePayload.encrypted_master_keys = JSON.stringify(finalPayload);
+            
+        } catch (err) {
+            console.error("Ошибка криптографии:", err);
+            btnElement.innerHTML = 'Ошибка';
+            return;
+        }
     }
 
-    // 3. Отправляем ответ в БД (новое устройство получит его по сокету)
+    // 6. Отправляем ответ в БД
     await supabaseClient.from('device_requests').update(updatePayload).eq('id', requestId);
 
-    // 4. Красим интерфейс
-    const container = btnElement.closest('.msg-bubble').querySelector('div');
-    container.innerHTML = status === 'approved' 
-        ? `<div style="color:var(--success); font-weight: 600;"><i class="fas fa-check-circle"></i> Доступ разрешен</div>`
-        : `<div style="color:var(--danger); font-weight: 600;"><i class="fas fa-times-circle"></i> Доступ отклонен</div>`;
+    // Удаляем плашку после успеха
+    const alertDiv = document.getElementById(`device-req-${requestId}`);
+    if (alertDiv) {
+        alertDiv.remove();
+    }
 }
+
 
 
     async function loadMyStatus() {
