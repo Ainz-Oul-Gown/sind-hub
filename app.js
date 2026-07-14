@@ -180,24 +180,36 @@ document.addEventListener('DOMContentLoaded', async () => {
         window.isBulkLoading = false; 
         
         if (window.chatRenderLimit <= 30) {
-            // 1. Предварительный прыжок (для надежности)
-            area.scrollTop = area.scrollHeight; 
-            
-            // 2. Даем браузеру 20 миллисекунд (ровно 1-2 кадра экрана), 
-            // чтобы он успел высчитать точную высоту текста всех 30 сообщений
-            setTimeout(() => {
-                // Контрольный прыжок в самый низ перед тем, как показать чат
-                area.scrollTop = area.scrollHeight; 
+            // 1. Создаем тот самый "Магнит" (невидимый якорь)
+            const magnet = document.createElement('div');
+            magnet.style.height = '1px';
+            magnet.style.width = '100%';
+            magnet.style.clear = 'both';
+            area.appendChild(magnet);
+
+            // 2. Используем requestAnimationFrame (это гарантия, что браузер уже начал рисовать DOM)
+            requestAnimationFrame(() => {
+                // Примагничиваемся к нашему якорю
+                magnet.scrollIntoView({ behavior: 'auto', block: 'end' });
                 
-                // Плавно проявляем
-                area.style.transition = 'opacity 0.2s ease-out';
-                area.style.opacity = '1';
-                
-                setTimeout(() => area.style.transition = '', 200);
-            }, 20);
+                // Даем браузеру 20мс на финальную отрисовку графиков и плееров
+                setTimeout(() => {
+                    // Контрольный магнит (на случай, если картинки/графики раздвинули чат)
+                    magnet.scrollIntoView({ behavior: 'auto', block: 'end' });
+                    
+                    // Плавно проявляем чат
+                    area.style.transition = 'opacity 0.15s ease-out';
+                    area.style.opacity = '1';
+                    
+                    setTimeout(() => {
+                        area.style.transition = '';
+                        magnet.remove(); // Убираем магнит, он сделал свое дело
+                    }, 200);
+                }, 20);
+            });
             
         } else {
-            // Подгрузка истории при свайпе вверх
+            // Подгрузка истории при свайпе вверх (оставляем вас на месте)
             area.scrollTop = area.scrollHeight - oldScrollHeight + oldScrollTop;
         }
     }
@@ -1765,9 +1777,13 @@ function initiateReply(msgElement) {
 
         if (isNew) {
             area.appendChild(div);
-            // Скроллим плавно, ТОЛЬКО если это не массовая загрузка чата
+            
+            // Если мы прямо сейчас переписываемся (это не массовая загрузка)
             if (!window.isBulkLoading) {
-                area.scrollTo({ top: area.scrollHeight, behavior: 'smooth' });
+                // Используем надежный магнит к только что созданному сообщению (div)
+                requestAnimationFrame(() => {
+                    div.scrollIntoView({ behavior: 'smooth', block: 'end' });
+                });
             }
         }
     }
