@@ -1206,8 +1206,11 @@ function initiateReply(msgElement) {
         // Вшиваем WF (WaveForm) в маркер!
         const textMarker = `[VOICE]:${fileName}|WF:${wfStr}`; 
         
-        // --- НОВОЕ: ПЕРЕДАЕМ ОТВЕТ В ГС ---
-        const encryptedPayloadText = await encryptText(textMarker, currentAesKey, currentReplyTo);
+        // --- СОХРАНЯЕМ ОТВЕТ ВО ВРЕМЕННУЮ ПАМЯТЬ ---
+        const savedReplyTo = currentReplyTo; 
+        
+        // --- ПЕРЕДАЕМ ОТВЕТ В ГС ---
+        const encryptedPayloadText = await encryptText(textMarker, currentAesKey, savedReplyTo);
         
         currentReplyTo = null;
         const replyBar = document.getElementById('reply-preview-bar');
@@ -1231,14 +1234,19 @@ function initiateReply(msgElement) {
             const encryptedVector = await generateAndEncryptVector(transcribedText, currentAesKey);
             // Добавляем перевод после графика
             const newMarker = `[VOICE]:${fileName}|WF:${wfStr}|${transcribedText.trim()}`;
-            const newEncryptedText = await encryptText(newMarker, currentAesKey);
+            
+            // ПЕРЕДАЕМ savedReplyTo ВО ВТОРОЙ РАЗ, ЧТОБЫ ОТВЕТ НЕ ЗАТЕРСЯ!
+            const newEncryptedText = await encryptText(newMarker, currentAesKey, savedReplyTo);
 
             await supabaseClient.from('messages').update({ encrypted_text: newEncryptedText, encrypted_vector: encryptedVector }).eq('id', insertedMsg.id);
         } catch (e) {
             try {
                 // Если ИИ сломался, всё равно оставляем график!
                 const errorMarker = `[VOICE]:${fileName}|WF:${wfStr}|❌ Ошибка: ${e.message}`;
-                const errorEncryptedText = await encryptText(errorMarker, currentAesKey);
+                
+                // ЗДЕСЬ ТОЖЕ ПЕРЕДАЕМ savedReplyTo!
+                const errorEncryptedText = await encryptText(errorMarker, currentAesKey, savedReplyTo);
+                
                 await supabaseClient.from('messages').update({ encrypted_text: errorEncryptedText }).eq('id', insertedMsg.id);
             } catch (fallbackErr) {}
         }
@@ -3257,9 +3265,9 @@ async function checkCryptoKeys(userId) {
 
             if (!isAuthentic) {
                 // Хакер спалился
-                renderMessage("🚨 [БЛОКИРОВКА: Цифровая подпись не совпадает! Текст подделан]", msg.sender_id === currentUser.id, timeStr, msg.id, msgDate, senderName, msg.sender_id);
+                renderMessage("🚨 [БЛОКИРОВКА: Цифровая подпись не совпадает! Текст подделан]", msg.sender_id === currentUser.id, timeStr, msg.id, msgDate, senderName, msg.sender_id, replyData);
             } else {
-                renderMessage(finalPlainText, msg.sender_id === currentUser.id, timeStr, msg.id, msgDate, senderName, msg.sender_id);
+                renderMessage(finalPlainText, msg.sender_id === currentUser.id, timeStr, msg.id, msgDate, senderName, msg.sender_id, replyData);
             }
         } catch (e) {
             renderMessage("🔒 [Ошибка расшифровки]", msg.sender_id === currentUser.id, timeStr, msg.id, msgDate, senderName, msg.sender_id);
