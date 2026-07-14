@@ -3487,6 +3487,14 @@ async function checkCryptoKeys(userId) {
             case 'panic-wipe':
                 if(confirm("🚨 ТРЕВОГА!\n\nЭто действие мгновенно:\n1. Сотрет все RSA и AES ключи\n2. Удалит кэш сообщений\n3. Выбросит из аккаунта\n\nПродолжить?")) {
                     
+                    // --- НОВОЕ: Стираем устройство из базы данных Синдиката ---
+                    const devId = localStorage.getItem('syndicate_device_id');
+                    if (devId && currentUser) {
+                        // Пытаемся удалить, игнорируем ошибки, если сети нет (главное стереть локально)
+                        try { await supabaseClient.from('user_devices').delete().eq('device_id', devId); } catch(e){}
+                    }
+                    // ----------------------------------------------------------
+
                     // 1. Уничтожаем все ключи шифрования и историю переписок!
                     await idbKeyval.clear(); 
                     
