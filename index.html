@@ -3785,12 +3785,12 @@ async function checkCryptoKeys(userId) {
             chatsSizeBytes += JSON.stringify(data.history).length * 2;
         }
 
-        // 2. Считаем кэш медиа (Cache Storage API)
+        // 2. Считаем кэш медиа (ТОЛЬКО syndicate-media-cache)
         let mediaSizeBytes = 0;
         try {
-            const cacheNames = await caches.keys();
-            for (let name of cacheNames) {
-                const cache = await caches.open(name);
+            const hasMediaCache = await caches.has('syndicate-media-cache');
+            if (hasMediaCache) {
+                const cache = await caches.open('syndicate-media-cache');
                 const requests = await cache.keys();
                 for (let req of requests) {
                     const response = await cache.match(req);
@@ -3800,7 +3800,7 @@ async function checkCryptoKeys(userId) {
                     }
                 }
             }
-        } catch(e) {} // Если кэшей нет или API не поддерживается
+        } catch(e) {}
 
         const chatsMB = (chatsSizeBytes / (1024 * 1024)).toFixed(2);
         const mediaMB = (mediaSizeBytes / (1024 * 1024)).toFixed(2);
@@ -3858,11 +3858,8 @@ async function checkCryptoKeys(userId) {
         if(!confirm("Очистить кэш скачанных голосовых сообщений и медиа?")) return;
         
         try {
-            // Удаляем все кэши из Cache API браузера
-            const cacheNames = await caches.keys();
-            for (let name of cacheNames) {
-                await caches.delete(name);
-            }
+            // Удаляем ТОЛЬКО кэш медиа, не трогаем transformers-cache
+            await caches.delete('syndicate-media-cache');
         } catch(e) {
             console.error("Ошибка очистки кэша:", e);
         }
