@@ -1533,25 +1533,49 @@ function initiateReply(msgElement) {
         if (text.startsWith('[VOICE]:')) {
             div.classList.add('voice-msg');
 
-            const parts = text.replace('[VOICE]:', '').split('|');
+            // Убираем маркер и делим по разделителю |
+            const rawParams = text.replace('[VOICE]:', '');
+            const parts = rawParams.split('|');
             const fileName = parts[0];
 
             let wfStr = null;
-            let transcriptionText = ''; // Убрали дефолт
+            let transcriptionText = '';
             let hasTranscript = false;
+            let isProcessing = false;
+            let isError = false;
 
+            // Умный поиск графика и текста перевода
             for (let i = 1; i < parts.length; i++) {
-                if (parts[i].startsWith('WF:')) {
-                    wfStr = parts[i].substring(3);
-                } else {
-                    transcriptionText = parts[i];
-                    // Если это не системные маркеры ожидания или ошибки — значит это настоящий перевод
-                    if (!transcriptionText.includes('⏳ ИИ анализирует...') && !transcriptionText.includes('❌ Ошибка')) {
-                        hasTranscript = true;
+                const part = parts[i].trim();
+                if (part.startsWith('WF:')) {
+                    wfStr = part.substring(3);
+                } else if (part.length > 0) {
+                    transcriptionText = part;
+                    if (transcriptionText.includes('⏳') || transcriptionText.includes('анализирует')) {
+                        isProcessing = true;
+                    } else if (transcriptionText.includes('❌') || transcriptionText.includes('Ошибка')) {
+                        isError = true;
+                    } else {
+                        hasTranscript = true; // Настоящий текст найден!
                     }
                 }
             }
 
+            // Формируем HTML нижней плашки
+            let transcriptHtml = '';
+            if (hasTranscript) {
+                transcriptHtml = `
+                    <div class="transcript-toggle" data-action="toggle-transcript"><i class="fas fa-chevron-down"></i> Показать перевод</div>
+                    <div class="transcript-content" style="display:none;">${escapeHTML(transcriptionText)}</div>
+                `;
+            } else if (isProcessing || isError) {
+                transcriptHtml = `<div class="transcript-toggle" style="cursor:default;">${escapeHTML(transcriptionText)}</div>`;
+            } else {
+                // Если текста нет вообще - ЖЕЛЕЗОБЕТОННО рисуем синюю кнопку!
+                transcriptHtml = `<div class="transcript-toggle" style="cursor:pointer; color: var(--primary);" data-action="manual-transcribe" data-filename="${rawParams}" data-msgid="${msgId}"><i class="fas fa-magic"></i> Расшифровать текст</div>`;
+            }
+
+            // Рисуем график
             let barsHtml = '';
             if (wfStr) {
                 const vals = wfStr.split(',').map(Number);
@@ -1566,22 +1590,9 @@ function initiateReply(msgElement) {
                 }
             }
 
-            let transcriptHtml = '';
-            if (hasTranscript) {
-                transcriptHtml = `
-                    <div class="transcript-toggle" data-action="toggle-transcript"><i class="fas fa-chevron-down"></i> Показать перевод</div>
-                    <div class="transcript-content" style="display:none;">${escapeHTML(transcriptionText)}</div>
-                `;
-            } else if (transcriptionText.includes('⏳ ИИ анализирует') || transcriptionText.includes('❌ Ошибка')) {
-                transcriptHtml = `<div class="transcript-toggle" style="cursor:default;">${escapeHTML(transcriptionText)}</div>`;
-            } else {
-                // Если текста вообще нет (авто-режим был выключен) - рисуем кнопку!
-                const safeFileParam = text.replace('[VOICE]:', '');
-                transcriptHtml = `<div class="transcript-toggle" style="cursor:pointer; color: var(--primary);" data-action="manual-transcribe" data-filename="${safeFileParam}" data-msgid="${msgId}"><i class="fas fa-magic"></i> Расшифровать текст</div>`;
-            }
-
+            // Сборка сообщения (с защитой плеера от прерываний)
             if (isNew || !div.querySelector('.voice-player')) {
-                // Сообщение грузится впервые (или плеера еще нет) — рисуем всё с нуля
+                // Если это новое сообщение, рисуем плеер и кнопку с нуля
                 div.innerHTML = senderHtml + replyHtml + `
                     <div class="voice-player">
                         <div class="voice-play-btn" data-action="play-voice" data-filename="${fileName}">
@@ -1594,10 +1605,9 @@ function initiateReply(msgElement) {
                     ${transcriptHtml}
                 `;
             } else {
-                // Это обновление (ИИ закончил перевод). Меняем ТОЛЬКО текст, не трогая плеер!
+                // Это просто обновление текста от ИИ — меняем только текст, плеер не трогаем!
                 const oldToggle = div.querySelector('.transcript-toggle');
                 const oldContent = div.querySelector('.transcript-content');
-                
                 if (oldContent) oldContent.remove();
                 if (oldToggle) oldToggle.outerHTML = transcriptHtml;
             }
