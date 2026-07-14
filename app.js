@@ -1,4 +1,20 @@
 
+
+// Ждем, пока весь HTML полностью загрузится
+document.addEventListener('DOMContentLoaded', async () => {
+    console.log("🚀 Синдикат: Интерфейс загружен, запускаем логику...");
+    
+    // Если используешь Telegram WebApp API
+    if (window.Telegram && window.Telegram.WebApp) {
+        window.Telegram.WebApp.ready();
+        window.Telegram.WebApp.expand();
+    }
+
+    // Твои стартовые функции
+    initApp();
+    checkAuth();
+});
+
     let currentChatType = 'private'; // 'private' или 'group'
     let currentGroup = null; // {id, name}
     window.currentGroupUsers = {}; // Словарь { tg_id: "Имя" } для отображения над сообщениями
