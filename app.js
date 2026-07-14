@@ -1179,12 +1179,12 @@ function initiateReply(msgElement) {
                 const btn = document.getElementById('btn-download-whisper');
                 if (btn) btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Загрузка ${msg.percent}%`;
             }
-            // НОВОЕ: Показываем прогресс загрузки модели прямо в чате на кнопке!
+            
+            // ИСПРАВЛЕНИЕ: Теперь мы не привязываемся к тексту, поэтому проценты не зависнут!
             document.querySelectorAll('.transcript-toggle[data-action=""]').forEach(el => {
-                if (el.innerHTML.includes('Слушаю...')) {
-                    el.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ИИ качается: ${msg.percent}%`;
-                }
+                el.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Запуск ИИ: ${msg.percent}%`;
             });
+            
         } else if (msg.type === 'ready') {
             isAiReady = true;
             if (window.isWhisperDownloading) {
@@ -1192,12 +1192,12 @@ function initiateReply(msgElement) {
                 calculateAiStorage(); // Вернет кнопки в правильное состояние
                 if(window.Telegram && window.Telegram.WebApp.HapticFeedback) window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
             }
-            // Когда скачалось — пишем "Перевожу"
+            
+            // Когда модель загрузилась в оперативную память — пишем статус перевода
             document.querySelectorAll('.transcript-toggle[data-action=""]').forEach(el => {
-                if (el.innerHTML.includes('ИИ качается:')) {
-                    el.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Перевожу...`;
-                }
+                el.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Перевожу...`;
             });
+            
         } else if (msg.type === 'error') {
             if (window.isWhisperDownloading) {
                 window.isWhisperDownloading = false;
@@ -1206,6 +1206,7 @@ function initiateReply(msgElement) {
             }
         }
     };
+
 
 
     function transcribeViaWorker(audioFloat32Array) {
