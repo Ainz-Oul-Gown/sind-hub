@@ -109,7 +109,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     });
 
-    
+    // === СЛУШАТЕЛЬ СКРОЛЛА: Показ кнопки "Вниз" ===
+    const msgArea = document.getElementById('messages-area');
+    const scrollBottomBtn = document.getElementById('scroll-bottom-btn');
+    if (msgArea && scrollBottomBtn) {
+        msgArea.addEventListener('scroll', () => {
+            // В перевернутом чате скролл начинается от 0 и растет по мере листания истории
+            if (Math.abs(msgArea.scrollTop) > 300) {
+                scrollBottomBtn.classList.add('active'); // Показываем кнопку
+            } else {
+                scrollBottomBtn.classList.remove('active'); // Прячем
+            }
+        });
+    }
     
 });
 
@@ -1726,8 +1738,14 @@ function initiateReply(msgElement) {
         }
 
         if (isNew) {
-            area.prepend(div); // <--- ИЗМЕНИТЬ appendChild НА prepend
-            // БОЛЬШЕ НИКАКИХ СКРИПТОВ СКРОЛЛА! Браузер сам держит нас внизу.
+            area.prepend(div); 
+            // ⚡ Если это МОЁ сообщение — плавно отправляем меня в самый низ ⚡
+            if (isMine) {
+                // requestAnimationFrame нужен, чтобы браузер успел отрисовать пузырь
+                requestAnimationFrame(() => {
+                    area.scrollTo({ top: 0, behavior: 'smooth' });
+                });
+            }
         }
     }
 
@@ -4129,6 +4147,11 @@ async function checkCryptoKeys(userId) {
                 helpFriendTranscribe(target.dataset.filename, target.dataset.msgid);
                 break;
 
+            case 'scroll-to-bottom':
+                const msgArea = document.getElementById('messages-area');
+                if (msgArea) msgArea.scrollTo({ top: 0, behavior: 'smooth' });
+                break;
+                
             case 'open-pwa': openPWA(); break;
             case 'toggle-status': toggleStatus(); break;
             case 'create-group': handleCreateGroup(); break;
