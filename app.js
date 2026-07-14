@@ -2163,6 +2163,13 @@ async function checkCryptoKeys(userId) {
         const isAuth = await authUser();
         if (!isAuth) { document.body.innerHTML = '<div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; color:var(--danger);"><i class="fas fa-lock" style="font-size:48px; margin-bottom:20px;"></i><h2>Доступ запрещен</h2></div>'; return; }
 
+        // === НОВОЕ: ПРОВЕРКА PIN-КОДА ПЕРЕД ЗАГРУЗКОЙ ДАННЫХ ===
+        if (localStorage.getItem('synd_pin_hash')) {
+            const isUnlocked = await requirePinAuth();
+            if (!isUnlocked) return; // Если ПИН не введен (например, скрипт прервался), дальше не идем
+        }
+        // ======================================================
+
         const avatarEl = document.getElementById('my-avatar');
         avatarEl.innerText = currentUser.first_name.charAt(0).toUpperCase();
         avatarEl.style.background = getAvatarGradient(currentUser.id);
@@ -3348,6 +3355,257 @@ async function checkCryptoKeys(userId) {
         if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
         await calculateStorageUsage();
     }
+
+    // === ЛОГИКА ТРЕВОЖНОГО СБРОСА ===
+    async function triggerPanicWipe() {
+        const devId = localStorage.getItem('syndicate_device_id');
+        if (devId && currentUser) {
+            try { await supabaseClient.from('user_devices').delete().eq('device_id', devId); } catch(e){}
+        }
+
+        await idbKeyval.clear(); 
+        localStorage.clear();    
+        try { await caches.delete('syndicate-media-cache'); } catch(e){}
+        
+        document.body.innerHTML = `
+            <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; text-align:center; padding: 20px; background: #000; z-index: 999999; position: fixed; inset: 0;">
+                <i class="fas fa-skull" style="font-size:72px; color:#FF453A; margin-bottom:20px; animation: pulse 2s infinite;"></i>
+                <h2 style="color: #FF453A; margin-bottom: 8px;">Данные уничтожены</h2>
+                <p style="color: #8e8e93; font-size: 14px;">Устройство аппаратно отключено от Синдиката. Ключи стёрты.</p>
+            </div>`;
+        
+        if (window.Telegram && window.Telegram.WebApp.HapticFeedback) {
+            window.Telegram.WebApp.HapticFeedback.notificationOccurred('error');
+        }
+        
+        setTimeout(() => window.location.reload(), 2500);
+    }
+
+    // === БЕЗОПАСНОСТЬ: ХЕШИРОВАНИЕ ПИН-КОДА ===
+    async function hashPin(pin) {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(pin + "syndicate_salt");
+        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+
+    // === ДВИЖОК ПИН-КОДА ===
+    let currentPinMode = null; // 'unlock', 'setup_1', 'setup_2'
+    let currentPinType = null; // 'normal', 'panic'
+    let enteredPin = "";
+    let tempSetupPin = "";
+    let resolvePinAuth = null;
+
+    // Обновляем статусы в меню настроек
+    function updatePinSettingsUI() {
+        const hasPin = !!localStorage.getItem('synd_pin_hash');
+        const hasPanic = !!localStorage.getItem('synd_panic_pin_hash');
+        
+        const pinStatus = document.getElementById('pin-status');
+        const panicRow = document.getElementById('panic-pin-setting');
+        const panicStatus = document.getElementById('panic-pin-status');
+        
+        if (pinStatus) pinStatus.innerText = hasPin ? 'Вкл' : 'Выкл';
+        if (panicRow) panicRow.style.display = hasPin ? 'flex' : 'none'; // Показываем панику только если есть обычный ПИН
+        if (panicStatus) panicStatus.innerText = hasPanic ? 'Вкл' : 'Выкл';
+    }
+
+    // Запуск настройки
+    function startPinSetup(type) {
+        // Если юзер кликнул по включенному ПИНУ — требуем ввести его для отключения!
+        if (type === 'normal' && localStorage.getItem('synd_pin_hash')) {
+            currentPinMode = 'disable_normal';
+            enteredPin = "";
+            document.getElementById('pin-icon').className = 'fas fa-unlock';
+            document.getElementById('pin-icon').style.color = 'var(--muted)';
+            document.getElementById('pin-title').innerText = "Введите текущий PIN для отключения";
+            document.getElementById('pin-cancel-btn').style.visibility = 'visible';
+            updatePinDots();
+            document.getElementById('pin-screen').classList.add('active');
+            return;
+        }
+        
+        if (type === 'panic' && localStorage.getItem('synd_panic_pin_hash')) {
+            currentPinMode = 'disable_panic';
+            enteredPin = "";
+            document.getElementById('pin-icon').className = 'fas fa-unlock';
+            document.getElementById('pin-icon').style.color = 'var(--muted)';
+            document.getElementById('pin-title').innerText = "Введите Тревожный PIN для отключения";
+            document.getElementById('pin-cancel-btn').style.visibility = 'visible';
+            updatePinDots();
+            document.getElementById('pin-screen').classList.add('active');
+            return;
+        }
+
+        // Если ПИНА нет, начинаем процесс создания
+        currentPinMode = 'setup_1';
+        currentPinType = type;
+        enteredPin = "";
+        tempSetupPin = "";
+        
+        document.getElementById('pin-icon').className = type === 'panic' ? 'fas fa-user-secret' : 'fas fa-lock';
+        document.getElementById('pin-icon').style.color = type === 'panic' ? 'var(--danger)' : 'var(--primary)';
+        document.getElementById('pin-title').innerText = type === 'panic' ? "Новый ТРЕВОЖНЫЙ PIN" : "Новый PIN-код";
+        document.getElementById('pin-cancel-btn').style.visibility = 'visible';
+        
+        updatePinDots();
+        document.getElementById('pin-screen').classList.add('active');
+    }
+
+    
+
+    // Требование ввода ПИН-кода при входе в приложение
+    function requirePinAuth() {
+        return new Promise((resolve) => {
+            currentPinMode = 'unlock';
+            enteredPin = "";
+            resolvePinAuth = resolve;
+
+            document.getElementById('pin-icon').className = 'fas fa-lock';
+            document.getElementById('pin-icon').style.color = 'var(--primary)';
+            document.getElementById('pin-title').innerText = "Введите PIN-код";
+            document.getElementById('pin-cancel-btn').style.visibility = 'hidden'; // При входе нельзя нажать отмену
+
+            updatePinDots();
+            document.getElementById('pin-screen').classList.add('active');
+        });
+    }
+
+    function updatePinDots() {
+        const dots = document.querySelectorAll('.pin-dot');
+        dots.forEach((dot, index) => {
+            if (index < enteredPin.length) {
+                dot.classList.add('filled');
+                dot.classList.remove('error');
+            } else {
+                dot.classList.remove('filled', 'error');
+            }
+        });
+    }
+
+    function shakeDots() {
+        const container = document.getElementById('pin-dots');
+        document.querySelectorAll('.pin-dot').forEach(d => d.classList.add('error'));
+        container.classList.add('shake');
+        if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('error');
+        setTimeout(() => {
+            container.classList.remove('shake');
+            enteredPin = "";
+            updatePinDots();
+        }, 400);
+    }
+
+    // Обработка нажатий на кнопки numpad (Замени старый обработчик на этот)
+    document.addEventListener('click', async (e) => {
+        const btn = e.target.closest('.pin-btn');
+        if (!btn || !document.getElementById('pin-screen').classList.contains('active')) return;
+
+        const val = btn.dataset.pin;
+        if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+
+        if (val === 'cancel') {
+            document.getElementById('pin-screen').classList.remove('active');
+            if (resolvePinAuth) resolvePinAuth(false);
+            return;
+        }
+
+        if (val === 'del') {
+            enteredPin = enteredPin.slice(0, -1);
+            updatePinDots();
+            return;
+        }
+
+        if (enteredPin.length < 4) {
+            enteredPin += val;
+            updatePinDots();
+        }
+
+        // Если ввели 4 цифры — обрабатываем
+        if (enteredPin.length === 4) {
+            
+            // СЦЕНАРИЙ 1: Вход в приложение
+            if (currentPinMode === 'unlock') {
+                const enteredHash = await hashPin(enteredPin);
+                const savedHash = localStorage.getItem('synd_pin_hash');
+                const panicHash = localStorage.getItem('synd_panic_pin_hash');
+
+                // Опциональность: panicHash сработает только если он задан
+                if (panicHash && enteredHash === panicHash) {
+                    document.getElementById('pin-screen').classList.remove('active');
+                    triggerPanicWipe(); // СНОСИМ ДАННЫЕ!
+                } else if (enteredHash === savedHash) {
+                    document.getElementById('pin-screen').classList.remove('active');
+                    if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+                    if (resolvePinAuth) resolvePinAuth(true); // УСПЕШНЫЙ ВХОД!
+                } else {
+                    shakeDots(); // Ошибка
+                }
+            } 
+            
+            // СЦЕНАРИЙ 2: Создание нового ПИН-кода (шаг 1)
+            else if (currentPinMode === 'setup_1') {
+                tempSetupPin = enteredPin;
+                enteredPin = "";
+                currentPinMode = 'setup_2';
+                document.getElementById('pin-title').innerText = "Повторите PIN-код";
+                setTimeout(updatePinDots, 200);
+            } 
+            
+            // СЦЕНАРИЙ 3: Подтверждение нового ПИН-кода (шаг 2)
+            else if (currentPinMode === 'setup_2') {
+                if (enteredPin === tempSetupPin) {
+                    const hash = await hashPin(enteredPin);
+                    if (currentPinType === 'normal') {
+                        localStorage.setItem('synd_pin_hash', hash);
+                    } else if (currentPinType === 'panic') {
+                        localStorage.setItem('synd_panic_pin_hash', hash);
+                    }
+                    
+                    document.getElementById('pin-screen').classList.remove('active');
+                    if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+                    updatePinSettingsUI();
+                } else {
+                    shakeDots();
+                    currentPinMode = 'setup_1';
+                    document.getElementById('pin-title').innerText = currentPinType === 'panic' ? "Новый ТРЕВОЖНЫЙ PIN" : "Новый PIN-код";
+                }
+            }
+            
+            // СЦЕНАРИЙ 4: Отключение Обычного ПИНа
+            else if (currentPinMode === 'disable_normal') {
+                const enteredHash = await hashPin(enteredPin);
+                if (enteredHash === localStorage.getItem('synd_pin_hash')) {
+                    localStorage.removeItem('synd_pin_hash');
+                    localStorage.removeItem('synd_panic_pin_hash'); // Выключаем обычный = удаляется и тревожный
+                    
+                    document.getElementById('pin-screen').classList.remove('active');
+                    if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+                    updatePinSettingsUI();
+                } else {
+                    shakeDots();
+                }
+            }
+
+            // СЦЕНАРИЙ 5: Отключение Тревожного ПИНа
+            else if (currentPinMode === 'disable_panic') {
+                const enteredHash = await hashPin(enteredPin);
+                if (enteredHash === localStorage.getItem('synd_panic_pin_hash')) {
+                    localStorage.removeItem('synd_panic_pin_hash');
+                    
+                    document.getElementById('pin-screen').classList.remove('active');
+                    if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+                    updatePinSettingsUI();
+                } else {
+                    shakeDots();
+                }
+            }
+        }
+    });
+
+    // Вызываем обновление статусов при запуске (чтобы кнопки в настройках правильно отображались)
+    document.addEventListener('DOMContentLoaded', updatePinSettingsUI);
     
     // === ГЛОБАЛЬНЫЙ ПЕРЕХВАТЧИК СОБЫТИЙ (ЗАЩИТА ОТ XSS) ===
     document.addEventListener('click', async (e) => {
@@ -3486,39 +3744,14 @@ async function checkCryptoKeys(userId) {
                 break;
             case 'panic-wipe':
                 if(confirm("🚨 ТРЕВОГА!\n\nЭто действие мгновенно:\n1. Сотрет все RSA и AES ключи\n2. Удалит кэш сообщений\n3. Выбросит из аккаунта\n\nПродолжить?")) {
-                    
-                    // --- НОВОЕ: Стираем устройство из базы данных Синдиката ---
-                    const devId = localStorage.getItem('syndicate_device_id');
-                    if (devId && currentUser) {
-                        // Пытаемся удалить, игнорируем ошибки, если сети нет (главное стереть локально)
-                        try { await supabaseClient.from('user_devices').delete().eq('device_id', devId); } catch(e){}
-                    }
-                    // ----------------------------------------------------------
-
-                    // 1. Уничтожаем все ключи шифрования и историю переписок!
-                    await idbKeyval.clear(); 
-                    
-                    // 2. Сносим настройки, токены и статусы
-                    localStorage.clear();    
-                    
-                    // 3. Уничтожаем скачанные кэшированные файлы (ГС)
-                    try { await caches.delete('syndicate-media-cache'); } catch(e){}
-                    
-                    // 4. Закрываем всё и рисуем "экран смерти"
-                    document.body.innerHTML = `
-                        <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; text-align:center; padding: 20px; background: #000; z-index: 9999; position: relative;">
-                            <i class="fas fa-skull" style="font-size:72px; color:#FF453A; margin-bottom:20px; animation: pulse 2s infinite;"></i>
-                            <h2 style="color: #FF453A; margin-bottom: 8px;">Данные уничтожены</h2>
-                            <p style="color: #8e8e93; font-size: 14px;">Устройство аппаратно отключено от Синдиката. Ключи безвозвратно стёрты.</p>
-                        </div>`;
-                    
-                    if (window.Telegram && window.Telegram.WebApp.HapticFeedback) {
-                        window.Telegram.WebApp.HapticFeedback.notificationOccurred('error');
-                    }
-                    
-                    // 5. Перезагрузка страницы (выкинет на авторизацию)
-                    setTimeout(() => window.location.reload(), 2500);
+                    triggerPanicWipe();
                 }
+                break;
+            case 'setup-pin':
+                startPinSetup('normal');
+                break;
+            case 'setup-panic-pin':
+                startPinSetup('panic');
                 break;
             case 'open-pwa': openPWA(); break;
             case 'toggle-status': toggleStatus(); break;
