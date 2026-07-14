@@ -1256,20 +1256,25 @@ function initiateReply(msgElement) {
             const encryptedVector = await generateAndEncryptVector(transcribedText, currentAesKey);
             // Добавляем перевод после графика
             const newMarker = `[VOICE]:${fileName}|WF:${wfStr}|${transcribedText.trim()}`;
-            
-            // ПЕРЕДАЕМ savedReplyTo ВО ВТОРОЙ РАЗ, ЧТОБЫ ОТВЕТ НЕ ЗАТЕРСЯ!
             const newEncryptedText = await encryptText(newMarker, currentAesKey, savedReplyTo);
 
             await supabaseClient.from('messages').update({ encrypted_text: newEncryptedText, encrypted_vector: encryptedVector }).eq('id', insertedMsg.id);
+            
+            // ---> ВСТАВЬТЕ ЭТИ ДВЕ СТРОКИ СЮДА <---
+            const uiMsg = { ...insertedMsg, encrypted_text: newEncryptedText };
+            await processAndRenderMessage(uiMsg, currentAesKey);
+
         } catch (e) {
             try {
                 // Если ИИ сломался, всё равно оставляем график!
                 const errorMarker = `[VOICE]:${fileName}|WF:${wfStr}|❌ Ошибка: ${e.message}`;
-                
-                // ЗДЕСЬ ТОЖЕ ПЕРЕДАЕМ savedReplyTo!
                 const errorEncryptedText = await encryptText(errorMarker, currentAesKey, savedReplyTo);
                 
                 await supabaseClient.from('messages').update({ encrypted_text: errorEncryptedText }).eq('id', insertedMsg.id);
+                
+                // ---> И ВСТАВЬТЕ ЭТИ ДВЕ СТРОКИ СЮДА <---
+                const uiMsgErr = { ...insertedMsg, encrypted_text: errorEncryptedText };
+                await processAndRenderMessage(uiMsgErr, currentAesKey);
             } catch (fallbackErr) {}
         }
     }
@@ -1564,17 +1569,27 @@ function initiateReply(msgElement) {
                 if (oldToggle) oldToggle.outerHTML = transcriptHtml; 
             } else {
                 // Если это совершенно новое ГС - рисуем с нуля
-                div.innerHTML = senderHtml + replyHtml + `
-                    <div class="voice-player">
-                        <div class="voice-play-btn" data-action="play-voice" data-filename="${fileName}">
-                            <i class="fas fa-play" style="margin-left: 3px;"></i>
+                if (isNew) {
+                    // Сообщение грузится впервые — рисуем всё с нуля
+                    div.innerHTML = senderHtml + replyHtml + `
+                        <div class="voice-player">
+                            <div class="voice-play-btn" data-action="play-voice" data-filename="${fileName}">
+                                <i class="fas fa-play" style="margin-left: 3px;"></i>
+                            </div>
+                            <div class="voice-waveform" data-pointer-action="scrub-waveform" data-filename="${fileName}">
+                                ${barsHtml}
+                            </div>
                         </div>
-                        <div class="voice-waveform" data-pointer-action="scrub-waveform" data-filename="${fileName}">
-                            ${barsHtml}
-                        </div>
-                    </div>
-                    ${transcriptHtml}
-                `;
+                        ${transcriptHtml}
+                    `;
+                } else {
+                    // Это обновление (ИИ закончил перевод). Меняем ТОЛЬКО текст, не трогая плеер!
+                    const oldToggle = div.querySelector('.transcript-toggle');
+                    const oldContent = div.querySelector('.transcript-content');
+                    
+                    if (oldContent) oldContent.remove();
+                    if (oldToggle) oldToggle.outerHTML = transcriptHtml;
+                }
             }
         } 
         else if (text.startsWith('[GROUP_INVITE]:')) {
