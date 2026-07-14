@@ -1555,18 +1555,27 @@ function initiateReply(msgElement) {
                 transcriptHtml = `<div class="transcript-toggle" style="cursor:default;">${escapeHTML(transcriptionText)}</div>`;
             }
 
-            // Вставляем replyHtml перед плеером
-            div.innerHTML = senderHtml + replyHtml + `
-                <div class="voice-player">
-                    <div class="voice-play-btn" data-action="play-voice" data-filename="${fileName}">
-                        <i class="fas fa-play" style="margin-left: 3px;"></i>
+            if (!isNew && div.querySelector('.voice-player')) {
+                // Если ГС уже на экране (это обновление от нейросети)
+                // Безопасно меняем только плашку перевода, чтобы звук не оборвался!
+                const oldToggle = div.querySelector('.transcript-toggle');
+                const oldContent = div.querySelector('.transcript-content');
+                if (oldContent) oldContent.remove();
+                if (oldToggle) oldToggle.outerHTML = transcriptHtml; 
+            } else {
+                // Если это совершенно новое ГС - рисуем с нуля
+                div.innerHTML = senderHtml + replyHtml + `
+                    <div class="voice-player">
+                        <div class="voice-play-btn" data-action="play-voice" data-filename="${fileName}">
+                            <i class="fas fa-play" style="margin-left: 3px;"></i>
+                        </div>
+                        <div class="voice-waveform" data-pointer-action="scrub-waveform" data-filename="${fileName}">
+                            ${barsHtml}
+                        </div>
                     </div>
-                    <div class="voice-waveform" data-pointer-action="scrub-waveform" data-filename="${fileName}">
-                        ${barsHtml}
-                    </div>
-                </div>
-                ${transcriptHtml}
-            `;
+                    ${transcriptHtml}
+                `;
+            }
         } 
         else if (text.startsWith('[GROUP_INVITE]:')) {
             const parts = text.replace('[GROUP_INVITE]:', '').split('|');
@@ -1765,13 +1774,14 @@ function initiateReply(msgElement) {
         // 2. Создаем новую чистую подписку
         currentChatSubscription = supabaseClient.channel(`chat-${currentChatId}`)
             .on('postgres_changes', { 
-                event: 'INSERT', // <-- Слушаем только новые сообщения, это надежнее чем '*'
+                event: '*', // <-- ТЕПЕРЬ СЛУШАЕМ И СОЗДАНИЕ И ОБНОВЛЕНИЕ
                 schema: 'public', 
                 table: 'messages', 
                 filter: `chat_id=eq.${currentChatId}` 
             },
                 async (payload) => {
-                    console.log("🔥 ПРИШЛО НОВОЕ СООБЩЕНИЕ ИЗ WEBSOCKET:", payload);
+                    if (payload.eventType === 'DELETE') return; // Игнорируем удаления
+                    console.log("🔥 ПРИШЛО ОБНОВЛЕНИЕ ИЗ WEBSOCKET:", payload);
                     
                     const newMsg = payload.new;
                     if (!newMsg || !newMsg.encrypted_text) return;
