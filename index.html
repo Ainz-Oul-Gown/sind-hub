@@ -15,9 +15,6 @@
     worker-src 'self' blob: https://cdn.jsdelivr.net;
     frame-src 'self' https://telegram.org;
 ">
-
-
-
     
     
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -31,9 +28,6 @@
 
     <!--<script src="https://cdn.jsdelivr.net/npm/eruda"></script>
     <script>eruda.init();</script> -->
-
-
-
 
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -222,6 +216,27 @@
         .slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 3px; bottom: 3px; background-color: white; transition: 0.3s; border-radius: 50%; }
         input:checked + .slider { background-color: var(--success); }
         input:checked + .slider:before { transform: translateX(18px); }
+
+
+        /* --- ЭКРАН ПИН-КОДА --- */
+        #pin-screen { display:none; position:fixed; inset:0; background:var(--bg); z-index:99999; flex-direction:column; align-items:center; justify-content:center; padding-bottom: 50px; }
+        #pin-screen.active { display:flex; animation: fadeIn 0.3s ease; }
+        
+        .pin-dots-container { display:flex; gap:16px; margin-bottom: 40px; height: 16px; justify-content: center; }
+        .pin-dot { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--muted); transition: 0.2s; }
+        .pin-dot.filled { background: var(--primary); border-color: var(--primary); }
+        .pin-dot.error { background: var(--danger) !important; border-color: var(--danger) !important; }
+        
+        /* Анимация тряски при ошибке */
+        @keyframes shake { 0%, 100% { transform: translateX(0); } 20%, 60% { transform: translateX(-10px); } 40%, 80% { transform: translateX(10px); } }
+        .pin-dots-container.shake { animation: shake 0.4s ease; }
+        
+        .pin-numpad { display:grid; grid-template-columns: repeat(3, 1fr); gap:20px; max-width: 280px; width: 100%; }
+        .pin-btn { width: 75px; height: 75px; border-radius: 50%; background: rgba(255,255,255,0.08); border: none; color: white; font-size: 32px; font-weight: 500; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.1s; -webkit-tap-highlight-color: transparent; margin: 0 auto;}
+        .pin-btn:active { background: rgba(255,255,255,0.2); transform: scale(0.95); }
+        .pin-btn.empty { background: transparent; font-size: 24px; color: var(--text); }
+
+        
     </style>
 </head>
 <body>
@@ -308,8 +323,22 @@
 
             <!-- НОВЫЙ БЛОК: БЕЗОПАСНОСТЬ -->
             <h3 class="section-title" style="margin: 16px 0 8px 4px; font-size: 12px;">Безопасность</h3>
-            <div class="list-item" data-action="panic-wipe" style="border-color: rgba(255,69,58,0.3); background: rgba(255,69,58,0.05);">
-                <div class="list-item-left"><i class="fas fa-skull" style="color: var(--danger); width: 20px; text-align: center;"></i> Тревожная кнопка (Сброс)</div>
+            
+            <!-- Настройка ПИН-кода -->
+            <div class="list-item" data-action="setup-pin">
+                <div class="list-item-left"><i class="fas fa-key" style="color: #FF9F0A; width: 20px; text-align: center;"></i> PIN-код для входа</div>
+                <div id="pin-status" style="color: var(--muted); font-size: 14px;">Выкл</div>
+            </div>
+
+            <!-- Настройка Тревожного ПИН-кода -->
+            <div class="list-item" data-action="setup-panic-pin" id="panic-pin-setting" style="display: none;">
+                <div class="list-item-left"><i class="fas fa-user-secret" style="color: var(--danger); width: 20px; text-align: center;"></i> Тревожный PIN (Удаление)</div>
+                <div id="panic-pin-status" style="color: var(--muted); font-size: 14px;">Выкл</div>
+            </div>
+
+            <!-- Тревожная кнопка -->
+            <div class="list-item" data-action="panic-wipe" style="border-color: rgba(255,69,58,0.3); background: rgba(255,69,58,0.05); margin-top: 10px;">
+                <div class="list-item-left"><i class="fas fa-skull" style="color: var(--danger); width: 20px; text-align: center;"></i> Стереть все данные (Сброс)</div>
             </div>
         </div>
 
@@ -688,6 +717,30 @@
             <button class="primary-btn" id="btn-delete-whisper" data-action="delete-ai-whisper" style="background: rgba(255,69,58,0.15); color: var(--danger); margin-top: 16px; padding: 10px; display: none;">
                 <i class="fas fa-trash-alt"></i> Удалить скачанные данные
             </button>
+        </div>
+    </div>
+
+
+    <!-- ЭКРАН ПИН-КОДА -->
+    <div id="pin-screen">
+        <i class="fas fa-lock" style="font-size: 40px; color: var(--primary); margin-bottom: 24px;" id="pin-icon"></i>
+        <h2 id="pin-title" style="margin: 0 0 24px; font-weight: 600; font-size: 22px;">Введите PIN-код</h2>
+        <div class="pin-dots-container" id="pin-dots">
+            <div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div>
+        </div>
+        <div class="pin-numpad">
+            <button class="pin-btn" data-pin="1">1</button>
+            <button class="pin-btn" data-pin="2">2</button>
+            <button class="pin-btn" data-pin="3">3</button>
+            <button class="pin-btn" data-pin="4">4</button>
+            <button class="pin-btn" data-pin="5">5</button>
+            <button class="pin-btn" data-pin="6">6</button>
+            <button class="pin-btn" data-pin="7">7</button>
+            <button class="pin-btn" data-pin="8">8</button>
+            <button class="pin-btn" data-pin="9">9</button>
+            <button class="pin-btn empty" data-pin="cancel" id="pin-cancel-btn" style="font-size: 16px;">Отмена</button>
+            <button class="pin-btn" data-pin="0">0</button>
+            <button class="pin-btn empty" data-pin="del"><i class="fas fa-backspace"></i></button>
         </div>
     </div>
     
