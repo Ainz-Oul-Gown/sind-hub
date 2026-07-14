@@ -1450,7 +1450,6 @@ function initiateReply(msgElement) {
         // --- ЛОГИКА ВСТАВКИ ПЛАШКИ С ДАТОЙ ---
         if (isNew && msgDate) {
             const dateStr = getRelativeDateStr(msgDate);
-            // Если дата сменилась, создаем облачко по центру
             if (window.lastRenderedDate !== dateStr) {
                 const divider = document.createElement('div');
                 divider.className = 'date-divider';
@@ -1463,14 +1462,25 @@ function initiateReply(msgElement) {
         // Генерируем цветное имя для групп
         let senderHtml = '';
         if (!isMine && currentChatType === 'group' && senderId) {
-            const finalName = senderName || "Участник"; // Если имя не успело подгрузиться, пишем "Участник"
+            const finalName = senderName || "Участник";
             const colors = ['#FF2D55', '#FF9F0A', '#32D74B', '#0A84FF', '#5E5CE6', '#BF5AF2'];
             const cIdx = senderId.toString().split('').reduce((a,b)=>a+b.charCodeAt(0),0) % colors.length;
             senderHtml = `<div class="sender-name" style="color: ${colors[cIdx]};">${escapeHTML(finalName)}</div>`;
         }
 
+        // === ОБЪЯВЛЯЕМ HTML ОТВЕТА ОДИН РАЗ ЗДЕСЬ ===
+        let replyHtml = '';
+        if (replyData) {
+            replyHtml = `
+                <div class="msg-reply-block" data-action="scroll-to-msg" data-target-id="${replyData.id}">
+                    <div class="msg-reply-name">${escapeHTML(replyData.name)}</div>
+                    <div class="msg-reply-text">${escapeHTML(replyData.text)}</div>
+                </div>
+            `;
+        }
+
         if (text.startsWith('[VOICE]:')) {
-            div.classList.add('voice-msg'); // Добавляем класс для широкого облачка
+            div.classList.add('voice-msg');
 
             const parts = text.replace('[VOICE]:', '').split('|');
             const fileName = parts[0];
@@ -1479,7 +1489,6 @@ function initiateReply(msgElement) {
             let transcriptionText = 'ИИ анализирует... ⏳';
             let hasTranscript = false;
 
-            // Разбираем части сообщения (График и Перевод)
             for (let i = 1; i < parts.length; i++) {
                 if (parts[i].startsWith('WF:')) {
                     wfStr = parts[i].substring(3);
@@ -1491,53 +1500,40 @@ function initiateReply(msgElement) {
                 }
             }
 
-            // Генерируем 30 палочек графика
             let barsHtml = '';
             if (wfStr) {
                 const vals = wfStr.split(',').map(Number);
                 vals.forEach(val => {
-                    let h = Math.max(10, val); // Минимум 10% высоты
+                    let h = Math.max(10, val);
                     barsHtml += `<div class="v-bar" style="height: ${h}%;"></div>`;
                 });
             } else {
-                // Страховка для старых ГС без графиков
                 for(let i=0; i<30; i++) {
                     let h = 10 + Math.random() * 90;
                     barsHtml += `<div class="v-bar" style="height: ${h}%;"></div>`;
                 }
             }
 
-            // === НОВОЕ: СОЗДАЕМ HTML БЛОКА ОТВЕТА (Если есть) ===
-            let replyHtml = '';
-            if (replyData) {
-                // Клик по блоку проскроллит чат к оригинальному сообщению!
-                replyHtml = `
-                    <div class="msg-reply-block" data-action="scroll-to-msg" data-target-id="${replyData.id}">
-                        <div class="msg-reply-name">${escapeHTML(replyData.name)}</div>
-                        <div class="msg-reply-text">${escapeHTML(replyData.text)}</div>
-                    </div>
-                `;
-            }
-
             let transcriptHtml = '';
             if (hasTranscript) {
                 transcriptHtml = `
-<div class="transcript-toggle" data-action="toggle-transcript"><i class="fas fa-chevron-down"></i> Показать перевод</div>
+                    <div class="transcript-toggle" data-action="toggle-transcript"><i class="fas fa-chevron-down"></i> Показать перевод</div>
                     <div class="transcript-content" style="display:none;">${escapeHTML(transcriptionText)}</div>
                 `;
             } else {
                 transcriptHtml = `<div class="transcript-toggle" style="cursor:default;">${escapeHTML(transcriptionText)}</div>`;
             }
 
+            // Вставляем replyHtml перед плеером
             div.innerHTML = senderHtml + replyHtml + `
-<div class="voice-player">
-    <div class="voice-play-btn" data-action="play-voice" data-filename="${fileName}">
-        <i class="fas fa-play" style="margin-left: 3px;"></i>
-    </div>
-    <div class="voice-waveform" data-pointer-action="scrub-waveform" data-filename="${fileName}">
-        ${barsHtml}
-    </div>
-</div>
+                <div class="voice-player">
+                    <div class="voice-play-btn" data-action="play-voice" data-filename="${fileName}">
+                        <i class="fas fa-play" style="margin-left: 3px;"></i>
+                    </div>
+                    <div class="voice-waveform" data-pointer-action="scrub-waveform" data-filename="${fileName}">
+                        ${barsHtml}
+                    </div>
+                </div>
                 ${transcriptHtml}
             `;
         } 
@@ -1547,8 +1543,8 @@ function initiateReply(msgElement) {
             const groupName = parts[1];
             const keysJSON = parts[2];
 
-            // Если это отправил я - показываем просто статус "Приглашение отправлено"
             if (isMine) {
+                // Вставляем replyHtml
                 div.innerHTML = senderHtml + replyHtml + `
                     <div style="display:flex; align-items:center; gap:10px; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px;">
                         <div style="width: 40px; height: 40px; border-radius: 50%; background: var(--surface); display:flex; align-items:center; justify-content:center; color: var(--muted);"><i class="fas fa-users"></i></div>
@@ -1559,9 +1555,8 @@ function initiateReply(msgElement) {
                     </div>
                 `;
             } else {
-                // Если прислали мне - показываем кнопку "Вступить"
-                // ВАЖНО: ключи передаем через base64, чтобы кавычки не сломали HTML
                 const safeKeys = btoa(keysJSON);
+                // Вставляем replyHtml
                 div.innerHTML = senderHtml + replyHtml + `
                     <div style="display:flex; align-items:center; gap:10px; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px;">
                         <div style="width: 40px; height: 40px; border-radius: 50%; background: var(--primary); display:flex; align-items:center; justify-content:center; color: white;"><i class="fas fa-users"></i></div>
@@ -1574,6 +1569,7 @@ function initiateReply(msgElement) {
             }
         } 
         else {
+            // И наконец, вставляем replyHtml для обычного текста
             div.innerHTML = senderHtml + replyHtml + escapeHTML(text).replace(/\n/g, '<br>');
         }
 
@@ -3234,21 +3230,24 @@ async function checkCryptoKeys(userId) {
             
             let finalPlainText = decryptedStr;
             let isAuthentic = true;
+            let replyData = null;
 
             try {
                 const parsed = JSON.parse(decryptedStr);
                 if (parsed.t !== undefined) {
                     finalPlainText = parsed.t;
+                    // Если сообщение чужое, проверяем подпись
                     if (msg.sender_id !== currentUser.id) {
                         isAuthentic = await verifySignature(parsed.t, parsed.s, msg.sender_id);
                     }
-                    
-                    // --- НОВОЕ: ПРОВЕРЯЕМ ЕСТЬ ЛИ БЛОК ОТВЕТА ---
+                    // Вытаскиваем блок ответа, если он есть
                     if (parsed.r) {
-                        msg.replyData = parsed.r; // Сохраняем в объект сообщения, чтобы передать в renderMessage
+                        replyData = parsed.r; 
                     }
                 }
-            } catch(e) { }
+            } catch(e) {
+                // Старое сообщение (чистый текст), пропускаем
+            }
 
             if (!isAuthentic) {
                 // Хакер спалился
