@@ -41,32 +41,22 @@ self.onmessage = async (event) => {
     const msg = event.data;
     
     if (msg.type === 'init') {
-        // Если при старте главный поток передал сохраненную модель — берем её
         if (msg.model) currentModelName = msg.model; 
         initWhisper().catch(e => self.postMessage({ type: 'error', error: e.message }));
     } 
     else if (msg.type === 'change_model') {
-        // Если мы поменяли модель в настройках
+        // Просто меняем имя и выгружаем старую из оперативы. НИЧЕГО НЕ КАЧАЕМ!А
         if (currentModelName !== msg.model) {
             currentModelName = msg.model;
-            whisperModel = null; // СБРАСЫВАЕМ старую модель, чтобы освободить оперативу!
-            
-            // Очищаем трекер загрузки, иначе прогресс-бар новой модели сойдет с ума
-            for (const prop of Object.getOwnPropertyNames(downloadTracker)) {
-                delete downloadTracker[prop];
-            }
-            
-            // Сразу запускаем скачивание/загрузку новой
-            initWhisper().catch(e => self.postMessage({ type: 'error', error: e.message }));
+            whisperModel = null; 
         }
     }
     else if (msg.type === 'force_download') {
-        // Жестко сбрасываем старую модель и очищаем проценты загрузки
+        // А вот тут уже качаем (по кнопке)
         whisperModel = null;
         for (const prop of Object.getOwnPropertyNames(downloadTracker)) {
             delete downloadTracker[prop];
         }
-        // Запускаем инициализацию (скачивание)
         initWhisper().catch(e => self.postMessage({ type: 'error', error: e.message }));
     }
     else if (msg.type === 'transcribe') {
