@@ -2701,10 +2701,11 @@ async function loadChats() {
     }
 
     // Загрузка ключей и сообщений группы
+    
     async function loadGroupChatKeys(groupId) {
     document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:var(--muted); margin-top: 40px; font-size: 14px;"><i class="fas fa-shield-alt fa-spin" style="font-size: 24px; color: var(--primary); margin-bottom: 10px;"></i><br>Загрузка крипто-ключей группы...</div>';
     
-    // Получаем список всех ключей из таблицы
+    // 1. Получаем ключ из БД
     const { data: keyDataArr } = await supabaseClient.from('chat_keys')
         .select('encrypted_key')
         .eq('chat_id', groupId)
@@ -2716,33 +2717,38 @@ async function loadChats() {
     const keysDict = JSON.parse(keyDataArr[0].encrypted_key);
     let successfullyDecryptedAes = null;
 
-    // --- МАГИЯ: Универсальный цикл перебора (как в loadExistingChat) ---
+    // 2. Универсальный перебор (Пробуем все ключи в словаре, пока один не подойдет)
+    console.log("🔍 Пробуем расшифровать ключи группы:", keysDict);
     for (const [keyName, encKeyString] of Object.entries(keysDict)) {
         try {
+            console.log(`🔍 Пытаюсь открыть ключ из слота: ${keyName}`);
             const tempKey = await decryptChatKey(encKeyString);
             if (tempKey) {
                 successfullyDecryptedAes = tempKey;
-                console.log(`✅ Успешно расшифрован ключ группы из слота: ${keyName}`);
-                break;
+                console.log(`✅ Успешно расшифрован ключ группы: ${keyName}`);
+                break; // Ключ найден!
             }
-        } catch (err) { continue; }
+        } catch (err) {
+            console.warn(`⚠️ Ключ ${keyName} не подошел.`);
+            continue; 
+        }
     }
     
-    currentAesKey = successfullyDecryptedAes;
-    
-    if (!currentAesKey) {
+    if (!successfullyDecryptedAes) {
         document.getElementById('messages-area').innerHTML = `
             <div style="text-align:center; color: var(--danger); margin-top: 60px;">
                 <i class="fas fa-lock fa-3x" style="margin-bottom: 15px; opacity: 0.8;"></i>
-                <h3 style="margin: 0 0 8px;">Ошибка ключа</h3>
+                <h3 style="margin: 0 0 8px;">Нет доступа к истории</h3>
                 <div style="font-size: 14px; color: var(--muted); padding: 0 20px;">
-                    Не удалось подобрать ключ для этой группы.
+                    Этот чат зашифрован для устройства, ключи которого не совпадают с текущим.
                 </div>
             </div>`;
         return; 
     }
 
-    // Собираем участников и рендерим (твой старый код отрисовки)
+    currentAesKey = successfullyDecryptedAes;
+
+    // 3. Загрузка участников и сообщений (твой рабочий код отрисовки)
     const { data: membersKeys } = await supabaseClient.from('chat_keys').select('user_id').eq('chat_id', groupId);
     const memberIds = membersKeys.map(k => k.user_id);
     const { data: usersData } = await supabaseClient.from('users').select('tg_id, first_name').in('tg_id', memberIds);
@@ -2750,35 +2756,34 @@ async function loadChats() {
     window.currentGroupUsers = {};
     if (usersData) usersData.forEach(u => window.currentGroupUsers[u.tg_id] = u.first_name);
 
-        const cachedHistory = await getChatFromCache(currentChatId);
+    const cachedHistory = await getChatFromCache(currentChatId);
+    document.getElementById('messages-area').innerHTML = '';
+    window.lastRenderedDate = null;
 
-        document.getElementById('messages-area').innerHTML = '';
-        window.lastRenderedDate = null;
-
-        if (cachedHistory && cachedHistory.length > 0) {
-            for (const msg of cachedHistory) await processAndRenderMessage(msg, currentAesKey);
-        } else {
-            document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:var(--muted); margin-top: 40px;"><i class="fas fa-spinner fa-spin fa-2x"></i></div>';
-        }
-
-        const lastMsgDate = cachedHistory && cachedHistory.length > 0 ? cachedHistory[cachedHistory.length - 1].created_at : null;
-
-        let query = supabaseClient.from('messages').select('*').eq('chat_id', currentChatId).order('created_at', { ascending: true });
-        if (lastMsgDate) query = query.gt('created_at', lastMsgDate);
-
-        const { data: newHistory } = await query;
-
-        if (newHistory && newHistory.length > 0) {
-            if (!cachedHistory || cachedHistory.length === 0) document.getElementById('messages-area').innerHTML = '';
-            for (const msg of newHistory) await processAndRenderMessage(msg, currentAesKey);
-            await saveChatToCache(currentChatId, newHistory);
-        } else if (!cachedHistory || cachedHistory.length === 0) {
-            // ВОТ ТУТ МЫ УБИРАЕМ ВЕЧНУЮ ЗАГРУЗКУ ДЛЯ ПУСТЫХ ГРУПП:
-            document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:var(--muted); margin-top:40px;">Чат пуст</div>';
-        }
-
-        subscribeToPrivateMessages();
+    if (cachedHistory && cachedHistory.length > 0) {
+        for (const msg of cachedHistory) await processAndRenderMessage(msg, currentAesKey);
+    } else {
+        document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:var(--muted); margin-top: 40px;"><i class="fas fa-spinner fa-spin fa-2x"></i></div>';
     }
+
+    const lastMsgDate = cachedHistory && cachedHistory.length > 0 ? cachedHistory[cachedHistory.length - 1].created_at : null;
+
+    let query = supabaseClient.from('messages').select('*').eq('chat_id', currentChatId).order('created_at', { ascending: true });
+    if (lastMsgDate) query = query.gt('created_at', lastMsgDate);
+
+    const { data: newHistory } = await query;
+
+    if (newHistory && newHistory.length > 0) {
+        if (!cachedHistory || cachedHistory.length === 0) document.getElementById('messages-area').innerHTML = '';
+        for (const msg of newHistory) await processAndRenderMessage(msg, currentAesKey);
+        await saveChatToCache(currentChatId, newHistory);
+    } else if (!cachedHistory || cachedHistory.length === 0) {
+        document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:var(--muted); margin-top:40px;">Чат пуст</div>';
+    }
+
+    subscribeToPrivateMessages();
+}
+
 
     async function removeFriend() {
         if (!confirm(`Точно удалить ${currentFriend.name} из друзей? Вы больше не сможете писать друг другу.`)) return;
