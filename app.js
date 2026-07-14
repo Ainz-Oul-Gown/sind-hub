@@ -2278,10 +2278,26 @@ async function checkCryptoKeys(userId) {
 
 
     async function initPrivateChat(friendId) {
-        document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:var(--muted); margin-top: 40px; font-size: 14px;"><i class="fas fa-shield-alt fa-spin" style="font-size: 24px; color: var(--primary); margin-bottom: 10px;"></i><br>Проверка крипто-ключей...</div>';
-        const { data: existingChatId } = await supabaseClient.rpc('get_private_chat', { user1_id: currentUser.id, user2_id: friendId });
-        if (existingChatId) { currentChatId = existingChatId; await loadExistingChat(); } 
-        else { await createNewPrivateChat(friendId); }
+        document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:var(--muted); margin-top: 40px; font-size: 14px;"><i class="fas fa-shield-alt fa-spin" style="font-size: 24px; color: var(--primary); margin-bottom: 10px;"></i><br>Установка защищенного соединения...</div>';
+        
+        // Магия 1: Ищем ID чата в локальной памяти (0 мс)
+        let existingChatId = localStorage.getItem(`synd_pm_${currentUser.id}_${friendId}`);
+        
+        // Если нет (первый вход) — идем на сервер
+        if (!existingChatId) {
+            const { data } = await supabaseClient.rpc('get_private_chat', { user1_id: currentUser.id, user2_id: friendId });
+            existingChatId = data;
+            // Запоминаем навсегда
+            if (existingChatId) localStorage.setItem(`synd_pm_${currentUser.id}_${friendId}`, existingChatId);
+        }
+
+        if (existingChatId) { 
+            currentChatId = existingChatId; 
+            await loadExistingChat(); 
+        } 
+        else { 
+            await createNewPrivateChat(friendId); 
+        }
     }
 
     async function createNewPrivateChat(friendId) {
@@ -2308,21 +2324,32 @@ async function checkCryptoKeys(userId) {
     }
 
     async function loadExistingChat() {
-        const { data: keyData } = await supabaseClient.from('chat_keys').select('encrypted_key').eq('chat_id', currentChatId).eq('user_id', currentUser.id).single();
-        let successfullyDecryptedAes = null;
+        // Магия 2: Достаем готовый расшифрованный ключ прямо из защищенной памяти браузера (0 мс)
+        let successfullyDecryptedAes = await idbKeyval.get(`aes_key_${currentChatId}`);
     
-        try { 
-            const keysDict = JSON.parse(keyData.encrypted_key);
-            for (const [keyName, encKeyString] of Object.entries(keysDict)) {
-                try {
-                    const tempKey = await decryptChatKey(encKeyString);
-                    if (tempKey) { successfullyDecryptedAes = tempKey; break; }
-                } catch (err) { continue; }
+        // Если ключа в памяти нет (новый телефон или первый вход) — качаем с сервера
+        if (!successfullyDecryptedAes) {
+            const { data: keyData } = await supabaseClient.from('chat_keys').select('encrypted_key').eq('chat_id', currentChatId).eq('user_id', currentUser.id).single();
+            
+            try { 
+                const keysDict = JSON.parse(keyData.encrypted_key);
+                for (const [keyName, encKeyString] of Object.entries(keysDict)) {
+                    try {
+                        const tempKey = await decryptChatKey(encKeyString);
+                        if (tempKey) { successfullyDecryptedAes = tempKey; break; }
+                    } catch (err) { continue; }
+                }
+            } catch (e) { 
+                try { successfullyDecryptedAes = await decryptChatKey(keyData.encrypted_key); } catch (err) {}
             }
-        } catch (e) { 
-            try { successfullyDecryptedAes = await decryptChatKey(keyData.encrypted_key); } catch (err) {}
+
+            // Успешно расшифровали? Сохраняем в память браузера!
+            if (successfullyDecryptedAes) {
+                await idbKeyval.set(`aes_key_${currentChatId}`, successfullyDecryptedAes);
+            }
         }
     
+        // Если и с сервера ничего не подошло — сбрасываем и создаем новые
         if (!successfullyDecryptedAes) {
             document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:#ff9800; padding: 20px; font-size: 14px;"><i class="fas fa-key" style="font-size: 24px; margin-bottom: 10px;"></i><br>Синхронизация ключей...</div>';
             currentAesKey = await generateChatKey();
@@ -2337,6 +2364,9 @@ async function checkCryptoKeys(userId) {
     
             await supabaseClient.from('chat_keys').update({ encrypted_key: JSON.stringify(encKeysForFriend) }).eq('chat_id', currentChatId).eq('user_id', currentFriend.id);
             await supabaseClient.from('chat_keys').update({ encrypted_key: JSON.stringify(encKeysForMe) }).eq('chat_id', currentChatId).eq('user_id', currentUser.id);
+            
+            // Сохраняем новый ключ в память
+            await idbKeyval.set(`aes_key_${currentChatId}`, currentAesKey);
     
             document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:var(--muted); margin-top:40px;">История зашифрована старым ключом или чат пуст</div>';
             subscribeToPrivateMessages();
@@ -2943,32 +2973,30 @@ async function checkCryptoKeys(userId) {
     async function loadGroupChatKeys(groupId) {
         document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:var(--muted); margin-top: 40px; font-size: 14px;"><i class="fas fa-shield-alt fa-spin" style="font-size: 24px; color: var(--primary); margin-bottom: 10px;"></i><br>Загрузка крипто-ключей группы...</div>';
         
-        // 1. Получаем ключ из БД
-        const { data: keyDataArr } = await supabaseClient.from('chat_keys')
-            .select('encrypted_key')
-            .eq('chat_id', groupId)
-            .eq('user_id', currentUser.id)
-            .limit(1);
-    
-        if (!keyDataArr || keyDataArr.length === 0) return alert("Нет доступа к группе");
+        // Магия 3: Достаем ключ группы из памяти
+        let successfullyDecryptedAes = await idbKeyval.get(`aes_key_${groupId}`);
+
+        // Если ключа в памяти нет — идем на сервер
+        if (!successfullyDecryptedAes) {
+            const { data: keyDataArr } = await supabaseClient.from('chat_keys')
+                .select('encrypted_key')
+                .eq('chat_id', groupId)
+                .eq('user_id', currentUser.id)
+                .limit(1);
         
-        const keysDict = JSON.parse(keyDataArr[0].encrypted_key);
-        let successfullyDecryptedAes = null;
-    
-        // 2. Универсальный перебор (Пробуем все ключи в словаре, пока один не подойдет)
-        console.log("🔍 Пробуем расшифровать ключи группы:", keysDict);
-        for (const [keyName, encKeyString] of Object.entries(keysDict)) {
-            try {
-                console.log(`🔍 Пытаюсь открыть ключ из слота: ${keyName}`);
-                const tempKey = await decryptChatKey(encKeyString);
-                if (tempKey) {
-                    successfullyDecryptedAes = tempKey;
-                    console.log(`✅ Успешно расшифрован ключ группы: ${keyName}`);
-                    break; // Ключ найден!
-                }
-            } catch (err) {
-                console.warn(`⚠️ Ключ ${keyName} не подошел.`);
-                continue; 
+            if (!keyDataArr || keyDataArr.length === 0) return alert("Нет доступа к группе");
+            
+            const keysDict = JSON.parse(keyDataArr[0].encrypted_key);
+            for (const [keyName, encKeyString] of Object.entries(keysDict)) {
+                try {
+                    const tempKey = await decryptChatKey(encKeyString);
+                    if (tempKey) { successfullyDecryptedAes = tempKey; break; }
+                } catch (err) { continue; }
+            }
+
+            // Успешно расшифровали? Сохраняем!
+            if (successfullyDecryptedAes) {
+                await idbKeyval.set(`aes_key_${groupId}`, successfullyDecryptedAes);
             }
         }
         
@@ -2986,6 +3014,7 @@ async function checkCryptoKeys(userId) {
     
         currentAesKey = successfullyDecryptedAes;
     
+        // Если это группа, нам нужно подтянуть имена участников
         const { data: membersKeys } = await supabaseClient.from('chat_keys').select('user_id').eq('chat_id', groupId);
         const memberIds = membersKeys.map(k => k.user_id);
         const { data: usersData } = await supabaseClient.from('users').select('tg_id, first_name').in('tg_id', memberIds);
