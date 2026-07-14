@@ -1203,15 +1203,16 @@ function initiateReply(msgElement) {
 
         await supabaseClient.storage.from('voice_messages').upload(fileName, payload, { contentType: 'application/octet-stream' });
 
+        // Вшиваем WF (WaveForm) в маркер!
         const textMarker = `[VOICE]:${fileName}|WF:${wfStr}`; 
         
-        // --- НОВОЕ: ПЕРЕДАЕМ currentReplyTo В ГС И ОЧИЩАЕМ ---
+        // --- НОВОЕ: ПЕРЕДАЕМ ОТВЕТ В ГС ---
         const encryptedPayloadText = await encryptText(textMarker, currentAesKey, currentReplyTo);
         
         currentReplyTo = null;
         const replyBar = document.getElementById('reply-preview-bar');
         if (replyBar) replyBar.classList.remove('active');
-        // -----------------------------------------------------
+        // ------------------------------------
 
         const { data: insertedMsg, error: insertErr } = await supabaseClient.from('messages').insert([
             { chat_id: currentChatId, sender_id: currentUser.id, encrypted_text: encryptedPayloadText }
@@ -1666,16 +1667,21 @@ function initiateReply(msgElement) {
         return did;
     }
 
-    async function encryptText(text, aesKey, replyData = null) { // <-- ДОБАВИТЬ ПАРАМЕТР
+    async function encryptText(text, aesKey, replyData = null) {
+        // 1. Создаем математическую подпись текста
         const signature = await signText(text);
-        
-        // Пакуем в объект
+
+        // 2. Упаковываем в объект
         const payloadObj = { t: text, s: signature };
-        if (replyData) payloadObj.r = replyData; // Вшиваем инфу об ответе прямо в пакет!
         
+        // --- НОВОЕ: ЕСЛИ ЕСТЬ ОТВЕТ, ВШИВАЕМ ЕГО СЮДА ---
+        if (replyData) {
+            payloadObj.r = replyData; 
+        }
+
         const payloadStr = JSON.stringify(payloadObj);
 
-        // 3. Шифруем (теперь шифруется JSON)
+        // 3. Шифруем
         const iv = window.crypto.getRandomValues(new Uint8Array(12));
         const encryptedContent = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, aesKey, enc.encode(payloadStr));
         const encryptedBytes = new Uint8Array(encryptedContent);
@@ -1693,15 +1699,15 @@ function initiateReply(msgElement) {
         autoResizeInput(); // Сброс размера поля и кнопки
         input.focus(); // Насильно удерживаем фокус для iOS
 
-        // Передаем currentReplyTo в шифратор
+        // --- НОВОЕ: Передаем currentReplyTo в шифратор ---
         const encryptedPayload = await encryptText(text, currentAesKey, currentReplyTo);
 
         // МГНОВЕННО прячем плашку ответа и обнуляем память
         currentReplyTo = null;
-        document.getElementById('reply-preview-bar').classList.remove('active');
+        const replyBar = document.getElementById('reply-preview-bar');
+        if (replyBar) replyBar.classList.remove('active');
 
-        // ФИКС: Возвращаем генерацию вектора, иначе ИИ-поиск не найдет этот текст!
-        // На современных телефонах это занимает миллисекунды, так что задержки не будет.
+        // Вектор для ИИ
         let encryptedVector = null;
         try {
             encryptedVector = await generateAndEncryptVector(text, currentAesKey);
