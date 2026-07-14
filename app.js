@@ -1216,6 +1216,8 @@ function initiateReply(msgElement) {
     async function processBackgroundVoice(audioBlob, wfStr) { 
         if (!currentAesKey || !currentChatId) return;
         const fileName = `voice_${Date.now()}_${currentUser.id}.bin`;
+        
+        // 1. Шифруем аудио и загружаем в хранилище
         const arrayBuffer = await audioBlob.arrayBuffer();
         const iv = window.crypto.getRandomValues(new Uint8Array(12));
         const encryptedContent = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, currentAesKey, arrayBuffer);
@@ -1225,58 +1227,67 @@ function initiateReply(msgElement) {
 
         await supabaseClient.storage.from('voice_messages').upload(fileName, payload, { contentType: 'application/octet-stream' });
 
-        // Узнаем, включена ли авто-расшифровка
+        // 2. Узнаем, включена ли авто-расшифровка в настройках
         const isAutoWhisperOn = localStorage.getItem('synd_auto_whisper') !== 'off';
 
-        // Если ВКЛЮЧЕНА - явно ставим статус ожидания. Если ВЫКЛЮЧЕНА - оставляем без текста.
+        // 3. Формируем маркер (с часиками, если ИИ включен, и пустой, если выключен)
         const textMarker = isAutoWhisperOn 
             ? `[VOICE]:${fileName}|WF:${wfStr}|⏳ ИИ анализирует...` 
             : `[VOICE]:${fileName}|WF:${wfStr}`; 
         
+        // Сохраняем цитату (ответ), если она есть
         const savedReplyTo = currentReplyTo; 
         const encryptedPayloadText = await encryptText(textMarker, currentAesKey, savedReplyTo);
         
+        // Убираем плашку ответа с экрана
         currentReplyTo = null;
         const replyBar = document.getElementById('reply-preview-bar');
         if (replyBar) replyBar.classList.remove('active');
 
+        // 4. Отправляем сообщение в базу
         const { data: insertedMsg, error: insertErr } = await supabaseClient.from('messages').insert([
             { chat_id: currentChatId, sender_id: currentUser.id, encrypted_text: encryptedPayloadText }
         ]).select().single();
         
         if (!insertedMsg || insertErr) return;
 
-        // ЕСЛИ АВТО-РАСШИФРОВКА ВЫКЛЮЧЕНА — МЫ ЗАКАНЧИВАЕМ РАБОТУ ЗДЕСЬ!
-        if (!isAutoWhisperOn) return;
+        // === САМАЯ ВАЖНАЯ СТРОЧКА ===
+        // Если тумблер ВЫКЛЮЧЕН — мы просто прерываем функцию здесь! ИИ не запустится.
+        if (!isAutoWhisperOn) {
+            console.log("🛑 Авто-расшифровка выключена, отправлено без перевода.");
+            return; 
+        }
 
+        // 5. Если тумблер ВКЛЮЧЕН — запускаем нейросеть
         try {
             if (audioContext.state === 'suspended') await audioContext.resume();
             const rawAudioBuffer = await audioBlob.arrayBuffer();
             const decodedAudio = await audioContext.decodeAudioData(rawAudioBuffer);
             const audioFloat32 = decodedAudio.getChannelData(0);
+            
             const transcribedText = await transcribeViaWorker(audioFloat32);
             if (!transcribedText || transcribedText.trim() === '') throw new Error("ИИ не услышал слов");
 
             const encryptedVector = await generateAndEncryptVector(transcribedText, currentAesKey);
-            // Добавляем перевод после графика
+            
+            // Обновляем маркер готовым текстом и не забываем прикрепить обратно savedReplyTo
             const newMarker = `[VOICE]:${fileName}|WF:${wfStr}|${transcribedText.trim()}`;
             const newEncryptedText = await encryptText(newMarker, currentAesKey, savedReplyTo);
 
             await supabaseClient.from('messages').update({ encrypted_text: newEncryptedText, encrypted_vector: encryptedVector }).eq('id', insertedMsg.id);
             
-            // ---> ВСТАВЬТЕ ЭТИ ДВЕ СТРОКИ СЮДА <---
+            // ПРИНУДИТЕЛЬНО РИСУЕМ НА ЭКРАНЕ (чтобы перевод появился мгновенно)
             const uiMsg = { ...insertedMsg, encrypted_text: newEncryptedText };
             await processAndRenderMessage(uiMsg, currentAesKey);
 
         } catch (e) {
             try {
-                // Если ИИ сломался, всё равно оставляем график!
+                // Если ИИ сломался
                 const errorMarker = `[VOICE]:${fileName}|WF:${wfStr}|❌ Ошибка: ${e.message}`;
                 const errorEncryptedText = await encryptText(errorMarker, currentAesKey, savedReplyTo);
                 
                 await supabaseClient.from('messages').update({ encrypted_text: errorEncryptedText }).eq('id', insertedMsg.id);
                 
-                // ---> И ВСТАВЬТЕ ЭТИ ДВЕ СТРОКИ СЮДА <---
                 const uiMsgErr = { ...insertedMsg, encrypted_text: errorEncryptedText };
                 await processAndRenderMessage(uiMsgErr, currentAesKey);
             } catch (fallbackErr) {}
