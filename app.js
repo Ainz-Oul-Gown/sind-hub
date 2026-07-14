@@ -1203,13 +1203,20 @@ function initiateReply(msgElement) {
 
         await supabaseClient.storage.from('voice_messages').upload(fileName, payload, { contentType: 'application/octet-stream' });
 
-        // Вшиваем WF (WaveForm) в маркер!
         const textMarker = `[VOICE]:${fileName}|WF:${wfStr}`; 
-        const encryptedPayloadText = await encryptText(textMarker, currentAesKey);
+        
+        // --- НОВОЕ: ПЕРЕДАЕМ currentReplyTo В ГС И ОЧИЩАЕМ ---
+        const encryptedPayloadText = await encryptText(textMarker, currentAesKey, currentReplyTo);
+        
+        currentReplyTo = null;
+        const replyBar = document.getElementById('reply-preview-bar');
+        if (replyBar) replyBar.classList.remove('active');
+        // -----------------------------------------------------
 
         const { data: insertedMsg, error: insertErr } = await supabaseClient.from('messages').insert([
             { chat_id: currentChatId, sender_id: currentUser.id, encrypted_text: encryptedPayloadText }
         ]).select().single();
+        
         if (!insertedMsg || insertErr) return;
 
         try {
@@ -1653,6 +1660,7 @@ function initiateReply(msgElement) {
     let currentFriend = null;
     let currentChatId = null;
     let currentAesKey = null;
+    let currentReplyTo = null;
     const enc = new TextEncoder();
     const dec = new TextDecoder();
 
