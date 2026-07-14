@@ -109,26 +109,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     });
 
-    // СЛУШАТЕЛЬ СКРОЛЛА: Подгрузка старых сообщений
-    const messagesArea = document.getElementById('messages-area');
-    if (messagesArea) {
-        messagesArea.addEventListener('scroll', async function() {
-            // Если докрутили до самого верха и история еще есть
-            if (this.scrollTop === 0 && window.currentChatFullHistory && window.chatRenderLimit < window.currentChatFullHistory.length) {
-                if (window.isLoadingOlderMessages) return; // Защита от спама
-                window.isLoadingOlderMessages = true;
-                
-                const loader = document.getElementById('chat-history-loader');
-                if (loader) loader.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Загрузка...';
-
-                // Добавляем еще 30 сообщений к лимиту
-                window.chatRenderLimit += 30;
-                await renderCurrentChatSlice();
-                
-                window.isLoadingOlderMessages = false;
-            }
-        });
-    }
+    
     
 });
 
@@ -138,79 +119,48 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.isLoadingOlderMessages = false;
 
     // Главная функция-отрисовщик
-    async function renderCurrentChatSlice() {
+    async function renderCurrentChatSlice(isPagination = false) {
         const area = document.getElementById('messages-area');
         
-        // Запоминаем позицию прокрутки, чтобы экран не дергался при подгрузке старых СМС
-        const oldScrollHeight = area.scrollHeight;
-        const oldScrollTop = area.scrollTop;
+        // В column-reverse браузер отсчитывает скролл снизу. Сохраняем позицию!
+        const oldScroll = area.scrollTop;
 
-        // Прячем чат только при самом первом входе (для плавной анимации)
-        if (window.chatRenderLimit <= 30) {
-            area.style.opacity = '0'; 
-        }
-        
         area.innerHTML = '';
         window.lastRenderedDate = null;
-        window.isBulkLoading = true; 
 
         if (!window.currentChatFullHistory || window.currentChatFullHistory.length === 0) {
-            area.innerHTML = '<div style="text-align:center; color:var(--muted); margin-top:40px;">Чат пуст</div>';
-            window.isBulkLoading = false;
-            area.style.opacity = '1';
+            area.innerHTML = '<div style="margin: auto; color:var(--muted);">Чат пуст</div>';
             return;
         }
 
-        // Если есть старые сообщения, которые мы еще не нарисовали — добавляем подсказку сверху
-        if (window.chatRenderLimit < window.currentChatFullHistory.length) {
-            const loaderDiv = document.createElement('div');
-            loaderDiv.id = 'chat-history-loader';
-            loaderDiv.style.cssText = 'text-align:center; padding: 10px; color: var(--muted); font-size: 12px;';
-            loaderDiv.innerHTML = '<i class="fas fa-arrow-up"></i> Свайп вниз для загрузки истории';
-            area.appendChild(loaderDiv);
-        }
-    
-        // Берем с конца нужное количество сообщений (по умолчанию 30)
         const sliceToRender = window.currentChatFullHistory.slice(-window.chatRenderLimit);
 
         for (let i = 0; i < sliceToRender.length; i++) {
             await processAndRenderMessage(sliceToRender[i], currentAesKey);
         }
 
-        window.isBulkLoading = false; 
-        
-        if (window.chatRenderLimit <= 30) {
-            // 1. Создаем тот самый "Магнит" (невидимый якорь)
-            const magnet = document.createElement('div');
-            magnet.style.height = '1px';
-            magnet.style.width = '100%';
-            magnet.style.clear = 'both';
-            area.appendChild(magnet);
+        // Если есть старые сообщения — добавляем наблюдателя (авто-загрузчик)
+        if (window.chatRenderLimit < window.currentChatFullHistory.length) {
+            const loaderDiv = document.createElement('div');
+            loaderDiv.style.cssText = 'text-align:center; padding: 20px; color: var(--muted); font-size: 12px; width: 100%;';
+            loaderDiv.innerHTML = '<i class="fas fa-arrow-up"></i> Свайп вниз для истории';
+            area.appendChild(loaderDiv); // В column-reverse appendChild отправляет элемент на самый ВЕРХ экрана
 
-            // 2. Используем requestAnimationFrame (это гарантия, что браузер уже начал рисовать DOM)
-            requestAnimationFrame(() => {
-                // Примагничиваемся к нашему якорю
-                magnet.scrollIntoView({ behavior: 'auto', block: 'end' });
-                
-                // Даем браузеру 20мс на финальную отрисовку графиков и плееров
-                setTimeout(() => {
-                    // Контрольный магнит (на случай, если картинки/графики раздвинули чат)
-                    magnet.scrollIntoView({ behavior: 'auto', block: 'end' });
-                    
-                    // Плавно проявляем чат
-                    area.style.transition = 'opacity 0.15s ease-out';
-                    area.style.opacity = '1';
-                    
-                    setTimeout(() => {
-                        area.style.transition = '';
-                        magnet.remove(); // Убираем магнит, он сделал свое дело
-                    }, 200);
-                }, 20);
-            });
-            
-        } else {
-            // Подгрузка истории при свайпе вверх (оставляем вас на месте)
-            area.scrollTop = area.scrollHeight - oldScrollHeight + oldScrollTop;
+            // Браузер сам заметит, когда вы докрутите до этой надписи
+            const observer = new IntersectionObserver(async (entries) => {
+                if (entries[0].isIntersecting) {
+                    observer.disconnect(); // Убиваем старого наблюдателя
+                    loaderDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Загрузка...';
+                    window.chatRenderLimit += 30;
+                    await renderCurrentChatSlice(true); // Запускаем пагинацию
+                }
+            }, { root: area, threshold: 0.1 });
+            observer.observe(loaderDiv);
+        }
+
+        // Возвращаем вас на то же место, где вы были
+        if (isPagination) {
+            area.scrollTop = oldScroll;
         }
     }
 
@@ -1623,7 +1573,7 @@ function initiateReply(msgElement) {
                 const divider = document.createElement('div');
                 divider.className = 'date-divider';
                 divider.innerText = dateStr;
-                area.appendChild(divider);
+                area.prepend(divider); // <--- ИЗМЕНИТЬ appendChild НА prepend
                 window.lastRenderedDate = dateStr;
             }
         }
@@ -1776,15 +1726,8 @@ function initiateReply(msgElement) {
         }
 
         if (isNew) {
-            area.appendChild(div);
-            
-            // Если мы прямо сейчас переписываемся (это не массовая загрузка)
-            if (!window.isBulkLoading) {
-                // Используем надежный магнит к только что созданному сообщению (div)
-                requestAnimationFrame(() => {
-                    div.scrollIntoView({ behavior: 'smooth', block: 'end' });
-                });
-            }
+            area.prepend(div); // <--- ИЗМЕНИТЬ appendChild НА prepend
+            // БОЛЬШЕ НИКАКИХ СКРИПТОВ СКРОЛЛА! Браузер сам держит нас внизу.
         }
     }
 
