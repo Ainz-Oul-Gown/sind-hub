@@ -112,6 +112,33 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 
+function initiateReply(msgElement) {
+        // Достаем ID, имя и текст
+        const msgId = msgElement.id.replace('msg-', '');
+        
+        let senderName = "Участник";
+        const nameEl = msgElement.querySelector('.sender-name');
+        if (msgElement.classList.contains('msg-mine')) senderName = "Я";
+        else if (nameEl) senderName = nameEl.innerText;
+        else if (currentChatType === 'private') senderName = currentFriend.name;
+
+        // Вытаскиваем чистый текст (игнорируя внутренние HTML-блоки, если это ГС или Ответ)
+        let text = msgElement.innerText.split('\n')[0]; // Берем первую строчку для превью
+        if (msgElement.querySelector('.voice-player')) text = "🎤 Голосовое сообщение";
+
+        // Сохраняем в память
+        currentReplyTo = { id: msgId, name: senderName, text: text };
+
+        // Показываем плашку
+        document.getElementById('reply-preview-name').innerText = senderName;
+        document.getElementById('reply-preview-text').innerText = text;
+        document.getElementById('reply-preview-bar').classList.add('active');
+
+        // Фокусируемся на инпуте и вибрируем (как в ТГ)
+        document.getElementById('chat-input').focus();
+        if(tg.HapticFeedback) tg.HapticFeedback.selectionChanged();
+    }
+
 // === СТЕЛС-РЕЖИМ (ЗАЩИТА ОТ ПОДГЛЯДЫВАНИЯ) ===
     document.addEventListener("visibilitychange", () => {
         const stealthScreen = document.getElementById('stealth-overlay');
@@ -1401,7 +1428,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if(tg.HapticFeedback) tg.HapticFeedback.selectionChanged();
     }
 
-    function renderMessage(text, isMine, timeString = "", msgId = null, msgDate = null, senderName = null, senderId = null) {
+    function renderMessage(text, isMine, timeString = "", msgId = null, msgDate = null, senderName = null, senderId = null, replyData = null) {
         const area = document.getElementById('messages-area');
         let div = msgId ? document.getElementById(`msg-${msgId}`) : null;
         let isNew = false;
@@ -1473,6 +1500,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             }
 
+            // === НОВОЕ: СОЗДАЕМ HTML БЛОКА ОТВЕТА (Если есть) ===
+            let replyHtml = '';
+            if (replyData) {
+                // Клик по блоку проскроллит чат к оригинальному сообщению!
+                replyHtml = `
+                    <div class="msg-reply-block" data-action="scroll-to-msg" data-target-id="${replyData.id}">
+                        <div class="msg-reply-name">${escapeHTML(replyData.name)}</div>
+                        <div class="msg-reply-text">${escapeHTML(replyData.text)}</div>
+                    </div>
+                `;
+            }
+
             let transcriptHtml = '';
             if (hasTranscript) {
                 transcriptHtml = `
@@ -1483,7 +1522,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 transcriptHtml = `<div class="transcript-toggle" style="cursor:default;">${escapeHTML(transcriptionText)}</div>`;
             }
 
-            div.innerHTML = senderHtml + `
+            div.innerHTML = senderHtml + replyHtml + `
 <div class="voice-player">
     <div class="voice-play-btn" data-action="play-voice" data-filename="${fileName}">
         <i class="fas fa-play" style="margin-left: 3px;"></i>
@@ -1503,7 +1542,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             // Если это отправил я - показываем просто статус "Приглашение отправлено"
             if (isMine) {
-                div.innerHTML = senderHtml + `
+                div.innerHTML = senderHtml + replyHtml + `
                     <div style="display:flex; align-items:center; gap:10px; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px;">
                         <div style="width: 40px; height: 40px; border-radius: 50%; background: var(--surface); display:flex; align-items:center; justify-content:center; color: var(--muted);"><i class="fas fa-users"></i></div>
                         <div>
@@ -1516,7 +1555,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 // Если прислали мне - показываем кнопку "Вступить"
                 // ВАЖНО: ключи передаем через base64, чтобы кавычки не сломали HTML
                 const safeKeys = btoa(keysJSON);
-                div.innerHTML = senderHtml + `
+                div.innerHTML = senderHtml + replyHtml + `
                     <div style="display:flex; align-items:center; gap:10px; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px;">
                         <div style="width: 40px; height: 40px; border-radius: 50%; background: var(--primary); display:flex; align-items:center; justify-content:center; color: white;"><i class="fas fa-users"></i></div>
                         <div>
@@ -1528,7 +1567,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         } 
         else {
-            div.innerHTML = senderHtml + escapeHTML(text).replace(/\n/g, '<br>');
+            div.innerHTML = senderHtml + replyHtml + escapeHTML(text).replace(/\n/g, '<br>');
         }
 
         if (timeString) {
@@ -1623,12 +1662,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         return did;
     }
 
-    async function encryptText(text, aesKey) {
-        // 1. Создаем математическую подпись текста
+    async function encryptText(text, aesKey, replyData = null) { // <-- ДОБАВИТЬ ПАРАМЕТР
         const signature = await signText(text);
-
-        // 2. Упаковываем в объект
+        
+        // Пакуем в объект
         const payloadObj = { t: text, s: signature };
+        if (replyData) payloadObj.r = replyData; // Вшиваем инфу об ответе прямо в пакет!
+        
         const payloadStr = JSON.stringify(payloadObj);
 
         // 3. Шифруем (теперь шифруется JSON)
@@ -1649,7 +1689,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         autoResizeInput(); // Сброс размера поля и кнопки
         input.focus(); // Насильно удерживаем фокус для iOS
 
-        const encryptedPayload = await encryptText(text, currentAesKey);
+        // Передаем currentReplyTo в шифратор
+        const encryptedPayload = await encryptText(text, currentAesKey, currentReplyTo);
+
+        // МГНОВЕННО прячем плашку ответа и обнуляем память
+        currentReplyTo = null;
+        document.getElementById('reply-preview-bar').classList.remove('active');
 
         // ФИКС: Возвращаем генерацию вектора, иначе ИИ-поиск не найдет этот текст!
         // На современных телефонах это занимает миллисекунды, так что задержки не будет.
@@ -3183,18 +3228,19 @@ async function checkCryptoKeys(userId) {
             let isAuthentic = true;
 
             try {
-                // Пытаемся распарсить новый формат (JSON с подписью)
                 const parsed = JSON.parse(decryptedStr);
                 if (parsed.t !== undefined) {
                     finalPlainText = parsed.t;
-                    // Если сообщение чужое, проверяем подпись
                     if (msg.sender_id !== currentUser.id) {
                         isAuthentic = await verifySignature(parsed.t, parsed.s, msg.sender_id);
                     }
+                    
+                    // --- НОВОЕ: ПРОВЕРЯЕМ ЕСТЬ ЛИ БЛОК ОТВЕТА ---
+                    if (parsed.r) {
+                        msg.replyData = parsed.r; // Сохраняем в объект сообщения, чтобы передать в renderMessage
+                    }
                 }
-            } catch(e) {
-                // Старое сообщение (чистый текст), пропускаем
-            }
+            } catch(e) { }
 
             if (!isAuthentic) {
                 // Хакер спалился
@@ -3779,6 +3825,22 @@ async function checkCryptoKeys(userId) {
             case 'setup-panic-pin':
                 startPinSetup('panic');
                 break;
+
+            case 'cancel-reply':
+                currentReplyTo = null;
+                document.getElementById('reply-preview-bar').classList.remove('active');
+                break;
+
+            case 'scroll-to-msg':
+                const targetMsg = document.getElementById(`msg-${target.dataset.targetId}`);
+                if (targetMsg) {
+                    targetMsg.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    // Добавляем класс подсветки, чтобы было понятно, куда прыгнули
+                    targetMsg.classList.add('highlight');
+                    setTimeout(() => targetMsg.classList.remove('highlight'), 1500);
+                }
+                break;
+
             case 'open-pwa': openPWA(); break;
             case 'toggle-status': toggleStatus(); break;
             case 'create-group': handleCreateGroup(); break;
@@ -3820,5 +3882,22 @@ async function checkCryptoKeys(userId) {
         } 
         else if (action === 'send-recording') {
             stopAndSendRecording();
+        }
+    });
+
+// === ДВОЙНОЙ ТАП ДЛЯ ОТВЕТА НА СООБЩЕНИЕ ===
+    let lastTapTime = 0;
+    document.addEventListener('touchend', (e) => {
+        const msgBubble = e.target.closest('.msg-bubble');
+        if (msgBubble) {
+            const currentTime = new Date().getTime();
+            const tapLength = currentTime - lastTapTime;
+            
+            // Если промежуток между тапами меньше 300мс — это двойной тап!
+            if (tapLength < 300 && tapLength > 0) {
+                initiateReply(msgBubble);
+                e.preventDefault(); // Гасим стандартное поведение браузера
+            }
+            lastTapTime = currentTime;
         }
     });
