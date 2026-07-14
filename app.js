@@ -4,15 +4,32 @@
 document.addEventListener('DOMContentLoaded', async () => {
     console.log("🚀 Синдикат: Интерфейс загружен, запускаем логику...");
     
-    // Если используешь Telegram WebApp API
+    // 1. Инициализация Telegram (если есть)
     if (window.Telegram && window.Telegram.WebApp) {
         window.Telegram.WebApp.ready();
         window.Telegram.WebApp.expand();
     }
 
-    // Твои стартовые функции
-    initApp();
-    checkAuth();
+    // 2. Безопасный запуск главных функций
+    try {
+        // Проверяем, существует ли функция checkAuth
+        if (typeof checkAuth === 'function') {
+            console.log("🔐 Проверяем авторизацию...");
+            await checkAuth(); 
+        } else {
+            console.warn("⚠️ Функция checkAuth не найдена в коде.");
+        }
+
+        // Проверяем, существует ли функция initApp
+        if (typeof initApp === 'function') {
+            console.log("⚙️ Запускаем инициализацию приложения...");
+            await initApp(); 
+        } else {
+            console.warn("⚠️ Функция initApp не найдена в коде.");
+        }
+    } catch (e) {
+        console.error("❌ Критическая ошибка при запуске:", e);
+    }
 });
 
     let currentChatType = 'private'; // 'private' или 'group'
