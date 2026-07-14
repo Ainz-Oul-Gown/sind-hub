@@ -2702,41 +2702,53 @@ async function loadChats() {
 
     // Загрузка ключей и сообщений группы
     async function loadGroupChatKeys(groupId) {
-        document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:var(--muted); margin-top: 40px; font-size: 14px;"><i class="fas fa-shield-alt fa-spin" style="font-size: 24px; color: var(--primary); margin-bottom: 10px;"></i><br>Загрузка крипто-ключей группы...</div>';
-        
-        const { data: keyDataArr } = await supabaseClient.from('chat_keys').select('encrypted_key').eq('chat_id', groupId).eq('user_id', currentUser.id).limit(1);
-        if (!keyDataArr || keyDataArr.length === 0) return alert("Нет доступа к группе");
-        
-        const keyData = keyDataArr[0];
-        const deviceId = getDeviceId();
-        const keysDict = JSON.parse(keyData.encrypted_key);
-        const myEncryptedKey = keysDict[deviceId] || keysDict["legacy_dev"] || keysDict["legacy"];
-        
-        currentAesKey = await decryptChatKey(myEncryptedKey);
-        
-        // --- НОВАЯ ПРОВЕРКА НА ОШИБКУ КЛЮЧА ---
-        if (!currentAesKey) {
-            document.getElementById('messages-area').innerHTML = `
-                <div style="text-align:center; color: var(--danger); margin-top: 60px;">
-                    <i class="fas fa-lock fa-3x" style="margin-bottom: 15px; opacity: 0.8;"></i>
-                    <h3 style="margin: 0 0 8px;">Нет доступа к истории</h3>
-                    <div style="font-size: 14px; color: var(--muted); padding: 0 20px;">
-                        Этот чат зашифрован для вашего прошлого устройства. Вы не можете читать историю с текущего девайса.
-                    </div>
-                </div>`;
-            return; // Останавливаем загрузку сообщений
-        }
+    document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:var(--muted); margin-top: 40px; font-size: 14px;"><i class="fas fa-shield-alt fa-spin" style="font-size: 24px; color: var(--primary); margin-bottom: 10px;"></i><br>Загрузка крипто-ключей группы...</div>';
+    
+    // Получаем список всех ключей из таблицы
+    const { data: keyDataArr } = await supabaseClient.from('chat_keys')
+        .select('encrypted_key')
+        .eq('chat_id', groupId)
+        .eq('user_id', currentUser.id)
+        .limit(1);
 
-        // Собираем имена участников с безопасной проверкой
-        const { data: membersKeys } = await supabaseClient.from('chat_keys').select('user_id').eq('chat_id', groupId);
-        const memberIds = membersKeys.map(k => k.user_id);
-        const { data: usersData } = await supabaseClient.from('users').select('tg_id, first_name').in('tg_id', memberIds);
-        
-        window.currentGroupUsers = {};
-        // БЕЗОПАСНАЯ ПРОВЕРКА НА NULL:
-        if (usersData) {
-            usersData.forEach(u => window.currentGroupUsers[u.tg_id] = u.first_name);
-        }
+    if (!keyDataArr || keyDataArr.length === 0) return alert("Нет доступа к группе");
+    
+    const keysDict = JSON.parse(keyDataArr[0].encrypted_key);
+    let successfullyDecryptedAes = null;
+
+    // --- МАГИЯ: Универсальный цикл перебора (как в loadExistingChat) ---
+    for (const [keyName, encKeyString] of Object.entries(keysDict)) {
+        try {
+            const tempKey = await decryptChatKey(encKeyString);
+            if (tempKey) {
+                successfullyDecryptedAes = tempKey;
+                console.log(`✅ Успешно расшифрован ключ группы из слота: ${keyName}`);
+                break;
+            }
+        } catch (err) { continue; }
+    }
+    
+    currentAesKey = successfullyDecryptedAes;
+    
+    if (!currentAesKey) {
+        document.getElementById('messages-area').innerHTML = `
+            <div style="text-align:center; color: var(--danger); margin-top: 60px;">
+                <i class="fas fa-lock fa-3x" style="margin-bottom: 15px; opacity: 0.8;"></i>
+                <h3 style="margin: 0 0 8px;">Ошибка ключа</h3>
+                <div style="font-size: 14px; color: var(--muted); padding: 0 20px;">
+                    Не удалось подобрать ключ для этой группы.
+                </div>
+            </div>`;
+        return; 
+    }
+
+    // Собираем участников и рендерим (твой старый код отрисовки)
+    const { data: membersKeys } = await supabaseClient.from('chat_keys').select('user_id').eq('chat_id', groupId);
+    const memberIds = membersKeys.map(k => k.user_id);
+    const { data: usersData } = await supabaseClient.from('users').select('tg_id, first_name').in('tg_id', memberIds);
+    
+    window.currentGroupUsers = {};
+    if (usersData) usersData.forEach(u => window.currentGroupUsers[u.tg_id] = u.first_name);
 
         const cachedHistory = await getChatFromCache(currentChatId);
 
