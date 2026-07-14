@@ -588,17 +588,26 @@
             <div style="color: var(--muted); font-size: 14px; margin-top: 6px;">Занято нейросетями</div>
         </div>
 
-        <!-- Поиск -->
+       <!-- Поиск -->
         <h3 class="section-title">Семантический поиск</h3>
         <div class="card">
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <div style="flex-grow: 1;">
-                    <div style="font-weight: 600; font-size: 15px;">all-MiniLM-L6-v2</div>
-                    <div style="font-size: 12px; color: var(--muted); margin-top: 4px;">Умный поиск по смыслу (En/Ru)</div>
+                    <div style="font-weight: 600; font-size: 15px;">Multilingual MiniLM</div>
+                    <div style="font-size: 12px; color: var(--muted); margin-top: 4px;">Продвинутое понимание смысла (Ru/En)</div>
                 </div>
-                <div id="ai-search-status" style="font-size: 13px; font-weight: bold; color: var(--muted); text-align: right;">Вычисление...</div>
             </div>
-            <button class="primary-btn" data-action="delete-ai-search" style="background: rgba(255,69,58,0.15); color: var(--danger); margin-top: 16px; padding: 10px;">
+
+            <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border); margin-top: 12px; padding-top: 12px;">
+                <div style="font-size: 13px; color: var(--muted);" id="ai-search-size">Занято: 0.00 МБ</div>
+                <div id="ai-search-status" style="font-size: 13px; font-weight: bold; color: var(--muted);">Вычисление...</div>
+            </div>
+
+            <!-- Кнопки управления моделью поиска -->
+            <button class="primary-btn" id="btn-download-search" data-action="download-ai-search" style="background: rgba(50,215,75,0.15); color: var(--success); margin-top: 16px; padding: 10px; display: none;">
+                <i class="fas fa-download"></i> Скачать в память (~117 МБ)
+            </button>
+            <button class="primary-btn" id="btn-delete-search" data-action="delete-ai-search" style="background: rgba(255,69,58,0.15); color: var(--danger); margin-top: 16px; padding: 10px; display: none;">
                 <i class="fas fa-trash-alt"></i> Удалить модель
             </button>
         </div>
@@ -753,7 +762,7 @@
 
     // Главная функция отрисовки экрана ИИ
     async function calculateAiStorage() {
-        const searchModel = 'Xenova/all-MiniLM-L6-v2';
+        const searchModel = 'Xenova/paraphrase-multilingual-MiniLM-L12-v2'; // Фиксированная модель
         const whisperModel = document.getElementById('ai-whisper-select').value;
 
         const searchSizeBytes = await getTransformersModelSize(searchModel);
@@ -763,16 +772,26 @@
         document.getElementById('ai-total-used').innerText = `${totalMB} МБ`;
 
         // Обновляем UI Поиска
-        const searchStatus = document.getElementById('ai-search-status');
+        const searchStatusEl = document.getElementById('ai-search-status');
+        const searchSizeEl = document.getElementById('ai-search-size');
+        const btnDownloadSearch = document.getElementById('btn-download-search');
+        const btnDeleteSearch = document.getElementById('btn-delete-search');
+
         if (searchSizeBytes > 0) {
-            searchStatus.innerHTML = `Установлено <span style="color:var(--text); font-weight:normal;">(${(searchSizeBytes / (1024 * 1024)).toFixed(1)} МБ)</span>`;
-            searchStatus.style.color = 'var(--success)';
+            searchStatusEl.innerText = 'Установлена';
+            searchStatusEl.style.color = 'var(--success)';
+            searchSizeEl.innerText = `Занято: ${(searchSizeBytes / (1024 * 1024)).toFixed(2)} МБ`;
+            btnDownloadSearch.style.display = 'none';
+            btnDeleteSearch.style.display = 'block';
         } else {
-            searchStatus.innerText = 'Не загружена';
-            searchStatus.style.color = 'var(--muted)';
+            searchStatusEl.innerText = 'Не загружена';
+            searchStatusEl.style.color = 'var(--primary)';
+            searchSizeEl.innerText = 'Занято: 0.00 МБ';
+            btnDownloadSearch.style.display = 'block';
+            btnDeleteSearch.style.display = 'none';
         }
 
-        // Обновляем UI Whisper
+        // Обновляем UI Whisper (Распознавание речи остается с выбором качества)
         const whisperStatusEl = document.getElementById('ai-whisper-status');
         const whisperSizeEl = document.getElementById('ai-whisper-size');
         
@@ -788,20 +807,17 @@
     }
 
     async function openAiSettings() {
-        toggleModal('modal-settings'); // Закрываем модалку настроек
-        switchScreen('screen-ai'); // Открываем экран ИИ
+        toggleModal('modal-settings'); 
+        switchScreen('screen-ai'); 
         
-        // Восстанавливаем выбранную модель Whisper из памяти (по умолчанию tiny)
+        // Настройки Whisper остаются
         const savedWhisper = localStorage.getItem('synd_whisper_model') || 'Xenova/whisper-tiny';
-        const selectEl = document.getElementById('ai-whisper-select');
-        selectEl.value = savedWhisper;
-        
-        // Слушаем изменение в селекте
-        selectEl.onchange = (e) => {
+        const selectWhisper = document.getElementById('ai-whisper-select');
+        selectWhisper.value = savedWhisper;
+        selectWhisper.onchange = (e) => {
             localStorage.setItem('synd_whisper_model', e.target.value);
-            // ФИКС: Нужно передать выбор в воркер!
             aiWorker.postMessage({ type: 'change_model', model: e.target.value });
-            calculateAiStorage(); // Пересчитываем визуал для новой модели
+            calculateAiStorage();
         };
 
         await calculateAiStorage();
@@ -971,30 +987,39 @@
     let extractor = null;
     let isAiLoading = false;
 
-    async function initAI() {
-    if (extractor) return extractor;
-    
-    if (isAiLoading) { 
-        while (isAiLoading) await new Promise(r => setTimeout(r, 100)); 
-        return extractor; 
-    }
+    async function initAI(forceReload = false) {
+        // Если мы скачиваем принудительно — сбрасываем старую из памяти
+        if (forceReload) extractor = null;
+        if (extractor) return extractor;
+        
+        if (isAiLoading) { 
+            while (isAiLoading) await new Promise(r => setTimeout(r, 100)); 
+            return extractor; 
+        }
 
-    isAiLoading = true;
-    try {
-        const { pipeline, env } = await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.14.0');
-        env.allowLocalModels = false;
-        extractor = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', { quantized: true });
-    } catch (e) {
-        console.error("Ошибка инициализации ИИ:", e);
-        extractor = null; // Обнуляем, чтобы не вернуть сломанный объект
-        throw e; // Прокидываем ошибку дальше, чтобы try-catch в sendPrivateMessage её поймал
-    } finally {
-        // finally выполняется ВСЕГДА, независимо от того, была ошибка или нет
-        isAiLoading = false; 
+        isAiLoading = true;
+        try {
+            const { pipeline, env } = await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.14.0');
+            env.allowLocalModels = false;
+            
+            // Жесткий стандарт Синдиката (отлично понимает русский язык)
+            const modelName = 'Xenova/paraphrase-multilingual-MiniLM-L12-v2';
+            
+            extractor = await pipeline('feature-extraction', modelName, { 
+                quantized: true,
+                progress_callback: window.aiSearchProgressCallback
+            });
+        } catch (e) {
+            console.error("Ошибка инициализации ИИ:", e);
+            extractor = null; 
+            throw e; 
+        } finally {
+            isAiLoading = false; 
+            window.aiSearchProgressCallback = null; // Очищаем коллбэк
+        }
+        
+        return extractor;
     }
-    
-    return extractor;
-}
 
 
     // --- ПОТЕРЯННЫЕ ФУНКЦИИ ИИ И ПОИСКА ---
@@ -3890,17 +3915,41 @@ async function checkCryptoKeys(userId) {
             case 'open-settings-ai':
                 openAiSettings();
                 break;
-            case 'delete-ai-search':
-                if(confirm("Удалить модель поиска? Она скачается заново при следующем ИИ-запросе.")) {
-                    await deleteTransformersModel('Xenova/all-MiniLM-L6-v2');
-                    calculateAiStorage();
-                    if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
-                }
-                break;
             case 'delete-ai-whisper':
                 if(confirm("Удалить текущую модель распознавания речи?")) {
                     const wModel = document.getElementById('ai-whisper-select').value;
                     await deleteTransformersModel(wModel);
+                    calculateAiStorage();
+                    if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+                }
+                break;
+            case 'download-ai-search': { // <--- Добавлены фигурные скобки для изоляции const
+                const btn = document.getElementById('btn-download-search');
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Загрузка...';
+                btn.disabled = true;
+                
+                // Ловим прогресс-бар из библиотеки Transformers
+                window.aiSearchProgressCallback = (data) => {
+                    if (data.status === 'progress') {
+                        const percent = Math.round((data.loaded / data.total) * 100);
+                        btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Загрузка ${percent}%`;
+                    }
+                };
+    
+                try {
+                    await initAI(true); // Запускаем скачивание принудительно
+                    if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+                } catch(e) {
+                    alert("Ошибка загрузки: " + e.message);
+                }
+                
+                await calculateAiStorage(); // Обновляем кнопки и мегабайты
+                break;
+            } // <--- Закрыли фигурные скобки
+            case 'delete-ai-search':
+                if(confirm("Удалить модель поиска? Вы сможете скачать её вручную или она загрузится при следующем ИИ-запросе.")) {
+                    await deleteTransformersModel('Xenova/paraphrase-multilingual-MiniLM-L12-v2');
+                    extractor = null; // Выгружаем из оперативки
                     calculateAiStorage();
                     if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
                 }
