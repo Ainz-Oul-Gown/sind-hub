@@ -1831,7 +1831,9 @@ function initiateReply(msgElement) {
 
     // --- ОСТАЛЬНАЯ ЛОГИКА ---
     const tg = window.Telegram.WebApp;
-    tg.expand();
+    if (tg && typeof tg.expand === 'function') {
+        tg.expand();
+    }
     // --- ПРАВИЛЬНАЯ ИНИЦИАЛИЗАЦИЯ SUPABASE ---
     let currentToken = localStorage.getItem('synd_token');
 
