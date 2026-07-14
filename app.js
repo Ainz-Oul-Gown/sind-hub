@@ -113,7 +113,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 
 function initiateReply(msgElement) {
-        // Достаем ID, имя и текст
+        // Достаем ID и имя
         const msgId = msgElement.id.replace('msg-', '');
         
         let senderName = "Участник";
@@ -122,21 +122,43 @@ function initiateReply(msgElement) {
         else if (nameEl) senderName = nameEl.innerText;
         else if (currentChatType === 'private') senderName = currentFriend.name;
 
-        // Вытаскиваем чистый текст (игнорируя внутренние HTML-блоки, если это ГС или Ответ)
-        let text = msgElement.innerText.split('\n')[0]; // Берем первую строчку для превью
-        if (msgElement.querySelector('.voice-player')) text = "🎤 Голосовое сообщение";
+        // --- ИСПРАВЛЕНИЕ: БЕЗОПАСНОЕ ИЗВЛЕЧЕНИЕ ТЕКСТА ---
+        // Клонируем элемент в памяти, чтобы вырезать из него визуальный мусор
+        const clone = msgElement.cloneNode(true);
+        
+        // Удаляем из клона вложенный ответ, имя отправителя и время (чтобы они не попали в текст)
+        const replyBlock = clone.querySelector('.msg-reply-block');
+        if (replyBlock) replyBlock.remove();
+        
+        const sName = clone.querySelector('.sender-name');
+        if (sName) sName.remove();
+        
+        const mTime = clone.querySelector('.msg-time');
+        if (mTime) mTime.remove();
+
+        // Вытаскиваем чистый текст
+        let text = clone.innerText.trim().split('\n')[0]; 
+        if (!text) text = "Сообщение"; // Заглушка, если текста не осталось
+
+        // Переопределяем для Голосовых сообщений
+        if (msgElement.querySelector('.voice-player')) {
+            text = "🎤 Голосовое сообщение";
+        }
+        // ------------------------------------------------
 
         // Сохраняем в память
         currentReplyTo = { id: msgId, name: senderName, text: text };
 
-        // Показываем плашку
+        // Показываем плашку над полем ввода
         document.getElementById('reply-preview-name').innerText = senderName;
         document.getElementById('reply-preview-text').innerText = text;
         document.getElementById('reply-preview-bar').classList.add('active');
 
         // Фокусируемся на инпуте и вибрируем (как в ТГ)
         document.getElementById('chat-input').focus();
-        if(tg.HapticFeedback) tg.HapticFeedback.selectionChanged();
+        if(window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.HapticFeedback) {
+            window.Telegram.WebApp.HapticFeedback.selectionChanged();
+        }
     }
 
 // === СТЕЛС-РЕЖИМ (ЗАЩИТА ОТ ПОДГЛЯДЫВАНИЯ) ===
