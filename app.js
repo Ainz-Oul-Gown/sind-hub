@@ -2142,19 +2142,27 @@ async function checkCryptoKeys(userId) {
         return btoa(String.fromCharCode.apply(null, sigArray));
     }
 
+    // Кэш для ключей, чтобы не качать их из базы по 100 раз
+    window.pubKeyCache = window.pubKeyCache || {};
+
     async function verifySignature(text, signatureB64, senderId) {
-        if (!signatureB64) return false; // Подписи нет, хотя должна быть
+        if (!signatureB64) return false; 
         
-        const { data } = await supabaseClient.from('users').select('public_key').eq('tg_id', senderId).single();
-        if (!data || !data.public_key) return true; // У юзера вообще нет ключей, пропускаем
+        // Если ключа нет в кэше — качаем из БД и сохраняем
+        if (window.pubKeyCache[senderId] === undefined) {
+            const { data } = await supabaseClient.from('users').select('public_key').eq('tg_id', senderId).single();
+            window.pubKeyCache[senderId] = data ? data.public_key : null;
+        }
+
+        const pubKeyData = window.pubKeyCache[senderId];
+        if (!pubKeyData) return true; // У юзера вообще нет ключей, пропускаем
 
         let keysDict = {};
-        try { keysDict = JSON.parse(data.public_key); } catch(e) { return true; }
+        try { keysDict = JSON.parse(pubKeyData); } catch(e) { return true; }
 
         const sigBytes = Uint8Array.from(atob(signatureB64), c => c.charCodeAt(0));
         const encodedText = enc.encode(text);
 
-        // Перебираем все устройства отправителя, вдруг он написал с компьютера или второго телефона
         for (let devId in keysDict) {
             if (!keysDict[devId].ecdsa) continue;
             try {
@@ -2167,10 +2175,10 @@ async function checkCryptoKeys(userId) {
                     { name: "ECDSA", hash: { name: "SHA-256" } },
                     pubKey, sigBytes, encodedText
                 );
-                if (isValid) return true; // Подпись совпала!
+                if (isValid) return true; 
             } catch(e) {}
         }
-        return false; // Ни один ключ девайса не подошел -> 100% подделка!
+        return false; 
     }
 
 
@@ -2340,19 +2348,17 @@ async function checkCryptoKeys(userId) {
         // ⚡ НАЧАЛО БЫСТРОЙ ЗАГРУЗКИ ⚡
         const cachedHistory = await getChatFromCache(currentChatId);
         const area = document.getElementById('messages-area');
+        
+        // Магия: Прячем чат (чтобы не было видно "прыжков" сообщений)
+        area.style.opacity = '0';
         area.innerHTML = '';
         window.lastRenderedDate = null;
-        
-        window.isBulkLoading = true; // Блокируем плавный скролл
+        window.isBulkLoading = true; 
     
         if (cachedHistory && cachedHistory.length > 0) {
             for (let i = 0; i < cachedHistory.length; i++) {
                 await processAndRenderMessage(cachedHistory[i], currentAesKey);
-                // "Отдаем" поток браузеру каждые 15 сообщений, чтобы не зависал интерфейс
-                if (i % 15 === 0) await new Promise(r => setTimeout(r, 0)); 
             }
-        } else {
-            area.innerHTML = '<div style="text-align:center; color:var(--muted); margin-top: 40px;"><i class="fas fa-spinner fa-spin fa-2x"></i></div>';
         }
     
         const lastMsgDate = cachedHistory && cachedHistory.length > 0 ? cachedHistory[cachedHistory.length - 1].created_at : null;
@@ -2364,15 +2370,21 @@ async function checkCryptoKeys(userId) {
             if (!cachedHistory || cachedHistory.length === 0) area.innerHTML = '';
             for (let i = 0; i < newHistory.length; i++) {
                 await processAndRenderMessage(newHistory[i], currentAesKey);
-                if (i % 15 === 0) await new Promise(r => setTimeout(r, 0)); 
             }
             await saveChatToCache(currentChatId, newHistory); 
         } else if (!cachedHistory || cachedHistory.length === 0) {
             area.innerHTML = '<div style="text-align:center; color:var(--muted); margin-top:40px;">Чат пуст</div>';
         }
         
-        window.isBulkLoading = false; // Снимаем блокировку
-        area.scrollTop = area.scrollHeight; // Прыгаем в самый низ ОДИН РАЗ, мгновенно!
+        window.isBulkLoading = false; 
+        
+        // Мгновенно прыгаем вниз и плавно показываем чат
+        area.scrollTop = area.scrollHeight; 
+        setTimeout(() => {
+            area.style.transition = 'opacity 0.2s';
+            area.style.opacity = '1';
+            setTimeout(() => area.style.transition = '', 200); // Убираем анимацию, чтобы не мешала потом
+        }, 10);
     
         subscribeToPrivateMessages();
     }
@@ -2984,18 +2996,16 @@ async function checkCryptoKeys(userId) {
         // ⚡ НАЧАЛО БЫСТРОЙ ЗАГРУЗКИ ГРУППЫ ⚡
         const cachedHistory = await getChatFromCache(currentChatId);
         const area = document.getElementById('messages-area');
+        
+        area.style.opacity = '0';
         area.innerHTML = '';
         window.lastRenderedDate = null;
-        
-        window.isBulkLoading = true; // Блокируем скролл
+        window.isBulkLoading = true; 
     
         if (cachedHistory && cachedHistory.length > 0) {
             for (let i = 0; i < cachedHistory.length; i++) {
                 await processAndRenderMessage(cachedHistory[i], currentAesKey);
-                if (i % 15 === 0) await new Promise(r => setTimeout(r, 0)); 
             }
-        } else {
-            area.innerHTML = '<div style="text-align:center; color:var(--muted); margin-top: 40px;"><i class="fas fa-spinner fa-spin fa-2x"></i></div>';
         }
     
         const lastMsgDate = cachedHistory && cachedHistory.length > 0 ? cachedHistory[cachedHistory.length - 1].created_at : null;
@@ -3007,15 +3017,20 @@ async function checkCryptoKeys(userId) {
             if (!cachedHistory || cachedHistory.length === 0) area.innerHTML = '';
             for (let i = 0; i < newHistory.length; i++) {
                 await processAndRenderMessage(newHistory[i], currentAesKey);
-                if (i % 15 === 0) await new Promise(r => setTimeout(r, 0)); 
             }
             await saveChatToCache(currentChatId, newHistory);
         } else if (!cachedHistory || cachedHistory.length === 0) {
             area.innerHTML = '<div style="text-align:center; color:var(--muted); margin-top:40px;">Чат пуст</div>';
         }
         
-        window.isBulkLoading = false; // Снимаем блокировку
-        area.scrollTop = area.scrollHeight; // Прыгаем в самый низ ОДИН РАЗ, мгновенно!
+        window.isBulkLoading = false; 
+        
+        area.scrollTop = area.scrollHeight; 
+        setTimeout(() => {
+            area.style.transition = 'opacity 0.2s';
+            area.style.opacity = '1';
+            setTimeout(() => area.style.transition = '', 200);
+        }, 10);
     
         subscribeToPrivateMessages();
     }
