@@ -854,23 +854,23 @@ document.addEventListener('DOMContentLoaded', async () => {
                         <div class="v-dot"></div> <span class="v-time-text">0:00,0</span>
                     </div>
                     
-                    <div class="v-cancel-text" onclick="cancelRecording()">ОТМЕНА</div>
+                    <div class="v-cancel-text" data-pointer-action="cancel-recording">ОТМЕНА</div>
                     
                     <div class="v-actions-right">
-                        <div class="v-pause-btn" onclick="pauseRecording()"><i class="fas fa-pause"></i></div>
-                        <div class="v-send" onclick="stopAndSendRecording()"><i class="fas fa-paper-plane"></i></div>
+                        <div class="v-pause-btn" data-pointer-action="pause-recording"><i class="fas fa-pause"></i></div>
+                        <div class="v-send" data-pointer-action="send-recording"><i class="fas fa-paper-plane"></i></div>
                     </div>
                 </div>
 
                 <!-- Слой 3: Залочили (Пауза) - Та самая капсула -->
                 <div id="v-locked-pause-ui" class="v-ui-layer">
-                    <i class="fas fa-trash-alt v-trash" onclick="cancelRecording()"></i>
+                    <i class="fas fa-trash-alt v-trash" data-pointer-action="cancel-recording"></i>
                     <div class="v-capsule">
-                        <button class="v-play" onclick="resumeRecording()"><i class="fas fa-play" style="margin-left:2px;"></i></button>
+                        <button class="v-play" data-pointer-action="resume-recording"><i class="fas fa-play" style="margin-left:2px;"></i></button>
                         <span class="v-time-text">0:00</span>
                         <div class="v-wave">||||||||||||||||</div>
                     </div>
-                    <div class="v-send" onclick="stopAndSendRecording()"><i class="fas fa-paper-plane"></i></div>
+                    <div class="v-send" data-pointer-action="send-recording"><i class="fas fa-paper-plane"></i></div>
                 </div>
             `;
 
@@ -2060,21 +2060,24 @@ async function checkCryptoKeys(userId) {
     }
 
 
+    let deviceKillSwitchChannel = null; // <-- ДОБАВИТЬ ПЕРЕМЕННУЮ
     async function registerDeviceAndListen() {
-    const deviceId = getDeviceId();
-    let platform = tg.initDataUnsafe?.receiver?.platform || navigator.platform || "Неизвестное устройство";
-    
-    // 1. Отмечаемся в базе, что мы онлайн
-    await supabaseClient.from('user_devices').upsert({
-        user_id: currentUser.id,
-        device_id: deviceId,
-        device_name: platform,
-        last_active: new Date().toISOString()
-    }, { onConflict: 'user_id, device_id' });
+        const deviceId = getDeviceId();
+        let platform = tg.initDataUnsafe?.receiver?.platform || navigator.platform || "Неизвестное устройство";
+        
+        // 1. Отмечаемся в базе, что мы онлайн
+        await supabaseClient.from('user_devices').upsert({
+            user_id: currentUser.id,
+            device_id: deviceId,
+            device_name: platform,
+            last_active: new Date().toISOString()
+        }, { onConflict: 'user_id, device_id' });
 
-    // 2. Слушаем свою смерть 💀
-    supabaseClient.channel('device-kill-switch')
-        .on('postgres_changes', { 
+        // 2. Слушаем свою смерть 💀
+        if (deviceKillSwitchChannel) { supabaseClient.removeChannel(deviceKillSwitchChannel); } // <-- ДОБАВИТЬ ЭТУ СТРОКУ
+        
+        deviceKillSwitchChannel = supabaseClient.channel('device-kill-switch')
+            .on('postgres_changes', {
             event: 'DELETE', 
             schema: 'public', 
             table: 'user_devices', 
@@ -2134,6 +2137,7 @@ async function checkCryptoKeys(userId) {
         }, 500);
     }
     
+    let adminDeviceRequestsChannel = null; // <-- ДОБАВИТЬ ПЕРЕМЕННУЮ
     async function listenForDeviceRequests() {
         console.log("🔍 Начинаем поиск заявок для пользователя:", currentUser.id);
     
@@ -2157,8 +2161,11 @@ async function checkCryptoKeys(userId) {
         }
     
         // 2. Подписываемся на веб-сокеты для новых (онлайн) заявок
-        supabaseClient.channel('admin-device-requests')
-            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'device_requests', filter: `user_id=eq.${currentUser.id}` }, 
+        // 2. Подписываемся на веб-сокеты для новых (онлайн) заявок
+        if (adminDeviceRequestsChannel) { supabaseClient.removeChannel(adminDeviceRequestsChannel); } // <-- ДОБАВИТЬ ЭТУ СТРОКУ
+        
+        adminDeviceRequestsChannel = supabaseClient.channel('admin-device-requests')
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'device_requests', filter: `user_id=eq.${currentUser.id}` },
             (payload) => {
                 const req = payload.new;
                 if (req.status === 'pending') {
@@ -2705,7 +2712,7 @@ async function checkCryptoKeys(userId) {
     async function openChatInfo() {
         // 1. Если это ГРУППА
         if (currentChatType === 'group') {
-            document.getElementById('group-info-name').innerHTML = `${escapeHTML(currentGroup.name)} <i class="fas fa-pen" style="font-size: 14px; color: var(--muted); cursor: pointer;" onclick="editGroupName()"></i>`;
+            document.getElementById('group-info-name').innerHTML = `${escapeHTML(currentGroup.name)} <i class="fas fa-pen" style="font-size: 14px; color: var(--muted); cursor: pointer;" data-action="edit-group-name"></i>`;
             document.getElementById('group-info-avatar').innerText = currentGroup.name.charAt(0).toUpperCase();
             document.getElementById('group-info-count').innerText = "Загрузка участников...";
             document.getElementById('group-members-list').innerHTML = '<div style="text-align:center; padding: 15px; color: var(--muted);"><i class="fas fa-spinner fa-spin"></i></div>';
@@ -2938,7 +2945,7 @@ async function checkCryptoKeys(userId) {
 
         // 1. Оптимистичное обновление UI (Меняется моментально)
         currentGroup.name = finalName;
-        document.getElementById('group-info-name').innerHTML = `${escapeHTML(finalName)} <i class="fas fa-pen" style="font-size: 14px; color: var(--muted); cursor: pointer;" onclick="editGroupName()"></i>`;
+        document.getElementById('group-info-name').innerHTML = `${escapeHTML(finalName)} <i class="fas fa-pen" style="font-size: 14px; color: var(--muted); cursor: pointer;" data-action="edit-group-name"></i>`;
         document.getElementById('group-info-avatar').innerText = finalName.charAt(0).toUpperCase();
         document.getElementById('friend-name-title').innerText = finalName;
 
@@ -3283,8 +3290,6 @@ async function checkCryptoKeys(userId) {
         await calculateStorageUsage();
     }
     
-    initApp();
-    
     // === ГЛОБАЛЬНЫЙ ПЕРЕХВАТЧИК СОБЫТИЙ (ЗАЩИТА ОТ XSS) ===
     document.addEventListener('click', async (e) => {
         // Ищем ближайший элемент, по которому кликнули, у которого есть data-action
@@ -3440,7 +3445,6 @@ async function checkCryptoKeys(userId) {
         }
     });
     
-    // Отдельный глобальный слушатель для перемотки ГС (там onpointerdown)
     // Отдельный глобальный слушатель для перемотки ГС и кнопок записи (моментальный отклик)
     document.addEventListener('pointerdown', async (e) => {
         const target = e.target.closest('[data-pointer-action]');
@@ -3449,12 +3453,14 @@ async function checkCryptoKeys(userId) {
         const action = target.dataset.pointerAction;
 
         if (action === 'scrub-waveform') {
-            // e - само событие (нужно для координат), target - контейнер волны
             handleWaveformPointer(e, target, target.dataset.filename);
         } 
         else if (action === 'cancel-recording') {
             cancelRecording();
         } 
+        else if (action === 'pause-recording') {  // <--- ДОБАВИТЬ ЭТОТ БЛОК
+            pauseRecording();
+        }
         else if (action === 'resume-recording') {
             resumeRecording();
         } 
