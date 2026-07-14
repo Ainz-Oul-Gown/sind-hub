@@ -6,7 +6,7 @@
 
     <meta http-equiv="Content-Security-Policy" content="
     default-src 'self'; 
-    script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://telegram.org; 
+    script-src 'self' 'unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://telegram.org; 
     style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; 
     font-src 'self' data: https://fonts.gstatic.com https://cdnjs.cloudflare.com; 
     connect-src 'self' https://cqhndgtiqdjzzrqdzrfq.supabase.co wss://cqhndgtiqdjzzrqdzrfq.supabase.co https://cdn.jsdelivr.net https://huggingface.co https://*.huggingface.co https://*.hf.co; 
@@ -15,7 +15,6 @@
     worker-src 'self' blob: https://cdn.jsdelivr.net;
     frame-src 'self' https://telegram.org;
 ">
-
 
 
 
@@ -220,7 +219,7 @@
         <!-- Шапка: Название + Кнопка PWA -->
         <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 4px 10px 4px; margin-bottom: 10px;">
             <h2 style="font-size: 20px; font-weight: 700; margin: 0; background: linear-gradient(135deg, var(--primary), #32D74B); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">СИНДИКАТ</h2>
-            <div id="btn-pwa" onclick="openPWA()" style="cursor: pointer; color: var(--primary); font-size: 20px; padding: 5px;">
+            <div id="btn-pwa" data-action="open-pwa" style="cursor: pointer; color: var(--primary); font-size: 20px; padding: 5px;">
                 <i class="fas fa-download"></i>
             </div>
         </div>
@@ -232,13 +231,13 @@
                 <div>
                     <div style="font-weight: 600; font-size: 18px; margin-bottom: 4px;">Мой профиль</div>
                     <div id="my-fingerprint" style="font-size: 11px; color: var(--success); font-family: monospace; margin-bottom: 6px;">Шифр: ...</div>
-                    <div id="my-status" class="status-badge" onclick="toggleStatus()">
+                    <div id="my-status" class="status-badge" data-action="toggle-status">
                         <i class="fas fa-circle" style="font-size: 8px;"></i> Свободен
                     </div>
                 </div>
             </div>
             <!-- Шестерёнка теперь открывает настройки -->
-            <button class="icon-btn" onclick="toggleModal('modal-settings')"><i class="fas fa-cog" style="color: var(--muted);"></i></button>
+            <button class="icon-btn" data-action="toggle-modal" data-target="modal-settings"><i class="fas fa-cog" style="color: var(--muted);"></i></button>
         </div>
     
     
@@ -280,7 +279,7 @@
 
         <div style="display: flex; align-items: center; justify-content: space-between; padding-right: 8px;">
             <h3 class="section-title" style="margin-top: 12px;">Братва <i class="fas fa-spinner fa-spin" id="chat-list-spinner" style="display: none; font-size: 12px; margin-left: 6px;"></i></h3>
-            <button class="icon-btn" style="margin-top: 12px; width: 32px; height: 32px; background: rgba(10,132,255,0.15); border-radius: 50%;" onclick="toggleModal('modal-add-friend')">
+            <button class="icon-btn" style="margin-top: 12px; width: 32px; height: 32px; background: rgba(10,132,255,0.15); border-radius: 50%;" data-action="toggle-modal" data-target="modal-add-friend">
                 <i class="fas fa-user-plus" style="font-size: 14px;"></i>
             </button>
         </div>
@@ -291,25 +290,25 @@
         </div>
 
         <!-- ПЕРЕНЕСЛИ КНОПКУ СЮДА -->
-        <div class="fab" onclick="toggleModal('modal-create-group')"><i class="fas fa-pencil-alt"></i></div>
+        <div class="fab" data-action="toggle-modal" data-target="modal-create-group"><i class="fas fa-pencil-alt"></i></div>
 
         <!-- ПЕРЕНЕСЛИ МОДАЛКУ СЮДА -->
         <div id="modal-create-group" class="glass-modal">
-            <button class="modal-close" onclick="toggleModal('modal-create-group')"><i class="fas fa-times"></i></button>
+            <button class="modal-close" data-action="toggle-modal" data-target="modal-create-group"><i class="fas fa-times"></i></button>
             <h3 style="text-align: center; margin-top: 0; margin-bottom: 20px; font-size: 20px;">Новая группа</h3>
             <input type="text" id="new-group-name" placeholder="Название группы..." style="background: rgba(0,0,0,0.5);">
-            <button class="primary-btn" onclick="handleCreateGroup()"><i class="fas fa-check"></i> Создать</button>
+            <button class="primary-btn" data-action="create-group"><i class="fas fa-check"></i> Создать</button>
         </div>
 
         <!-- МОДАЛКА: ДОБАВИТЬ ДРУГА -->
         <div id="modal-add-friend" class="glass-modal">
-            <button class="modal-close" onclick="toggleModal('modal-add-friend')"><i class="fas fa-times"></i></button>
+            <button class="modal-close" data-action="toggle-modal" data-target="modal-add-friend"><i class="fas fa-times"></i></button>
             <h3 style="text-align: center; margin-top: 0; margin-bottom: 20px; font-size: 20px;">Найти брата</h3>
             <p style="text-align: center; color: var(--muted); font-size: 14px; margin-top: -10px; margin-bottom: 20px;">
                 Введите Telegram ID друга.<br>Узнать свой ID: <span style="color: var(--primary);" id="my-tg-id-hint">...</span>
             </p>
             <input type="number" id="friend-tg-id-input" placeholder="Например: 123456789" style="background: rgba(0,0,0,0.5); text-align: center; font-weight: bold; letter-spacing: 2px;">
-            <button class="primary-btn" onclick="sendFriendRequest()"><i class="fas fa-paper-plane"></i> Отправить запрос</button>
+            <button class="primary-btn" data-action="send-friend-request"><i class="fas fa-paper-plane"></i> Отправить запрос</button>
         </div>
 
     </div>
@@ -326,7 +325,7 @@
             <h3 class="section-title" style="margin-top: 0;">Создать новую</h3>
             <input type="text" id="cur-name" placeholder="Название (напр. Адреналин)">
             <input type="number" id="cur-price" placeholder="Цена в рублях (напр. 150)">
-            <button class="primary-btn" onclick="addCurrency()"><i class="fas fa-plus"></i>Добавить</button>
+            <button class="primary-btn" data-action="add-currency"><i class="fas fa-plus"></i>Добавить</button>
         </div>
 
         <h3 class="section-title">Мои активы</h3>
@@ -338,14 +337,14 @@
 
         <div class="friend-header-wrap">
             <div class="header-nav" style="margin-bottom: 12px; border: none; padding-bottom: 0;">
-                <button class="back-btn" onclick="switchScreen('screen-main')"><i class="fas fa-chevron-left"></i></button>
-                <div style="text-align: center; flex-grow: 1; cursor: pointer;" onclick="openChatInfo()">
+                <button class="back-btn" data-action="switch-screen" data-target="screen-main"><i class="fas fa-chevron-left"></i></button>
+                <div style="text-align: center; flex-grow: 1; cursor: pointer;" data-action="open-chat-info">
                     <div id="friend-name-title" style="font-weight: 600; font-size: 17px;">Друг</div>
                     <div id="friend-fingerprint" style="font-size: 13px; color: var(--success); margin-top: 2px;"></div>
                 </div>
                 <div style="display: flex; gap: 8px;">
-                    <button class="icon-btn" id="btn-header-debts" onclick="toggleModal('modal-debts')"><i class="fas fa-wallet"></i></button>
-                    <button class="icon-btn" onclick="toggleModal('modal-search')"><i class="fas fa-search"></i></button>
+                    <button class="icon-btn" id="btn-header-debts" data-action="toggle-modal" data-target="modal-debts"><i class="fas fa-wallet"></i></button>
+                    <button class="icon-btn" data-action="toggle-modal" data-target="modal-search"><i class="fas fa-search"></i></button>
                 </div>
             </div>
         </div>
@@ -353,73 +352,73 @@
         <div class="chat-container">
             <!-- МОДАЛКА: ДОЛГИ -->
             <div id="modal-debts" class="glass-modal">
-                <button class="modal-close" onclick="toggleModal('modal-debts')"><i class="fas fa-times"></i></button>
+                <button class="modal-close" data-action="toggle-modal" data-target="modal-debts"><i class="fas fa-times"></i></button>
                 <h3 style="margin-top: 0; margin-bottom: 20px; font-size: 20px; text-align: center;">Сводка долгов</h3>
                 <div class="card" style="background: rgba(0,0,0,0.3); border: none;">
                     <div id="friend-debts-list">Загрузка...</div>
                 </div>
-                <button class="primary-btn" style="margin-top: auto;" onclick="openDebtModal()"><i class="fas fa-plus"></i> Оформить долг</button>
+                <button class="primary-btn" style="margin-top: auto;" data-action="open-debt-modal"><i class="fas fa-plus"></i> Оформить долг</button>
             </div>
 
 
 
             <!-- МОДАЛКА: ИНФО О ДРУГЕ -->
             <div id="modal-friend-info" class="glass-modal">
-                <button class="modal-close" onclick="toggleModal('modal-friend-info')"><i class="fas fa-times"></i></button>
+                <button class="modal-close" data-action="toggle-modal" data-target="modal-friend-info"><i class="fas fa-times"></i></button>
                 <div style="text-align: center; margin-bottom: 20px;">
                     <div class="avatar" id="friend-info-avatar" style="width: 80px; height: 80px; font-size: 32px; margin: 0 auto 12px; background: var(--primary);">Д</div>
                     <h2 id="friend-info-name" style="margin:0; font-size: 22px;">Имя</h2>
                     <div id="friend-info-id" style="color: var(--muted); font-size: 14px; margin-top: 4px; font-family: monospace;">ID: ...</div>
                 </div>
 
-                <button class="primary-btn" style="background: transparent; border: 1px solid rgba(255,69,58,0.3); color: var(--danger);" onclick="removeFriend()">
+                <button class="primary-btn" style="background: transparent; border: 1px solid rgba(255,69,58,0.3); color: var(--danger);" data-action="remove-friend">
                     <i class="fas fa-user-minus"></i> Удалить из друзей
                 </button>
             </div>
 
             <!-- МОДАЛКА: ИНФО О ГРУППЕ -->
             <div id="modal-group-info" class="glass-modal">
-                <button class="modal-close" onclick="toggleModal('modal-group-info')"><i class="fas fa-times"></i></button>
+                <button class="modal-close" data-action="toggle-modal" data-target="modal-group-info"><i class="fas fa-times"></i></button>
                 <div style="text-align: center; margin-bottom: 20px;">
                     <div class="avatar" id="group-info-avatar" style="width: 80px; height: 80px; font-size: 32px; margin: 0 auto 12px; background: linear-gradient(135deg, #007AFF, #00C6FF);">Г</div>
 
                     <!-- Заголовок с карандашом -->
                     <h2 id="group-info-name" style="margin:0; font-size: 22px; display: flex; align-items: center; justify-content: center; gap: 8px;">
-                        Название <i class="fas fa-pen" style="font-size: 14px; color: var(--muted); cursor: pointer;" onclick="editGroupName()"></i>
+                        Название <i class="fas fa-pen" style="font-size: 14px; color: var(--muted); cursor: pointer;" data-action="edit-group-name"></i>
                     </h2>
 
                     <div id="group-info-count" style="color: var(--muted); font-size: 14px; margin-top: 4px;">1 участник</div>
                 </div>
 
-                <button class="primary-btn" style="margin-bottom: 16px;" onclick="openInviteModal()"><i class="fas fa-user-plus"></i> Добавить участника</button>
+                <button class="primary-btn" style="margin-bottom: 16px;" data-action="open-invite-modal"><i class="fas fa-user-plus"></i> Добавить участника</button>
 
                 <div id="group-members-list" style="margin-bottom: 16px; background: rgba(0,0,0,0.3); border-radius: 12px; padding: 8px;"></div>
 
                 <!-- Кнопки выхода и удаления -->
-                <button class="primary-btn" style="background: rgba(255,69,58,0.15); color: var(--danger); margin-bottom: 8px;" onclick="leaveGroup()"><i class="fas fa-sign-out-alt"></i> Покинуть группу</button>
-                <button class="primary-btn" style="background: transparent; border: 1px solid rgba(255,69,58,0.3); color: var(--danger);" onclick="deleteGroup()"><i class="fas fa-trash-alt"></i> Удалить для всех</button>
+                <button class="primary-btn" style="background: rgba(255,69,58,0.15); color: var(--danger); margin-bottom: 8px;" data-action="leave-group"><i class="fas fa-sign-out-alt"></i> Покинуть группу</button>
+                <button class="primary-btn" style="background: transparent; border: 1px solid rgba(255,69,58,0.3); color: var(--danger);" data-action="delete-group"><i class="fas fa-trash-alt"></i> Удалить для всех</button>
             </div>
 
 
 
             <!-- МОДАЛКА: ВЫБОР ДРУГА ДЛЯ ИНВАЙТА -->
             <div id="modal-invite-friend" class="glass-modal">
-                <button class="modal-close" onclick="toggleModal('modal-invite-friend')"><i class="fas fa-times"></i></button>
+                <button class="modal-close" data-action="toggle-modal" data-target="modal-invite-friend"><i class="fas fa-times"></i></button>
                 <h3 style="text-align: center; margin-top: 0; margin-bottom: 20px; font-size: 20px;">Кого пригласить?</h3>
                 <div id="invite-friends-list"></div>
             </div>
 
             <!-- МОДАЛКА: ПОИСК -->
             <div id="modal-search" class="glass-modal">
-                <button class="modal-close" onclick="toggleModal('modal-search')"><i class="fas fa-times"></i></button>
+                <button class="modal-close" data-action="toggle-modal" data-target="modal-search"><i class="fas fa-times"></i></button>
                 <h3 style="margin-top: 0; margin-bottom: 20px; font-size: 20px; text-align: center;">Глубокий поиск</h3>
                 <div style="display: flex; gap: 10px; margin-bottom: 16px;">
                     <input type="text" id="search-input" placeholder="Найти в переписке..." style="margin: 0; background: rgba(0,0,0,0.5);">
-                    <button class="primary-btn" onclick="performSearch()" style="width: 50px; padding: 0;"><i class="fas fa-search"></i></button>
+                    <button class="primary-btn" data-action="perform-search" style="width: 50px; padding: 0;"><i class="fas fa-search"></i></button>
                 </div>
                 <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.3); padding: 12px; border-radius: 12px; font-size: 14px;">
                     <label style="color: var(--text); display: flex; align-items: center; gap: 8px;">
-                        <input type="checkbox" id="semantic-toggle"" style="width: auto; margin:0;"> ИИ-поиск
+                        <input type="checkbox" id="semantic-toggle" style="width: auto; margin:0;"> ИИ-поиск
                     </label>
                     <div id="slider-container" style="display: none; align-items: center; gap: 5px; color: var(--muted);">
                         <i class="fas fa-sliders-h"></i> <input type="range" id="semantic-slider" min="0.3" max="0.8" step="0.1" value="0.4" style="width: 60px; margin: 0;">
@@ -442,12 +441,12 @@
 
                     <!-- Меню во время паузы (Корзина - Таймер - Микрофон - Отправить) -->
                     <div class="record-locked-actions" id="record-locked-actions">
-                        <button class="btn-rec-action btn-rec-cancel" onclick="cancelRecording()"><i class="fas fa-trash-alt"></i></button>
+                        <button class="btn-rec-action btn-rec-cancel" data-action="cancel-recording"><i class="fas fa-trash-alt"></i></button>
 
                         <div class="record-timer paused" id="record-timer-paused" style="margin-left: 15px;"><span>0:00</span></div>
 
-                        <button class="btn-rec-action btn-rec-resume" onclick="resumeRecording()"><i class="fas fa-microphone"></i></button>
-                        <button class="btn-rec-action btn-rec-send" onclick="stopAndSendRecording()"><i class="fas fa-paper-plane"></i></button>
+                        <button class="btn-rec-action btn-rec-resume" data-action="resume-recording"><i class="fas fa-microphone"></i></button>
+                        <button class="btn-rec-action btn-rec-send" data-action="send-recording"><i class="fas fa-paper-plane"></i></button>
                     </div>
 
                     <!-- Стандартный вид (Таймер слева, Подсказка по центру) -->
@@ -475,7 +474,7 @@
     <div id="screen-add-debt" class="screen">
         <div class="header-nav">
             <!-- ФИКС: Просто возвращаемся в профиль друга, модалку не дергаем -->
-            <button class="back-btn" onclick="switchScreen('screen-friend');"><i class="fas fa-chevron-left"></i> Отмена</button>
+            <button class="back-btn" data-action="switch-screen" data-target="screen-friend"><i class="fas fa-chevron-left"></i> Отмена</button>
             <span>Оформление долга</span>
             <div style="width: 60px;"></div>
         </div>
@@ -491,7 +490,7 @@
                 Итого к выплате:<br>
                 <strong id="debt-result" style="color: var(--success); font-size: 32px; display: block; margin-top: 8px;">0</strong>
             </div>
-            <button class="primary-btn" onclick="saveDebt()"><i class="fas fa-handshake"></i> Закрепить сделку</button>
+            <button class="primary-btn" data-action="save-debt"><i class="fas fa-handshake"></i> Закрепить сделку</button>
         </div>
     </div>
 
