@@ -56,6 +56,58 @@ document.addEventListener('DOMContentLoaded', async () => {
         micBtn.addEventListener('pointerup', endVoiceHold);
         micBtn.addEventListener('pointercancel', endVoiceHold);
     }
+
+     // === НОВОЕ: ЗАГРУЗКА ЦВЕТА ТЕМЫ ===
+    const savedTheme = localStorage.getItem('synd_theme_color');
+    if (savedTheme) { document.documentElement.style.setProperty('--primary', savedTheme); }
+    
+    // === НОВОЕ: ПЕРЕХВАТЧИК ВИБРАЦИИ (HAPTIC PATCH) ===
+    // Мы переопределяем нативные методы TG, чтобы они уважали наш тумблер в настройках
+    if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.HapticFeedback) {
+        const hf = window.Telegram.WebApp.HapticFeedback;
+        const origImpact = hf.impactOccurred.bind(hf);
+        const origNotif = hf.notificationOccurred.bind(hf);
+        const origSel = hf.selectionChanged.bind(hf);
+
+        hf.impactOccurred = (style) => { if(localStorage.getItem('synd_haptics') !== 'off') origImpact(style); };
+        hf.notificationOccurred = (type) => { if(localStorage.getItem('synd_haptics') !== 'off') origNotif(type); };
+        hf.selectionChanged = () => { if(localStorage.getItem('synd_haptics') !== 'off') origSel(); };
+    }
+
+    // === НОВОЕ: СЛУШАТЕЛИ ТУМБЛЕРОВ ===
+    const hapticToggle = document.getElementById('haptic-toggle');
+    if (hapticToggle) {
+        hapticToggle.checked = localStorage.getItem('synd_haptics') !== 'off';
+        hapticToggle.addEventListener('change', (e) => {
+            localStorage.setItem('synd_haptics', e.target.checked ? 'on' : 'off');
+            if (e.target.checked && window.Telegram.WebApp.HapticFeedback) {
+                // Демонстрационная вибрация при включении
+                window.Telegram.WebApp.HapticFeedback.impactOccurred('medium');
+            }
+        });
+    }
+
+    const autoWhisperToggle = document.getElementById('auto-whisper-toggle');
+    if (autoWhisperToggle) {
+        autoWhisperToggle.checked = localStorage.getItem('synd_auto_whisper') !== 'off';
+        autoWhisperToggle.addEventListener('change', (e) => {
+            localStorage.setItem('synd_auto_whisper', e.target.checked ? 'on' : 'off');
+        });
+    }
+
+    // === НОВОЕ: СМЕНА ЦВЕТА ===
+    document.querySelectorAll('.color-dot').forEach(dot => {
+        if (dot.dataset.color === (savedTheme || '#0A84FF')) dot.classList.add('active');
+
+        dot.addEventListener('click', (e) => {
+            const color = e.target.dataset.color;
+            document.documentElement.style.setProperty('--primary', color);
+            localStorage.setItem('synd_theme_color', color);
+            
+            document.querySelectorAll('.color-dot').forEach(d => d.classList.remove('active'));
+            e.target.classList.add('active');
+        });
+    });
     
 });
 
@@ -1625,7 +1677,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                         try { plainText = JSON.parse(plainText).t; } catch(e) {} 
 
                         if (newMsg.sender_id !== currentUser.id && plainText.startsWith('[VOICE]:') && !plainText.includes('|') && isAiReady) {
-                            helpFriendTranscribe(plainText.replace('[VOICE]:', ''), newMsg.id);
+                            
+                            // --- НОВОЕ: ПРОВЕРЯЕМ ТУМБЛЕР АВТО-РАСШИФРОВКИ ---
+                            if (localStorage.getItem('synd_auto_whisper') !== 'off') {
+                                // Если в коде есть эта функция (или когда добавишь её логику)
+                                if (typeof helpFriendTranscribe === 'function') {
+                                    helpFriendTranscribe(plainText.replace('[VOICE]:', ''), newMsg.id);
+                                }
+                            }
                         }
                     } catch(e) {}
                 }
@@ -3424,6 +3483,34 @@ async function checkCryptoKeys(userId) {
                 break;
             case 'switch-screen':
                 if (target.dataset.target) switchScreen(target.dataset.target);
+                break;
+            case 'panic-wipe':
+                if(confirm("🚨 ТРЕВОГА!\n\nЭто действие мгновенно:\n1. Сотрет все RSA и AES ключи\n2. Удалит кэш сообщений\n3. Выбросит из аккаунта\n\nПродолжить?")) {
+                    
+                    // 1. Уничтожаем все ключи шифрования и историю переписок!
+                    await idbKeyval.clear(); 
+                    
+                    // 2. Сносим настройки, токены и статусы
+                    localStorage.clear();    
+                    
+                    // 3. Уничтожаем скачанные кэшированные файлы (ГС)
+                    try { await caches.delete('syndicate-media-cache'); } catch(e){}
+                    
+                    // 4. Закрываем всё и рисуем "экран смерти"
+                    document.body.innerHTML = `
+                        <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; text-align:center; padding: 20px; background: #000; z-index: 9999; position: relative;">
+                            <i class="fas fa-skull" style="font-size:72px; color:#FF453A; margin-bottom:20px; animation: pulse 2s infinite;"></i>
+                            <h2 style="color: #FF453A; margin-bottom: 8px;">Данные уничтожены</h2>
+                            <p style="color: #8e8e93; font-size: 14px;">Устройство аппаратно отключено от Синдиката. Ключи безвозвратно стёрты.</p>
+                        </div>`;
+                    
+                    if (window.Telegram && window.Telegram.WebApp.HapticFeedback) {
+                        window.Telegram.WebApp.HapticFeedback.notificationOccurred('error');
+                    }
+                    
+                    // 5. Перезагрузка страницы (выкинет на авторизацию)
+                    setTimeout(() => window.location.reload(), 2500);
+                }
                 break;
             case 'open-pwa': openPWA(); break;
             case 'toggle-status': toggleStatus(); break;
