@@ -317,7 +317,7 @@
     <!-- ЭКРАН 2: ВАЛЮТЫ -->
     <div id="screen-currencies" class="screen">
         <div class="header-nav">
-            <button class="back-btn" onclick="switchScreen('screen-main')"><i class="fas fa-chevron-left"></i> Назад</button>
+            <button class="back-btn" data-action="back-to-settings"><i class="fas fa-chevron-left"></i> Назад</button>
             <span>Эмиссия валют</span>
             <div style="width: 24px;"></div>
         </div>
@@ -502,7 +502,7 @@
     <!-- ЭКРАН: УСТРОЙСТВА -->
     <div id="screen-devices" class="screen">
         <div class="header-nav">
-            <button class="back-btn" onclick="switchScreen('screen-main')"><i class="fas fa-chevron-left"></i> Назад</button>
+            <button class="back-btn" data-action="back-to-settings"><i class="fas fa-chevron-left"></i> Назад</button>
             <span>Мои устройства</span>
             <div style="width: 60px;"></div>
         </div>
@@ -519,7 +519,7 @@
     <!-- ЭКРАН: ДАННЫЕ И ПАМЯТЬ -->
     <div id="screen-storage" class="screen">
         <div class="header-nav">
-            <button class="back-btn" data-action="back-to-main"><i class="fas fa-chevron-left"></i> Назад</button>
+            <button class="back-btn" data-action="back-to-settings"><i class="fas fa-chevron-left"></i> Назад</button>
             <span>Данные и память</span>
             <div style="width: 60px;"></div>
         </div>
@@ -1518,11 +1518,9 @@ async function kickDevice(deviceId, deviceName) {
         const player = btn.closest('.voice-player');
         const icon = btn.querySelector('i');
 
-        // 1. Если этот ГС уже загружен
         if (player.audioObj) {
             const audio = player.audioObj;
             if (audio.paused) {
-                // Если играл другой ГС - ставим его на паузу
                 if (currentAudioObj && currentAudioObj !== audio) {
                     currentAudioObj.pause();
                     if (currentAudioIcon) {
@@ -1546,7 +1544,6 @@ async function kickDevice(deviceId, deviceName) {
             return;
         }
 
-        // 2. Если грузим совершенно новый ГС - стопаем старый
         if (currentAudioObj) {
             currentAudioObj.pause();
             if (currentAudioIcon) {
@@ -1558,25 +1555,52 @@ async function kickDevice(deviceId, deviceName) {
         icon.className = 'fas fa-spinner fa-spin';
         icon.style.marginLeft = '0';
 
-        const { data, error } = await supabaseClient.storage.from('voice_messages').download(fileName);
-        if (error) { icon.className = 'fas fa-exclamation-triangle'; return; }
+        let arrayBuffer;
 
-        const bytes = new Uint8Array(await data.arrayBuffer());
         try {
+            // --- НОВАЯ СИСТЕМА КЭШИРОВАНИЯ ---
+            const cache = await caches.open('syndicate-media-cache');
+            const cacheReq = new Request(`/voice/${fileName}`);
+            const cachedRes = await cache.match(cacheReq);
+
+            if (cachedRes) {
+                // Если файл уже есть в кэше — берем его моментально!
+                arrayBuffer = await cachedRes.arrayBuffer();
+                console.log("🎤 ГС загружено из кэша!");
+            } else {
+                // Если нет — скачиваем из Supabase
+                const { data, error } = await supabaseClient.storage.from('voice_messages').download(fileName);
+                if (error) { icon.className = 'fas fa-exclamation-triangle'; return; }
+                
+                arrayBuffer = await data.arrayBuffer();
+                
+                // И сохраняем в кэш на будущее (сохраняется ЗАШИФРОВАННЫМ)
+                await cache.put(cacheReq, new Response(arrayBuffer));
+                console.log("⬇️ ГС скачано и сохранено в кэш");
+            }
+        } catch(err) {
+            // Фолбэк: если API кэширования недоступно, качаем напрямую
+            const { data, error } = await supabaseClient.storage.from('voice_messages').download(fileName);
+            if (error) { icon.className = 'fas fa-exclamation-triangle'; return; }
+            arrayBuffer = await data.arrayBuffer();
+        }
+
+        const bytes = new Uint8Array(arrayBuffer);
+        
+        try {
+            // Расшифровка всегда происходит на лету из буфера
             const decryptedBuffer = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.slice(0, 12) }, currentAesKey, bytes.slice(12));
             const audioUrl = URL.createObjectURL(new Blob([decryptedBuffer]));
 
             const audio = new Audio(audioUrl);
             player.audioObj = audio; 
 
-            // --- ЛОГИКА ПРОГРЕСС БАРА ---
             audio.addEventListener('timeupdate', () => {
-                if (!audio.duration || player.isScrubbing) return; // <--- ДОБАВЛЕНО ИГНОРИРОВАНИЕ
+                if (!audio.duration || player.isScrubbing) return; 
                 const progress = audio.currentTime / audio.duration;
                 const bars = player.querySelectorAll('.v-bar');
                 const activeCount = Math.floor(progress * bars.length);
 
-                // Закрашиваем палочки в реальном времени
                 bars.forEach((bar, index) => {
                     if (index < activeCount) bar.classList.add('active');
                     else bar.classList.remove('active');
@@ -3710,6 +3734,10 @@ async function checkCryptoKeys(userId) {
             case 'open-settings-devices':
                 loadDevicesScreen();
                 toggleModal('modal-settings');
+                break;
+            case 'back-to-settings':
+                switchScreen('screen-main'); // Возвращаемся на фон
+                document.getElementById('modal-settings').classList.add('active'); // Открываем модалку настроек
                 break;
         }
     });
