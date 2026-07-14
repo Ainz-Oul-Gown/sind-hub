@@ -3462,7 +3462,7 @@ async function loadChats() {
     initApp();
     
     // === ГЛОБАЛЬНЫЙ ПЕРЕХВАТЧИК СОБЫТИЙ (ЗАЩИТА ОТ XSS) ===
-document.body.addEventListener('click', (e) => {
+document.addEventListener('click', (e) => {
     // Ищем ближайший элемент, по которому кликнули, у которого есть data-action
     const target = e.target.closest('[data-action]');
     if (!target) return; // Если клик не по нашей кнопке - игнорируем
