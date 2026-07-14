@@ -199,15 +199,16 @@
 
     <!-- ЭКРАН 1: ГЛАВНАЯ -->
     <div id="screen-main" class="screen active">
-        <h2 class="brand-title">СИНДИКАТ</h2>
+        <!-- Шапка: Название + Кнопка PWA -->
+<div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 4px 10px 4px; margin-bottom: 10px;">
+    <h2 style="font-size: 20px; font-weight: 700; margin: 0; background: linear-gradient(135deg, var(--primary), #32D74B); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">СИНДИКАТ</h2>
+    <div id="btn-pwa" onclick="openPWA()" style="cursor: pointer; color: var(--primary); font-size: 20px; padding: 5px;">
+        <i class="fas fa-download"></i>
+    </div>
+</div>
 
         <!-- Внутри screen-main -->
 <div class="card profile-card" style="position: relative;">
-    <!-- Значок загрузки PWA в углу -->
-    <div id="btn-pwa" onclick="openPWA()" style="position: absolute; top: 12px; right: 12px; cursor: pointer; color: var(--primary); font-size: 18px;">
-        <i class="fas fa-download"></i>
-    </div>
-
     <div class="profile-info">
         <div class="avatar" id="my-avatar">М</div>
         <div>
