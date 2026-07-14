@@ -210,6 +210,18 @@
         .debt-amount.owe { color: var(--danger); }
         .debt-amount.owed { color: var(--success); }
         .btn-resolve { background: rgba(255,255,255,0.1); color: var(--text); font-size: 14px; padding: 8px 16px; border-radius: 20px; cursor: pointer; border: none; font-weight: 600; transition: 0.2s;}
+        /* --- НОВЫЕ ЭЛЕМЕНТЫ НАСТРОЕК --- */
+        /* Цветовые кружки */
+        .color-dot { width: 22px; height: 22px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; transition: 0.2s; }
+        .color-dot.active { border-color: white; transform: scale(1.2); box-shadow: 0 0 10px rgba(255,255,255,0.3); }
+        
+        /* Тумблер (Переключатель iOS style) */
+        .switch { position: relative; display: inline-block; width: 44px; height: 26px; flex-shrink: 0; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(255,255,255,0.15); transition: 0.3s; border-radius: 26px; }
+        .slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 3px; bottom: 3px; background-color: white; transition: 0.3s; border-radius: 50%; }
+        input:checked + .slider { background-color: var(--success); }
+        input:checked + .slider:before { transform: translateX(18px); }
     </style>
 </head>
 <body>
@@ -246,6 +258,27 @@
             <!-- Крестик теперь тоже работает через data-action -->
             <button class="modal-close" data-action="close-settings" style="left: 16px; right: auto;"><i class="fas fa-times"></i></button>
             <h3 style="text-align: center; margin-bottom: 20px;">Настройки</h3>
+
+            <!-- НОВЫЙ БЛОК: ОФОРМЛЕНИЕ И ОТКЛИК -->
+            <h3 class="section-title" style="margin: 0 0 8px 4px; font-size: 12px;">Оформление и Отклик</h3>
+            
+            <div class="list-item">
+                <div class="list-item-left"><i class="fas fa-palette" style="color: var(--primary); width: 20px; text-align: center;"></i> Цвет темы</div>
+                <div style="display:flex; gap: 12px;" id="theme-color-picker">
+                    <div class="color-dot" data-color="#0A84FF" style="background:#0A84FF;"></div>
+                    <div class="color-dot" data-color="#FF2D55" style="background:#FF2D55;"></div>
+                    <div class="color-dot" data-color="#32D74B" style="background:#32D74B;"></div>
+                    <div class="color-dot" data-color="#BF5AF2" style="background:#BF5AF2;"></div>
+                </div>
+            </div>
+
+            <div class="list-item">
+                <div class="list-item-left"><i class="fas fa-mobile" style="color: var(--muted); width: 20px; text-align: center;"></i> Вибрация в приложении</div>
+                <label class="switch">
+                    <input type="checkbox" id="haptic-toggle" checked>
+                    <span class="slider"></span>
+                </label>
+            </div>
             
             <!-- БЛОК: ОСНОВНЫЕ -->
             <h3 class="section-title" style="margin: 0 0 8px 4px; font-size: 12px;">Основные</h3>
@@ -271,6 +304,12 @@
             <div class="list-item" data-action="open-settings-ai">
                 <div class="list-item-left"><i class="fas fa-brain" style="color: #FF2D55; width: 20px; text-align: center;"></i> Нейро-модуль</div>
                 <i class="fas fa-chevron-right" style="color: var(--muted);"></i>
+            </div>
+
+            <!-- НОВЫЙ БЛОК: БЕЗОПАСНОСТЬ -->
+            <h3 class="section-title" style="margin: 16px 0 8px 4px; font-size: 12px;">Безопасность</h3>
+            <div class="list-item" data-action="panic-wipe" style="border-color: rgba(255,69,58,0.3); background: rgba(255,69,58,0.05);">
+                <div class="list-item-left"><i class="fas fa-skull" style="color: var(--danger); width: 20px; text-align: center;"></i> Тревожная кнопка (Сброс)</div>
             </div>
         </div>
 
@@ -610,6 +649,21 @@
 
         <!-- Распознавание речи -->
         <h3 class="section-title">Распознавание речи (ГС)</h3>
+
+        <!-- НОВЫЙ ТУМБЛЕР АВТО-РАСШИФРОВКИ -->
+        <div class="list-item" style="margin-bottom: 12px; padding: 12px;">
+            <div class="list-item-left">
+                <div>
+                    <div class="list-item-title" style="font-size: 15px;">Авто-расшифровка</div>
+                    <div class="list-item-subtitle">Запускать ИИ для новых ГС</div>
+                </div>
+            </div>
+            <label class="switch">
+                <input type="checkbox" id="auto-whisper-toggle" checked>
+                <span class="slider"></span>
+            </label>
+        </div>
+        
         <div class="card">
             <label style="font-size: 14px; color: var(--muted); margin-bottom: 8px; display: block;">Качество расшифровки (Whisper):</label>
             <select id="ai-whisper-select" style="background: rgba(0,0,0,0.3);">
