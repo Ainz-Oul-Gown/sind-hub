@@ -14,7 +14,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // 2. Безопасный запуск главных функций
     try {
-        // Проверяем, существует ли функция checkAuth
+        // Проверяем, существует ли функция checkAuthа
         if (typeof checkAuth === 'function') {
             console.log("🔐 Проверяем авторизацию...");
             await checkAuth(); 
@@ -1556,8 +1556,13 @@ function initiateReply(msgElement) {
                     <div class="transcript-toggle" data-action="toggle-transcript"><i class="fas fa-chevron-down"></i> Показать перевод</div>
                     <div class="transcript-content" style="display:none;">${escapeHTML(transcriptionText)}</div>
                 `;
-            } else {
+            } else if (transcriptionText.includes('ИИ анализирует') || transcriptionText.includes('Ошибка')) {
+                // Если в процессе или сломалось
                 transcriptHtml = `<div class="transcript-toggle" style="cursor:default;">${escapeHTML(transcriptionText)}</div>`;
+            } else {
+                // Если перевода нет (например, авто-режим был выключен) - показываем кнопку "Расшифровать"
+                const safeFileParam = text.replace('[VOICE]:', '');
+                transcriptHtml = `<div class="transcript-toggle" style="cursor:pointer; color: var(--primary);" data-action="manual-transcribe" data-filename="${safeFileParam}" data-msgid="${msgId}"><i class="fas fa-magic"></i> Расшифровать текст</div>`;
             }
 
             if (!isNew && div.querySelector('.voice-player')) {
@@ -1628,6 +1633,10 @@ function initiateReply(msgElement) {
             div.innerHTML = senderHtml + replyHtml + escapeHTML(text).replace(/\n/g, '<br>');
         }
 
+        // Сначала находим и удаляем старое время, чтобы не плодить дубликаты
+        const oldTime = div.querySelector('.msg-time');
+        if (oldTime) oldTime.remove();
+
         if (timeString) {
             const timeDiv = document.createElement('div');
             timeDiv.className = 'msg-time';
@@ -1641,6 +1650,64 @@ function initiateReply(msgElement) {
         }
     }
 
+
+// ФУНКЦИЯ ДЛЯ ПЕРЕВОДА ЧУЖИХ ГС (И РУЧНОЙ РАСШИФРОВКИ)
+    async function helpFriendTranscribe(fileNameWithParams, msgId) {
+        const msgEl = document.getElementById(`msg-${msgId}`);
+        if (msgEl) {
+            const toggle = msgEl.querySelector('.transcript-toggle');
+            if (toggle && toggle.dataset.action === 'manual-transcribe') {
+                toggle.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Слушаю...';
+                toggle.style.color = 'var(--muted)';
+                toggle.dataset.action = ''; // Блокируем повторные клики
+            }
+        }
+
+        try {
+            const parts = fileNameWithParams.split('|');
+            const fileName = parts[0];
+            let wfStr = null;
+            for (let i = 1; i < parts.length; i++) {
+                if (parts[i].startsWith('WF:')) wfStr = parts[i].substring(3);
+            }
+
+            // 1. Скачиваем файл из хранилища
+            const { data, error } = await supabaseClient.storage.from('voice_messages').download(fileName);
+            if (error) throw error;
+            const arrayBuffer = await data.arrayBuffer();
+
+            // 2. Расшифровываем AES-ключом чата
+            const bytes = new Uint8Array(arrayBuffer);
+            const decryptedBuffer = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.slice(0, 12) }, currentAesKey, bytes.slice(12));
+            
+            // 3. Отдаем нейросети (Whisper)
+            if (audioContext.state === 'suspended') await audioContext.resume();
+            const decodedAudio = await audioContext.decodeAudioData(decryptedBuffer);
+            const audioFloat32 = decodedAudio.getChannelData(0);
+            
+            const transcribedText = await transcribeViaWorker(audioFloat32);
+            if (!transcribedText || transcribedText.trim() === '') throw new Error("Не удалось разобрать речь");
+
+            const encryptedVector = await generateAndEncryptVector(transcribedText, currentAesKey);
+            
+            // 4. Обновляем сообщение в базе для обоих!
+            const newMarker = `[VOICE]:${fileName}|WF:${wfStr || ''}|${transcribedText.trim()}`;
+            const newEncryptedText = await encryptText(newMarker, currentAesKey);
+
+            await supabaseClient.from('messages').update({ encrypted_text: newEncryptedText, encrypted_vector: encryptedVector }).eq('id', msgId);
+            
+        } catch (e) {
+            console.error("Ошибка авто-расшифровки:", e);
+            if (msgEl) {
+                const toggle = msgEl.querySelector('.transcript-toggle');
+                if (toggle) {
+                    toggle.innerHTML = '<i class="fas fa-magic"></i> Ошибка (нажмите повторить)';
+                    toggle.style.color = 'var(--danger)';
+                    toggle.dataset.action = 'manual-transcribe'; 
+                }
+            }
+        }
+    }
 
     // --- ОСТАЛЬНАЯ ЛОГИКА ---
     const tg = window.Telegram.WebApp;
@@ -3907,6 +3974,10 @@ async function checkCryptoKeys(userId) {
                     targetMsg.classList.add('highlight');
                     setTimeout(() => targetMsg.classList.remove('highlight'), 1500);
                 }
+                break;
+                
+            case 'manual-transcribe':
+                helpFriendTranscribe(target.dataset.filename, target.dataset.msgid);
                 break;
 
             case 'open-pwa': openPWA(); break;
