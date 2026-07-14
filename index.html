@@ -236,10 +236,30 @@
         .pin-btn:active { background: rgba(255,255,255,0.2); transform: scale(0.95); }
         .pin-btn.empty { background: transparent; font-size: 24px; color: var(--text); }
 
+        /* --- СТЕЛС-РЕЖИМ (ЗАЩИТА ЭКРАНА) --- */
+        #stealth-overlay { 
+            display: none; 
+            position: fixed; 
+            inset: 0; 
+            background: rgba(15, 15, 19, 0.6); 
+            backdrop-filter: blur(20px); 
+            -webkit-backdrop-filter: blur(20px); 
+            z-index: 9999999; 
+            flex-direction: column; 
+            align-items: center; 
+            justify-content: center;
+        }
+        #stealth-overlay.active { display: flex; }
         
     </style>
 </head>
 <body>
+
+    <!-- СТЕЛС-ЭКРАН -->
+    <div id="stealth-overlay">
+        <i class="fas fa-eye-slash" style="font-size: 48px; color: var(--muted); margin-bottom: 20px;"></i>
+        <div style="color: var(--muted); font-size: 16px; font-weight: 500;">Скрыто в целях безопасности</div>
+    </div>
 
     <!-- ЭКРАН 1: ГЛАВНАЯ -->
     <div id="screen-main" class="screen active">
