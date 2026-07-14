@@ -111,6 +111,32 @@ document.addEventListener('DOMContentLoaded', async () => {
     
 });
 
+
+// === СТЕЛС-РЕЖИМ (ЗАЩИТА ОТ ПОДГЛЯДЫВАНИЯ) ===
+    document.addEventListener("visibilitychange", () => {
+        const stealthScreen = document.getElementById('stealth-overlay');
+        if (!stealthScreen) return;
+
+        if (document.hidden) {
+            // Приложение свернуто или телефон заблокирован - мгновенно блюрим!
+            stealthScreen.classList.add('active');
+        } else {
+            // Вернулись в приложение - убираем блюр
+            stealthScreen.classList.remove('active');
+        }
+    });
+
+    // Дополнительная страховка для iOS/Android браузеров (потеря фокуса окном)
+    window.addEventListener("blur", () => {
+        const stealthScreen = document.getElementById('stealth-overlay');
+        if (stealthScreen) stealthScreen.classList.add('active');
+    });
+    
+    window.addEventListener("focus", () => {
+        const stealthScreen = document.getElementById('stealth-overlay');
+        if (stealthScreen) stealthScreen.classList.remove('active');
+    });
+
     let currentChatType = 'private'; // 'private' или 'group'
     let currentGroup = null; // {id, name}
     window.currentGroupUsers = {}; // Словарь { tg_id: "Имя" } для отображения над сообщениями
