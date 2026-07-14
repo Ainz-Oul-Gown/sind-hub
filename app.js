@@ -180,15 +180,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         window.isBulkLoading = false; 
         
         if (window.chatRenderLimit <= 30) {
-            // Первый вход: прыгаем в самый низ и показываем чат
+            // 1. Предварительный прыжок (для надежности)
             area.scrollTop = area.scrollHeight; 
+            
+            // 2. Даем браузеру 20 миллисекунд (ровно 1-2 кадра экрана), 
+            // чтобы он успел высчитать точную высоту текста всех 30 сообщений
             setTimeout(() => {
-                area.style.transition = 'opacity 0.2s';
+                // Контрольный прыжок в самый низ перед тем, как показать чат
+                area.scrollTop = area.scrollHeight; 
+                
+                // Плавно проявляем
+                area.style.transition = 'opacity 0.2s ease-out';
                 area.style.opacity = '1';
+                
                 setTimeout(() => area.style.transition = '', 200);
-            }, 10);
+            }, 20);
+            
         } else {
-            // Подгрузка истории: возвращаем вас на то сообщение, которое вы читали
+            // Подгрузка истории при свайпе вверх
             area.scrollTop = area.scrollHeight - oldScrollHeight + oldScrollTop;
         }
     }
@@ -2489,9 +2498,16 @@ async function checkCryptoKeys(userId) {
                 window.currentChatFullHistory.push(...newHistArr); // Добавляем в память
                 
                 // Дорисовываем новые сообщения снизу
+                // Мгновенно и без рывков дорисовываем то, что пришло в фоне
+                window.isBulkLoading = true;
                 for (let msg of newHistArr) {
                     await processAndRenderMessage(msg, currentAesKey);
                 }
+                window.isBulkLoading = false;
+                
+                // Плавно прокручиваем вниз, если появились новые сообщения
+                const area = document.getElementById('messages-area');
+                area.scrollTo({ top: area.scrollHeight, behavior: 'smooth' });
             }
         }).catch(err => console.warn("Фоновая загрузка истории прервана (нет сети)", err));
     }
