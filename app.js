@@ -35,6 +35,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.error("❌ Критическая ошибка при запуске:", e);
     }
 
+    // === СЛУШАТЕЛЬ СКРОЛЛА: Показ кнопки "Вниз" ===
+    document.getElementById('messages-area').addEventListener('scroll', function() {
+        const btn = document.getElementById('scroll-bottom-btn');
+        if (!btn) return;
+        // В перевернутом чате (column-reverse) скролл начинается от 0 и уходит в минус/плюс. 
+        // Math.abs делает так, чтобы это работало на любых телефонах (iOS/Android).
+        if (Math.abs(this.scrollTop) > 200) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
+    });
+
     // --- ПРИВЯЗКА ПОЛЕЙ ВВОДА И МИКРОФОНА ---
     const chatInput = document.getElementById('chat-input');
     if (chatInput) chatInput.addEventListener('input', autoResizeInput);
@@ -108,21 +121,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             e.target.classList.add('active');
         });
     });
-
-    // === СЛУШАТЕЛЬ СКРОЛЛА: Показ кнопки "Вниз" ===
-    const msgArea = document.getElementById('messages-area');
-    const scrollBottomBtn = document.getElementById('scroll-bottom-btn');
-    if (msgArea && scrollBottomBtn) {
-        msgArea.addEventListener('scroll', () => {
-            // В перевернутом чате скролл начинается от 0 и растет по мере листания истории
-            if (Math.abs(msgArea.scrollTop) > 300) {
-                scrollBottomBtn.classList.add('active'); // Показываем кнопку
-            } else {
-                scrollBottomBtn.classList.remove('active'); // Прячем
-            }
-        });
-    }
-    
 });
 
 // Память для хранения истории чата и лимит отображения
@@ -1739,12 +1737,12 @@ function initiateReply(msgElement) {
 
         if (isNew) {
             area.prepend(div); 
-            // ⚡ Если это МОЁ сообщение — плавно отправляем меня в самый низ ⚡
+            
+            // ⚡ Если это ВАШЕ сообщение — плавно отправляем экран в самый низ ⚡
             if (isMine) {
-                // requestAnimationFrame нужен, чтобы браузер успел отрисовать пузырь
-                requestAnimationFrame(() => {
+                setTimeout(() => {
                     area.scrollTo({ top: 0, behavior: 'smooth' });
-                });
+                }, 10); // Крошечная задержка, чтобы браузер успел нарисовать пузырь
             }
         }
     }
