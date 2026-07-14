@@ -234,10 +234,11 @@
         <i class="fas fa-chevron-right" style="color: var(--muted);"></i>
     </div>
     
-    <div class="list-item" onclick="alert('Раздел устройств в разработке')">
+    <div class="list-item" onclick="loadDevicesScreen(); toggleModal('modal-settings');">
         <div class="list-item-left"><i class="fas fa-mobile-alt" style="color: var(--primary);"></i> Устройства</div>
         <i class="fas fa-chevron-right" style="color: var(--muted);"></i>
     </div>
+
 </div>
 
 
@@ -463,6 +464,24 @@
         </div>
     </div>
 
+
+    <!-- ЭКРАН: УСТРОЙСТВА -->
+<div id="screen-devices" class="screen">
+    <div class="header-nav">
+        <button class="back-btn" onclick="switchScreen('screen-main')"><i class="fas fa-chevron-left"></i> Назад</button>
+        <span>Мои устройства</span>
+        <div style="width: 60px;"></div>
+    </div>
+    
+    <div style="color: var(--muted); font-size: 13px; text-align: center; margin-bottom: 16px; padding: 0 10px;">
+        Самое первое устройство — главное. Новые устройства получают права администратора через 7 дней.
+    </div>
+
+    <div id="devices-list">
+        <div style="text-align:center; padding: 20px;"><i class="fas fa-spinner fa-spin"></i> Загрузка...</div>
+    </div>
+</div>
+    
 <script>
 
 
@@ -476,6 +495,92 @@
             tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag])
         );
     }
+
+    async function loadDevicesScreen() {
+    switchScreen('screen-devices');
+    const list = document.getElementById('devices-list');
+    list.innerHTML = '<div style="text-align:center; padding: 20px;"><i class="fas fa-spinner fa-spin"></i> Загрузка...</div>';
+
+    // Получаем все устройства пользователя, сортируем по дате (старые первыми)
+    const { data: devices, error } = await supabaseClient
+        .from('user_devices')
+        .select('*')
+        .eq('user_id', currentUser.id)
+        .order('added_at', { ascending: true });
+
+    if (error || !devices) {
+        list.innerHTML = '<div style="text-align:center; color: var(--danger);">Ошибка загрузки</div>';
+        return;
+    }
+
+    const myDeviceId = getDeviceId();
+    const myDevice = devices.find(d => d.device_id === myDeviceId);
+    const masterDevice = devices[0]; // Самое первое устройство в списке
+    
+    const amIMaster = (myDevice && myDevice.device_id === masterDevice.device_id);
+    const msInDay = 1000 * 3600 * 24;
+    const myAgeDays = myDevice ? (Date.now() - new Date(myDevice.added_at).getTime()) / msInDay : 0;
+
+    list.innerHTML = devices.map(d => {
+        const isMe = d.device_id === myDeviceId;
+        const isTargetMaster = d.device_id === masterDevice.device_id;
+        const targetAgeDays = (Date.now() - new Date(d.added_at).getTime()) / msInDay;
+        const targetIsOlder = new Date(d.added_at) < new Date(myDevice.added_at);
+
+        // --- ПРАВИЛА УДАЛЕНИЯ ---
+        let canDelete = false;
+        
+        if (!isMe) {
+            if (amIMaster) {
+                // Мастер может удалять ВСЕХ в любой момент
+                canDelete = true;
+            } else {
+                if (targetIsOlder) {
+                    // Если я пытаюсь удалить устройство, которое СТАРШЕ меня (или Мастера)
+                    // Я могу это сделать, ТОЛЬКО если мне самому уже есть 7 дней
+                    if (myAgeDays >= 7) canDelete = true;
+                } else {
+                    // Если я пытаюсь удалить устройство, которое МЛАДШЕ меня
+                    canDelete = true;
+                }
+            }
+        }
+
+        const dateStr = new Date(d.added_at).toLocaleDateString();
+        
+        let deleteBtnHtml = canDelete 
+            ? `<div style="padding: 10px; cursor: pointer; color: var(--danger);" onclick="kickDevice('${d.device_id}', '${escapeHTML(d.device_name)}')"><i class="fas fa-trash-alt"></i></div>` 
+            : `<div style="padding: 10px; color: var(--border);"><i class="fas fa-lock"></i></div>`;
+
+        return `
+            <div class="list-item" style="${isMe ? 'border-color: var(--primary); background: rgba(10,132,255,0.05);' : ''}">
+                <div class="list-item-left">
+                    <div class="avatar" style="background: ${isTargetMaster ? 'var(--primary)' : 'var(--surface)'}; color: ${isTargetMaster ? '#fff' : 'var(--text)'}; width: 40px; height: 40px; border: 1px solid var(--border);">
+                        <i class="fas ${isTargetMaster ? 'fa-crown' : 'fa-mobile-alt'}"></i>
+                    </div>
+                    <div>
+                        <div class="list-item-title">${escapeHTML(d.device_name)} ${isMe ? '<span style="color:var(--primary); font-size:12px;">(Это устр-во)</span>' : ''}</div>
+                        <div class="list-item-subtitle">Добавлено: ${dateStr}</div>
+                    </div>
+                </div>
+                ${deleteBtnHtml}
+            </div>
+        `;
+    }).join('');
+}
+
+async function kickDevice(deviceId, deviceName) {
+    if (!confirm(`Точно удалить устройство "${deviceName}"? Сеанс на нем будет мгновенно завершен.`)) return;
+    
+    // Удаляем из БД. Триггер веб-сокета сработает автоматически и убьет сессию на том девайсе!
+    await supabaseClient.from('user_devices').delete().eq('device_id', deviceId);
+    
+    if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+    
+    // Перерисовываем список
+    loadDevicesScreen();
+}
+
 
     // --- ГРУППЫ: СОЗДАНИЕ ---
     async function createGroup(groupName) {
@@ -2204,6 +2309,43 @@ async function checkCryptoKeys(userId) {
 }
 
 
+    async function registerDeviceAndListen() {
+    const deviceId = getDeviceId();
+    let platform = tg.initDataUnsafe?.receiver?.platform || navigator.platform || "Неизвестное устройство";
+    
+    // 1. Отмечаемся в базе, что мы онлайн
+    await supabaseClient.from('user_devices').upsert({
+        user_id: currentUser.id,
+        device_id: deviceId,
+        device_name: platform,
+        last_active: new Date().toISOString()
+    }, { onConflict: 'user_id, device_id' });
+
+    // 2. Слушаем свою смерть 💀
+    supabaseClient.channel('device-kill-switch')
+        .on('postgres_changes', { 
+            event: 'DELETE', 
+            schema: 'public', 
+            table: 'user_devices', 
+            filter: `device_id=eq.${deviceId}` 
+        },
+        async () => {
+            // Если строку с нашим ID удалили — уничтожаем кэш и ключи!
+            await idbKeyval.clear(); // Сносим RSA и AES ключи
+            localStorage.clear();    // Сносим токены
+            
+            document.body.innerHTML = `
+                <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; text-align:center; padding: 20px;">
+                    <i class="fas fa-ban" style="font-size:48px; color:var(--danger); margin-bottom:20px;"></i>
+                    <h3>Сеанс завершен</h3>
+                    <p style="color:var(--muted); font-size:14px;">Это устройство было удалено из аккаунта.</p>
+                </div>`;
+            
+            if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('error');
+        }).subscribe();
+    }
+    
+
     async function initApp() {
         const isAuth = await authUser();
         if (!isAuth) { document.body.innerHTML = '<div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; color:var(--danger);"><i class="fas fa-lock" style="font-size:48px; margin-bottom:20px;"></i><h2>Доступ запрещен</h2></div>'; return; }
@@ -2232,6 +2374,7 @@ if (!isCryptoReady) {
 }
 
 // Если ключи на месте, грузим интерфейс дальше
+registerDeviceAndListen() 
 loadMyStatus();
 loadChats();
 loadMyCurrencies();
