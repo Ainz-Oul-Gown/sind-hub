@@ -201,33 +201,46 @@
     <div id="screen-main" class="screen active">
         <h2 class="brand-title">СИНДИКАТ</h2>
 
-        <div class="card profile-card">
-            <div class="profile-info">
-                <div class="avatar" id="my-avatar">М</div>
-                <div>
-                    <div style="font-weight: 600; font-size: 18px; margin-bottom: 4px;">Мой профиль</div>
-                    <!-- Добавляем строчку с шифром: -->
-                    <div id="my-fingerprint" style="font-size: 11px; color: var(--success); font-family: monospace; margin-bottom: 6px;">Шифр: Загрузка...</div>
-                    <div id="my-status" class="status-badge" onclick="toggleStatus()">
-                        <i class="fas fa-circle" style="font-size: 8px;"></i> Свободен
-                    </div>
-                </div>
-            </div>
-            <button class="icon-btn" onclick="switchScreen('screen-currencies')"><i class="fas fa-cog" style="color: var(--muted);"></i></button>
+        <!-- Внутри screen-main -->
+<div class="card profile-card" style="position: relative;">
+    <!-- Значок загрузки PWA в углу -->
+    <div id="btn-pwa" onclick="openPWA()" style="position: absolute; top: 12px; right: 12px; cursor: pointer; color: var(--primary); font-size: 18px;">
+        <i class="fas fa-download"></i>
+    </div>
 
-        </div>
-
-
-        <div class="action-grid">
-            <div class="action-btn" onclick="switchScreen('screen-currencies')">
-                <i class="fas fa-coins"></i>
-                <span>Мои валюты</span>
-            </div>
-            <div class="action-btn" onclick="openPWA()" id="btn-pwa">
-                <i class="fas fa-mobile-screen"></i>
-                <span>Установить PWA</span>
+    <div class="profile-info">
+        <div class="avatar" id="my-avatar">М</div>
+        <div>
+            <div style="font-weight: 600; font-size: 18px; margin-bottom: 4px;">Мой профиль</div>
+            <div id="my-fingerprint" style="font-size: 11px; color: var(--success); font-family: monospace; margin-bottom: 6px;">Шифр: ...</div>
+            <div id="my-status" class="status-badge" onclick="toggleStatus()">
+                <i class="fas fa-circle" style="font-size: 8px;"></i> Свободен
             </div>
         </div>
+    </div>
+    <!-- Шестерёнка теперь открывает настройки -->
+    <button class="icon-btn" onclick="toggleModal('modal-settings')"><i class="fas fa-cog" style="color: var(--muted);"></i></button>
+</div>
+
+
+
+<div id="modal-settings" class="glass-modal">
+    <button class="modal-close" onclick="toggleModal('modal-settings')"><i class="fas fa-times"></i></button>
+    <h3 style="text-align: center; margin-bottom: 20px;">Настройки</h3>
+    
+    <div class="list-item" onclick="switchScreen('screen-currencies'); toggleModal('modal-settings');">
+        <div class="list-item-left"><i class="fas fa-coins" style="color: var(--primary);"></i> Мои валюты</div>
+        <i class="fas fa-chevron-right" style="color: var(--muted);"></i>
+    </div>
+    
+    <div class="list-item" onclick="alert('Раздел устройств в разработке')">
+        <div class="list-item-left"><i class="fas fa-mobile-alt" style="color: var(--primary);"></i> Устройства</div>
+        <i class="fas fa-chevron-right" style="color: var(--muted);"></i>
+    </div>
+</div>
+
+
+    
 
         <div style="display: flex; align-items: center; justify-content: space-between; padding-right: 8px;">
             <h3 class="section-title" style="margin-top: 12px;">Братва <i class="fas fa-spinner fa-spin" id="chat-list-spinner" style="display: none; font-size: 12px; margin-left: 6px;"></i></h3>
