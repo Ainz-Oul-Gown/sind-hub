@@ -749,19 +749,30 @@ async function kickDevice(deviceId, deviceName) {
     let isAiLoading = false;
 
     async function initAI() {
-        if (extractor) return extractor;
-        if (isAiLoading) { 
-            while (isAiLoading) await new Promise(r => setTimeout(r, 100)); 
-            return extractor; 
-        }
+    if (extractor) return extractor;
+    
+    if (isAiLoading) { 
+        while (isAiLoading) await new Promise(r => setTimeout(r, 100)); 
+        return extractor; 
+    }
 
-        isAiLoading = true;
+    isAiLoading = true;
+    try {
         const { pipeline, env } = await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.14.0');
         env.allowLocalModels = false;
         extractor = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', { quantized: true });
-        isAiLoading = false;
-        return extractor;
+    } catch (e) {
+        console.error("Ошибка инициализации ИИ:", e);
+        extractor = null; // Обнуляем, чтобы не вернуть сломанный объект
+        throw e; // Прокидываем ошибку дальше, чтобы try-catch в sendPrivateMessage её поймал
+    } finally {
+        // finally выполняется ВСЕГДА, независимо от того, была ошибка или нет
+        isAiLoading = false; 
     }
+    
+    return extractor;
+}
+
 
     // --- ПОТЕРЯННЫЕ ФУНКЦИИ ИИ И ПОИСКА ---
     function toggleSlider() { 
