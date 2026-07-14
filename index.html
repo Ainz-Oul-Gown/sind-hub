@@ -3811,7 +3811,7 @@ async function checkCryptoKeys(userId) {
     initApp();
     
     // === ГЛОБАЛЬНЫЙ ПЕРЕХВАТЧИК СОБЫТИЙ (ЗАЩИТА ОТ XSS) ===
-    document.addEventListener('click', (e) => {
+    document.addEventListener('click', async (e) => {
         // Ищем ближайший элемент, по которому кликнули, у которого есть data-action
         const target = e.target.closest('[data-action]');
         if (!target) return; // Если клик не по нашей кнопке - игнорируем
@@ -3909,7 +3909,7 @@ async function checkCryptoKeys(userId) {
     });
     
     // Отдельный глобальный слушатель для перемотки ГС (там onpointerdown)
-    document.addEventListener('pointerdown', (e) => {
+    document.addEventListener('pointerdown', async (e) => {
         const target = e.target.closest('[data-pointer-action]');
         if (!target) return;
     
