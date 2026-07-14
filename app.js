@@ -3885,19 +3885,132 @@ async function checkCryptoKeys(userId) {
         }
     });
 
-// === ДВОЙНОЙ ТАП ДЛЯ ОТВЕТА НА СООБЩЕНИЕ ===
-    let lastTapTime = 0;
-    document.addEventListener('touchend', (e) => {
-        const msgBubble = e.target.closest('.msg-bubble');
-        if (msgBubble) {
-            const currentTime = new Date().getTime();
-            const tapLength = currentTime - lastTapTime;
-            
-            // Если промежуток между тапами меньше 300мс — это двойной тап!
-            if (tapLength < 300 && tapLength > 0) {
-                initiateReply(msgBubble);
-                e.preventDefault(); // Гасим стандартное поведение браузера
+// === СВАЙП ВЛЕВО ДЛЯ ОТВЕТА НА СООБЩЕНИЕ (В СТИЛЕ TELEGRAM) ===
+    let swipeStartX = 0;
+    let swipeStartY = 0;
+    let swipedBubble = null;
+    let isSwiping = false;
+    let swipeReplyIcon = null;
+    let swipeTriggered = false;
+
+    document.addEventListener('touchstart', (e) => {
+        const bubble = e.target.closest('.msg-bubble');
+        if (!bubble) return;
+        
+        swipedBubble = bubble;
+        swipeStartX = e.touches[0].clientX;
+        swipeStartY = e.touches[0].clientY;
+        isSwiping = false;
+        swipeTriggered = false;
+        
+        // Убираем плавность, чтобы сообщение мгновенно липло к пальцу
+        swipedBubble.classList.remove('snap-back');
+        
+        // Создаем иконку стрелочки, если её еще нет
+        if (!swipeReplyIcon) {
+            swipeReplyIcon = document.createElement('div');
+            swipeReplyIcon.className = 'swipe-reply-icon';
+            swipeReplyIcon.innerHTML = '<i class="fas fa-reply"></i>';
+            const area = document.getElementById('messages-area');
+            if (area) area.appendChild(swipeReplyIcon);
+        }
+    }, { passive: true });
+
+    document.addEventListener('touchmove', (e) => {
+        if (!swipedBubble) return;
+
+        const currentX = e.touches[0].clientX;
+        const currentY = e.touches[0].clientY;
+        const deltaX = currentX - swipeStartX;
+        const deltaY = currentY - swipeStartY;
+
+        if (!isSwiping) {
+            // Если тянем по горизонтали сильнее, чем по вертикали — начинаем свайп
+            if (Math.abs(deltaX) > 10 && Math.abs(deltaX) > Math.abs(deltaY)) {
+                isSwiping = true;
+            } else if (Math.abs(deltaY) > 10) {
+                swipedBubble = null; // Отмена свайпа (начался обычный скролл чата вниз/вверх)
+                return;
             }
-            lastTapTime = currentTime;
+        }
+
+        if (isSwiping && deltaX < 0) {
+            if (e.cancelable) e.preventDefault(); // Блокируем скролл страницы
+
+            // Эластичный эффект сопротивления (после -60px тянется туго, как резина)
+            let pullX = deltaX;
+            if (pullX < -60) {
+                pullX = -60 - Math.sqrt(Math.abs(pullX + 60)) * 2;
+            }
+            
+            swipedBubble.style.transform = `translateX(${pullX}px)`;
+
+            // Позиционируем иконку точно напротив сообщения по высоте
+            const area = document.getElementById('messages-area');
+            const rect = swipedBubble.getBoundingClientRect();
+            const areaRect = area.getBoundingClientRect();
+            
+            swipeReplyIcon.style.top = `${rect.top - areaRect.top + area.scrollTop + (rect.height / 2) - 16}px`;
+            
+            // Анимация появления иконки (прозрачность и размер зависят от силы натяжения)
+            const progress = Math.min(Math.abs(deltaX) / 60, 1);
+            swipeReplyIcon.style.opacity = progress;
+            
+            if (!swipeTriggered) {
+                swipeReplyIcon.style.transform = `scale(${0.5 + progress * 0.5})`;
+            }
+
+            // Точка срабатывания ответа (-50px)
+            if (pullX <= -50 && !swipeTriggered) {
+                swipeTriggered = true;
+                if(tg.HapticFeedback) tg.HapticFeedback.selectionChanged(); // Вибро-щелчок
+                swipeReplyIcon.classList.add('triggered'); // Иконка загорается синим
+            } else if (pullX > -50 && swipeTriggered) {
+                swipeTriggered = false;
+                swipeReplyIcon.classList.remove('triggered');
+            }
+        }
+    }, { passive: false });
+
+    document.addEventListener('touchend', (e) => {
+        if (!swipedBubble) return;
+
+        // Если дотянули до нужной точки — вызываем функцию ответа
+        if (swipeTriggered) {
+            initiateReply(swipedBubble);
+            if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+        }
+
+        // Возвращаем сообщение на место с пружинящей анимацией
+        swipedBubble.classList.add('snap-back');
+        swipedBubble.style.transform = `translateX(0)`;
+        
+        if (swipeReplyIcon) {
+            swipeReplyIcon.style.opacity = '0';
+            swipeReplyIcon.style.transform = 'scale(0.5)';
+            swipeReplyIcon.classList.remove('triggered');
+        }
+
+        // Очищаем классы после завершения анимации
+        const bubbleRef = swipedBubble;
+        setTimeout(() => {
+            if (bubbleRef) {
+                bubbleRef.classList.remove('snap-back');
+                bubbleRef.style.transform = '';
+            }
+        }, 300);
+
+        swipedBubble = null;
+        isSwiping = false;
+        swipeTriggered = false;
+    });
+
+    // Страховка: если палец ушел за пределы экрана
+    document.addEventListener('touchcancel', () => {
+        if (swipedBubble) {
+            swipedBubble.classList.add('snap-back');
+            swipedBubble.style.transform = `translateX(0)`;
+            swipedBubble = null;
+            isSwiping = false;
         }
     });
