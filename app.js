@@ -108,9 +108,90 @@ document.addEventListener('DOMContentLoaded', async () => {
             e.target.classList.add('active');
         });
     });
+
+    // СЛУШАТЕЛЬ СКРОЛЛА: Подгрузка старых сообщений
+    const messagesArea = document.getElementById('messages-area');
+    if (messagesArea) {
+        messagesArea.addEventListener('scroll', async function() {
+            // Если докрутили до самого верха и история еще есть
+            if (this.scrollTop === 0 && window.currentChatFullHistory && window.chatRenderLimit < window.currentChatFullHistory.length) {
+                if (window.isLoadingOlderMessages) return; // Защита от спама
+                window.isLoadingOlderMessages = true;
+                
+                const loader = document.getElementById('chat-history-loader');
+                if (loader) loader.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Загрузка...';
+
+                // Добавляем еще 30 сообщений к лимиту
+                window.chatRenderLimit += 30;
+                await renderCurrentChatSlice();
+                
+                window.isLoadingOlderMessages = false;
+            }
+        });
+    }
     
 });
 
+// Память для хранения истории чата и лимит отображения
+    window.currentChatFullHistory = [];
+    window.chatRenderLimit = 30;
+    window.isLoadingOlderMessages = false;
+
+    // Главная функция-отрисовщик
+    async function renderCurrentChatSlice() {
+        const area = document.getElementById('messages-area');
+        
+        // Запоминаем позицию прокрутки, чтобы экран не дергался при подгрузке старых СМС
+        const oldScrollHeight = area.scrollHeight;
+        const oldScrollTop = area.scrollTop;
+
+        // Прячем чат только при самом первом входе (для плавной анимации)
+        if (window.chatRenderLimit <= 30) {
+            area.style.opacity = '0'; 
+        }
+        
+        area.innerHTML = '';
+        window.lastRenderedDate = null;
+        window.isBulkLoading = true; 
+
+        if (!window.currentChatFullHistory || window.currentChatFullHistory.length === 0) {
+            area.innerHTML = '<div style="text-align:center; color:var(--muted); margin-top:40px;">Чат пуст</div>';
+            window.isBulkLoading = false;
+            area.style.opacity = '1';
+            return;
+        }
+
+        // Если есть старые сообщения, которые мы еще не нарисовали — добавляем подсказку сверху
+        if (window.chatRenderLimit < window.currentChatFullHistory.length) {
+            const loaderDiv = document.createElement('div');
+            loaderDiv.id = 'chat-history-loader';
+            loaderDiv.style.cssText = 'text-align:center; padding: 10px; color: var(--muted); font-size: 12px;';
+            loaderDiv.innerHTML = '<i class="fas fa-arrow-up"></i> Свайп вниз для загрузки истории';
+            area.appendChild(loaderDiv);
+        }
+    
+        // Берем с конца нужное количество сообщений (по умолчанию 30)
+        const sliceToRender = window.currentChatFullHistory.slice(-window.chatRenderLimit);
+
+        for (let i = 0; i < sliceToRender.length; i++) {
+            await processAndRenderMessage(sliceToRender[i], currentAesKey);
+        }
+
+        window.isBulkLoading = false; 
+        
+        if (window.chatRenderLimit <= 30) {
+            // Первый вход: прыгаем в самый низ и показываем чат
+            area.scrollTop = area.scrollHeight; 
+            setTimeout(() => {
+                area.style.transition = 'opacity 0.2s';
+                area.style.opacity = '1';
+                setTimeout(() => area.style.transition = '', 200);
+            }, 10);
+        } else {
+            // Подгрузка истории: возвращаем вас на то сообщение, которое вы читали
+            area.scrollTop = area.scrollHeight - oldScrollHeight + oldScrollTop;
+        }
+    }
 
 function initiateReply(msgElement) {
         // Достаем ID и имя
@@ -1918,10 +1999,19 @@ function initiateReply(msgElement) {
             },
                 async (payload) => {
                     if (payload.eventType === 'DELETE') return; // Игнорируем удаления
-                    console.log("🔥 ПРИШЛО ОБНОВЛЕНИЕ ИЗ WEBSOCKET:", payload);
                     
                     const newMsg = payload.new;
                     if (!newMsg || !newMsg.encrypted_text) return;
+
+                    // Синхронизируем новое сообщение с массивом в памяти!
+                    if (window.currentChatFullHistory) {
+                        const existingIdx = window.currentChatFullHistory.findIndex(m => m.id === newMsg.id);
+                        if (existingIdx !== -1) {
+                            window.currentChatFullHistory[existingIdx] = newMsg; // Это обновление (например от ИИ)
+                        } else {
+                            window.currentChatFullHistory.push(newMsg); // Это абсолютно новое сообщение
+                        }
+                    }
 
                     await processAndRenderMessage(newMsg, currentAesKey);
                     
@@ -2375,46 +2465,24 @@ async function checkCryptoKeys(userId) {
     
         currentAesKey = successfullyDecryptedAes;
     
-        // ⚡ НАЧАЛО БЫСТРОЙ ЗАГРУЗКИ ⚡
-        const cachedHistory = await getChatFromCache(currentChatId);
-        const area = document.getElementById('messages-area');
-        
-        // Магия: Прячем чат (чтобы не было видно "прыжков" сообщений)
-        area.style.opacity = '0';
-        area.innerHTML = '';
-        window.lastRenderedDate = null;
-        window.isBulkLoading = true; 
+        // ⚡ ПАГИНАЦИЯ И БЫСТРАЯ ЗАГРУЗКА ⚡
+        const cachedHistory = await getChatFromCache(currentChatId) || [];
     
-        if (cachedHistory && cachedHistory.length > 0) {
-            for (let i = 0; i < cachedHistory.length; i++) {
-                await processAndRenderMessage(cachedHistory[i], currentAesKey);
-            }
-        }
-    
-        const lastMsgDate = cachedHistory && cachedHistory.length > 0 ? cachedHistory[cachedHistory.length - 1].created_at : null;
+        const lastMsgDate = cachedHistory.length > 0 ? cachedHistory[cachedHistory.length - 1].created_at : null;
         let query = supabaseClient.from('messages').select('*').eq('chat_id', currentChatId).order('created_at', { ascending: true });
         if (lastMsgDate) query = query.gt('created_at', lastMsgDate); 
         const { data: newHistory } = await query;
-    
-        if (newHistory && newHistory.length > 0) {
-            if (!cachedHistory || cachedHistory.length === 0) area.innerHTML = '';
-            for (let i = 0; i < newHistory.length; i++) {
-                await processAndRenderMessage(newHistory[i], currentAesKey);
-            }
-            await saveChatToCache(currentChatId, newHistory); 
-        } else if (!cachedHistory || cachedHistory.length === 0) {
-            area.innerHTML = '<div style="text-align:center; color:var(--muted); margin-top:40px;">Чат пуст</div>';
+        
+        const newHistArr = newHistory || [];
+        if (newHistArr.length > 0) {
+            await saveChatToCache(currentChatId, newHistArr); 
         }
+
+        // Собираем весь чат в памяти (закэшированные + новые), но не рисуем всё!
+        window.currentChatFullHistory = [...cachedHistory, ...newHistArr];
+        window.chatRenderLimit = 30; // Рисуем только 30 свежих
         
-        window.isBulkLoading = false; 
-        
-        // Мгновенно прыгаем вниз и плавно показываем чат
-        area.scrollTop = area.scrollHeight; 
-        setTimeout(() => {
-            area.style.transition = 'opacity 0.2s';
-            area.style.opacity = '1';
-            setTimeout(() => area.style.transition = '', 200); // Убираем анимацию, чтобы не мешала потом
-        }, 10);
+        await renderCurrentChatSlice();
     
         subscribeToPrivateMessages();
     }
@@ -3022,44 +3090,23 @@ async function checkCryptoKeys(userId) {
         window.currentGroupUsers = {};
         if (usersData) usersData.forEach(u => window.currentGroupUsers[u.tg_id] = u.first_name);
     
-        // ⚡ НАЧАЛО БЫСТРОЙ ЗАГРУЗКИ ГРУППЫ ⚡
-        const cachedHistory = await getChatFromCache(currentChatId);
-        const area = document.getElementById('messages-area');
-        
-        area.style.opacity = '0';
-        area.innerHTML = '';
-        window.lastRenderedDate = null;
-        window.isBulkLoading = true; 
+        // ⚡ ПАГИНАЦИЯ ДЛЯ ГРУППЫ ⚡
+        const cachedHistory = await getChatFromCache(currentChatId) || [];
     
-        if (cachedHistory && cachedHistory.length > 0) {
-            for (let i = 0; i < cachedHistory.length; i++) {
-                await processAndRenderMessage(cachedHistory[i], currentAesKey);
-            }
-        }
-    
-        const lastMsgDate = cachedHistory && cachedHistory.length > 0 ? cachedHistory[cachedHistory.length - 1].created_at : null;
+        const lastMsgDate = cachedHistory.length > 0 ? cachedHistory[cachedHistory.length - 1].created_at : null;
         let query = supabaseClient.from('messages').select('*').eq('chat_id', currentChatId).order('created_at', { ascending: true });
         if (lastMsgDate) query = query.gt('created_at', lastMsgDate);
         const { data: newHistory } = await query;
-    
-        if (newHistory && newHistory.length > 0) {
-            if (!cachedHistory || cachedHistory.length === 0) area.innerHTML = '';
-            for (let i = 0; i < newHistory.length; i++) {
-                await processAndRenderMessage(newHistory[i], currentAesKey);
-            }
-            await saveChatToCache(currentChatId, newHistory);
-        } else if (!cachedHistory || cachedHistory.length === 0) {
-            area.innerHTML = '<div style="text-align:center; color:var(--muted); margin-top:40px;">Чат пуст</div>';
+        
+        const newHistArr = newHistory || [];
+        if (newHistArr.length > 0) {
+            await saveChatToCache(currentChatId, newHistArr);
         }
+
+        window.currentChatFullHistory = [...cachedHistory, ...newHistArr];
+        window.chatRenderLimit = 30;
         
-        window.isBulkLoading = false; 
-        
-        area.scrollTop = area.scrollHeight; 
-        setTimeout(() => {
-            area.style.transition = 'opacity 0.2s';
-            area.style.opacity = '1';
-            setTimeout(() => area.style.transition = '', 200);
-        }, 10);
+        await renderCurrentChatSlice();
     
         subscribeToPrivateMessages();
     }
