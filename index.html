@@ -623,7 +623,7 @@
             </select>
             
             <div style="font-size: 12px; color: var(--muted); margin-top: 8px; margin-bottom: 16px; line-height: 1.4;">
-                * Изменение модели вступит в силу при расшифровке следующего ГС. Новая модель скачается автоматически.
+                * Изменение модели вступит в силу при расшифровке следующего ГС.
             </div>
 
             <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border); padding-top: 12px;">
@@ -631,7 +631,11 @@
                 <div id="ai-whisper-status" style="font-size: 13px; font-weight: bold; color: var(--muted);">Вычисление...</div>
             </div>
             
-            <button class="primary-btn" data-action="delete-ai-whisper" style="background: rgba(255,69,58,0.15); color: var(--danger); margin-top: 16px; padding: 10px;">
+            <!-- НОВЫЕ КНОПКИ ДЛЯ WHISPER -->
+            <button class="primary-btn" id="btn-download-whisper" data-action="download-ai-whisper" style="background: rgba(50,215,75,0.15); color: var(--success); margin-top: 16px; padding: 10px; display: none;">
+                <i class="fas fa-download"></i> Скачать модель
+            </button>
+            <button class="primary-btn" id="btn-delete-whisper" data-action="delete-ai-whisper" style="background: rgba(255,69,58,0.15); color: var(--danger); margin-top: 16px; padding: 10px; display: none;">
                 <i class="fas fa-trash-alt"></i> Удалить скачанные данные
             </button>
         </div>
@@ -792,17 +796,24 @@
         }
 
         // Обновляем UI Whisper (Распознавание речи остается с выбором качества)
+        // Обновляем UI Whisper
         const whisperStatusEl = document.getElementById('ai-whisper-status');
         const whisperSizeEl = document.getElementById('ai-whisper-size');
+        const btnDownloadWhisper = document.getElementById('btn-download-whisper');
+        const btnDeleteWhisper = document.getElementById('btn-delete-whisper');
         
         if (whisperSizeBytes > 0) {
             whisperStatusEl.innerText = 'Установлена';
             whisperStatusEl.style.color = 'var(--success)';
             whisperSizeEl.innerText = `Занято: ${(whisperSizeBytes / (1024 * 1024)).toFixed(2)} МБ`;
+            btnDownloadWhisper.style.display = 'none';
+            btnDeleteWhisper.style.display = 'block';
         } else {
             whisperStatusEl.innerText = 'Ожидает скачивания';
             whisperStatusEl.style.color = 'var(--primary)';
             whisperSizeEl.innerText = 'Занято: 0.00 МБ';
+            btnDownloadWhisper.style.display = 'block';
+            btnDeleteWhisper.style.display = 'none';
         }
     }
 
@@ -816,6 +827,16 @@
         selectWhisper.value = savedWhisper;
         selectWhisper.onchange = (e) => {
             localStorage.setItem('synd_whisper_model', e.target.value);
+            
+            // Включаем флаг скачивания и показываем лоадер на кнопке
+            window.isWhisperDownloading = true;
+            const btn = document.getElementById('btn-download-whisper');
+            if (btn) {
+                btn.style.display = 'block';
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Подготовка...';
+            }
+            
             aiWorker.postMessage({ type: 'change_model', model: e.target.value });
             calculateAiStorage();
         };
@@ -1610,9 +1631,19 @@
     aiWorker.onmessage = (event) => {
         const msg = event.data;
         if (msg.type === 'progress') {
-            console.log("AI Loading:", msg.percent);
+            // Если мы качаем Whisper, обновляем кнопку
+            if (window.isWhisperDownloading) {
+                const btn = document.getElementById('btn-download-whisper');
+                if (btn) btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Загрузка ${msg.percent}%`;
+            }
         } else if (msg.type === 'ready') {
             isAiReady = true;
+            // Как только скачалось - обновляем интерфейс
+            if (window.isWhisperDownloading) {
+                window.isWhisperDownloading = false;
+                calculateAiStorage();
+                if(tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+            }
         }
     };
 
@@ -3954,6 +3985,16 @@ async function checkCryptoKeys(userId) {
                     if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
                 }
                 break;
+
+            case 'download-ai-whisper': {
+                const btn = document.getElementById('btn-download-whisper');
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Подготовка...';
+                btn.disabled = true;
+                
+                window.isWhisperDownloading = true; // Включаем прием процентов
+                aiWorker.postMessage({ type: 'force_download' }); // Команда воркеру
+                break;
+            }
         }
     });
     
