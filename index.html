@@ -797,6 +797,7 @@
 
         // Обновляем UI Whisper (Распознавание речи остается с выбором качества)
         // Обновляем UI Whisper
+        // Обновляем UI Whisper
         const whisperStatusEl = document.getElementById('ai-whisper-status');
         const whisperSizeEl = document.getElementById('ai-whisper-size');
         const btnDownloadWhisper = document.getElementById('btn-download-whisper');
@@ -806,13 +807,19 @@
             whisperStatusEl.innerText = 'Установлена';
             whisperStatusEl.style.color = 'var(--success)';
             whisperSizeEl.innerText = `Занято: ${(whisperSizeBytes / (1024 * 1024)).toFixed(2)} МБ`;
+            
             btnDownloadWhisper.style.display = 'none';
             btnDeleteWhisper.style.display = 'block';
         } else {
-            whisperStatusEl.innerText = 'Ожидает скачивания';
+            whisperStatusEl.innerText = 'Не загружена';
             whisperStatusEl.style.color = 'var(--primary)';
             whisperSizeEl.innerText = 'Занято: 0.00 МБ';
+            
+            // ФИКС: Жестко сбрасываем кнопку скачивания в нормальное состояние!
             btnDownloadWhisper.style.display = 'block';
+            btnDownloadWhisper.innerHTML = '<i class="fas fa-download"></i> Скачать модель';
+            btnDownloadWhisper.disabled = false;
+            
             btnDeleteWhisper.style.display = 'none';
         }
     }
@@ -825,19 +832,14 @@
         const savedWhisper = localStorage.getItem('synd_whisper_model') || 'Xenova/whisper-tiny';
         const selectWhisper = document.getElementById('ai-whisper-select');
         selectWhisper.value = savedWhisper;
+        // ... (внутри openAiSettings) ...
         selectWhisper.onchange = (e) => {
             localStorage.setItem('synd_whisper_model', e.target.value);
             
-            // Включаем флаг скачивания и показываем лоадер на кнопке
-            window.isWhisperDownloading = true;
-            const btn = document.getElementById('btn-download-whisper');
-            if (btn) {
-                btn.style.display = 'block';
-                btn.disabled = true;
-                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Подготовка...';
-            }
-            
+            // Просто передаем воркеру новое имя (он его запомнит, но качать не будет)
             aiWorker.postMessage({ type: 'change_model', model: e.target.value });
+            
+            // Пересчитываем визуал. Функция сама поймет, скачана модель или нет, и покажет нужную кнопку.
             calculateAiStorage();
         };
 
@@ -1631,18 +1633,23 @@
     aiWorker.onmessage = (event) => {
         const msg = event.data;
         if (msg.type === 'progress') {
-            // Если мы качаем Whisper, обновляем кнопку
             if (window.isWhisperDownloading) {
                 const btn = document.getElementById('btn-download-whisper');
                 if (btn) btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Загрузка ${msg.percent}%`;
             }
         } else if (msg.type === 'ready') {
             isAiReady = true;
-            // Как только скачалось - обновляем интерфейс
             if (window.isWhisperDownloading) {
                 window.isWhisperDownloading = false;
-                calculateAiStorage();
-                if(tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+                calculateAiStorage(); // Вернет кнопки в правильное состояние
+                if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+            }
+        } else if (msg.type === 'error') {
+            // ФИКС: Ловим ошибки скачивания!
+            if (window.isWhisperDownloading) {
+                window.isWhisperDownloading = false;
+                calculateAiStorage(); // Сбрасываем кнопку "Подготовка..." обратно на "Скачать"
+                alert("Ошибка ИИ: " + msg.error);
             }
         }
     };
