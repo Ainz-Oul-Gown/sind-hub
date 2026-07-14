@@ -1675,7 +1675,10 @@ function initiateReply(msgElement) {
 
         if (isNew) {
             area.appendChild(div);
-            area.scrollTo({ top: area.scrollHeight, behavior: 'smooth' });
+            // Скроллим плавно, ТОЛЬКО если это не массовая загрузка чата
+            if (!window.isBulkLoading) {
+                area.scrollTo({ top: area.scrollHeight, behavior: 'smooth' });
+            }
         }
     }
 
@@ -2298,39 +2301,22 @@ async function checkCryptoKeys(userId) {
 
     async function loadExistingChat() {
         const { data: keyData } = await supabaseClient.from('chat_keys').select('encrypted_key').eq('chat_id', currentChatId).eq('user_id', currentUser.id).single();
-        const deviceId = getDeviceId();
-        
         let successfullyDecryptedAes = null;
     
         try { 
             const keysDict = JSON.parse(keyData.encrypted_key);
-    
-            // 1. Изящный перебор ключей (используем твою готовую функцию decryptChatKey)
             for (const [keyName, encKeyString] of Object.entries(keysDict)) {
                 try {
-                    // Пытаемся расшифровать. Если ключ чужой, функция выбросит ошибку, и мы уйдем в catch
                     const tempKey = await decryptChatKey(encKeyString);
-                    if (tempKey) {
-                        successfullyDecryptedAes = tempKey;
-                        console.log(`✅ Успешно расшифрован ключ из слота: ${keyName}`);
-                        break; // Отмычка подошла, прерываем цикл!
-                    }
-                } catch (err) {
-                    // Ключ от другого устройства, просто игнорируем и пробуем следующий
-                    continue; 
-                }
+                    if (tempKey) { successfullyDecryptedAes = tempKey; break; }
+                } catch (err) { continue; }
             }
         } catch (e) { 
-            // На случай, если в базе лежит просто строка, а не JSON (наследие старых версий)
-            console.warn("Не удалось распарсить JSON ключей, пробуем как строку");
             try { successfullyDecryptedAes = await decryptChatKey(keyData.encrypted_key); } catch (err) {}
         }
     
-        // 2. Если ни один ключ не подошел (или чат новый) — генерируем заново
         if (!successfullyDecryptedAes) {
-            console.error("❌ Ни один ключ не подошел, запускаем синхронизацию");
             document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:#ff9800; padding: 20px; font-size: 14px;"><i class="fas fa-key" style="font-size: 24px; margin-bottom: 10px;"></i><br>Синхронизация ключей...</div>';
-            
             currentAesKey = await generateChatKey();
             const { data: friendData } = await supabaseClient.from('users').select('public_key').eq('tg_id', currentFriend.id).single();
             const { data: myData } = await supabaseClient.from('users').select('public_key').eq('tg_id', currentUser.id).single();
@@ -2349,34 +2335,44 @@ async function checkCryptoKeys(userId) {
             return;
         }
     
-        // 3. Сохраняем успешно расшифрованный ключ в глобальную переменную
         currentAesKey = successfullyDecryptedAes;
     
-        // 4. Отрисовка сообщений (твой оригинальный рабочий код)
+        // ⚡ НАЧАЛО БЫСТРОЙ ЗАГРУЗКИ ⚡
         const cachedHistory = await getChatFromCache(currentChatId);
-        document.getElementById('messages-area').innerHTML = '';
+        const area = document.getElementById('messages-area');
+        area.innerHTML = '';
         window.lastRenderedDate = null;
+        
+        window.isBulkLoading = true; // Блокируем плавный скролл
     
         if (cachedHistory && cachedHistory.length > 0) {
-            for (const msg of cachedHistory) await processAndRenderMessage(msg, currentAesKey);
+            for (let i = 0; i < cachedHistory.length; i++) {
+                await processAndRenderMessage(cachedHistory[i], currentAesKey);
+                // "Отдаем" поток браузеру каждые 15 сообщений, чтобы не зависал интерфейс
+                if (i % 15 === 0) await new Promise(r => setTimeout(r, 0)); 
+            }
         } else {
-            document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:var(--muted); margin-top: 40px;"><i class="fas fa-spinner fa-spin fa-2x"></i></div>';
+            area.innerHTML = '<div style="text-align:center; color:var(--muted); margin-top: 40px;"><i class="fas fa-spinner fa-spin fa-2x"></i></div>';
         }
     
         const lastMsgDate = cachedHistory && cachedHistory.length > 0 ? cachedHistory[cachedHistory.length - 1].created_at : null;
-    
         let query = supabaseClient.from('messages').select('*').eq('chat_id', currentChatId).order('created_at', { ascending: true });
         if (lastMsgDate) query = query.gt('created_at', lastMsgDate); 
-    
         const { data: newHistory } = await query;
     
         if (newHistory && newHistory.length > 0) {
-            if (!cachedHistory || cachedHistory.length === 0) document.getElementById('messages-area').innerHTML = '';
-            for (const msg of newHistory) await processAndRenderMessage(msg, currentAesKey);
+            if (!cachedHistory || cachedHistory.length === 0) area.innerHTML = '';
+            for (let i = 0; i < newHistory.length; i++) {
+                await processAndRenderMessage(newHistory[i], currentAesKey);
+                if (i % 15 === 0) await new Promise(r => setTimeout(r, 0)); 
+            }
             await saveChatToCache(currentChatId, newHistory); 
         } else if (!cachedHistory || cachedHistory.length === 0) {
-            document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:var(--muted); margin-top:40px;">Чат пуст</div>';
+            area.innerHTML = '<div style="text-align:center; color:var(--muted); margin-top:40px;">Чат пуст</div>';
         }
+        
+        window.isBulkLoading = false; // Снимаем блокировку
+        area.scrollTop = area.scrollHeight; // Прыгаем в самый низ ОДИН РАЗ, мгновенно!
     
         subscribeToPrivateMessages();
     }
@@ -2978,7 +2974,6 @@ async function checkCryptoKeys(userId) {
     
         currentAesKey = successfullyDecryptedAes;
     
-        // 3. Загрузка участников и сообщений (твой рабочий код отрисовки)
         const { data: membersKeys } = await supabaseClient.from('chat_keys').select('user_id').eq('chat_id', groupId);
         const memberIds = membersKeys.map(k => k.user_id);
         const { data: usersData } = await supabaseClient.from('users').select('tg_id, first_name').in('tg_id', memberIds);
@@ -2986,30 +2981,41 @@ async function checkCryptoKeys(userId) {
         window.currentGroupUsers = {};
         if (usersData) usersData.forEach(u => window.currentGroupUsers[u.tg_id] = u.first_name);
     
+        // ⚡ НАЧАЛО БЫСТРОЙ ЗАГРУЗКИ ГРУППЫ ⚡
         const cachedHistory = await getChatFromCache(currentChatId);
-        document.getElementById('messages-area').innerHTML = '';
+        const area = document.getElementById('messages-area');
+        area.innerHTML = '';
         window.lastRenderedDate = null;
+        
+        window.isBulkLoading = true; // Блокируем скролл
     
         if (cachedHistory && cachedHistory.length > 0) {
-            for (const msg of cachedHistory) await processAndRenderMessage(msg, currentAesKey);
+            for (let i = 0; i < cachedHistory.length; i++) {
+                await processAndRenderMessage(cachedHistory[i], currentAesKey);
+                if (i % 15 === 0) await new Promise(r => setTimeout(r, 0)); 
+            }
         } else {
-            document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:var(--muted); margin-top: 40px;"><i class="fas fa-spinner fa-spin fa-2x"></i></div>';
+            area.innerHTML = '<div style="text-align:center; color:var(--muted); margin-top: 40px;"><i class="fas fa-spinner fa-spin fa-2x"></i></div>';
         }
     
         const lastMsgDate = cachedHistory && cachedHistory.length > 0 ? cachedHistory[cachedHistory.length - 1].created_at : null;
-    
         let query = supabaseClient.from('messages').select('*').eq('chat_id', currentChatId).order('created_at', { ascending: true });
         if (lastMsgDate) query = query.gt('created_at', lastMsgDate);
-    
         const { data: newHistory } = await query;
     
         if (newHistory && newHistory.length > 0) {
-            if (!cachedHistory || cachedHistory.length === 0) document.getElementById('messages-area').innerHTML = '';
-            for (const msg of newHistory) await processAndRenderMessage(msg, currentAesKey);
+            if (!cachedHistory || cachedHistory.length === 0) area.innerHTML = '';
+            for (let i = 0; i < newHistory.length; i++) {
+                await processAndRenderMessage(newHistory[i], currentAesKey);
+                if (i % 15 === 0) await new Promise(r => setTimeout(r, 0)); 
+            }
             await saveChatToCache(currentChatId, newHistory);
         } else if (!cachedHistory || cachedHistory.length === 0) {
-            document.getElementById('messages-area').innerHTML = '<div style="text-align:center; color:var(--muted); margin-top:40px;">Чат пуст</div>';
+            area.innerHTML = '<div style="text-align:center; color:var(--muted); margin-top:40px;">Чат пуст</div>';
         }
+        
+        window.isBulkLoading = false; // Снимаем блокировку
+        area.scrollTop = area.scrollHeight; // Прыгаем в самый низ ОДИН РАЗ, мгновенно!
     
         subscribeToPrivateMessages();
     }
