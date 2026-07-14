@@ -2650,7 +2650,10 @@ async function checkCryptoKeys(userId) {
         loadMyCurrencies();
         subscribeToFriendships();
         listenForDeviceRequests(); // <-- Не забудь добавить прослушку новых девайсов для Основного устройства
-        setTimeout(() => { aiWorker.postMessage({ type: 'init' }); }, 1000);
+        setTimeout(() => { 
+            const savedWhisper = localStorage.getItem('synd_whisper_model') || 'Xenova/whisper-tiny';
+            aiWorker.postMessage({ type: 'init', model: savedWhisper }); 
+        }, 500);
     }
     
     async function listenForDeviceRequests() {
