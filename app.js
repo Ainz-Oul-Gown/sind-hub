@@ -1225,25 +1225,29 @@ function initiateReply(msgElement) {
 
         await supabaseClient.storage.from('voice_messages').upload(fileName, payload, { contentType: 'application/octet-stream' });
 
-        // Вшиваем WF (WaveForm) в маркер!
-        const textMarker = `[VOICE]:${fileName}|WF:${wfStr}`; 
+        // Узнаем, включена ли авто-расшифровка
+        const isAutoWhisperOn = localStorage.getItem('synd_auto_whisper') !== 'off';
+
+        // Если ВКЛЮЧЕНА - явно ставим статус ожидания. Если ВЫКЛЮЧЕНА - оставляем без текста.
+        const textMarker = isAutoWhisperOn 
+            ? `[VOICE]:${fileName}|WF:${wfStr}|⏳ ИИ анализирует...` 
+            : `[VOICE]:${fileName}|WF:${wfStr}`; 
         
-        // --- СОХРАНЯЕМ ОТВЕТ ВО ВРЕМЕННУЮ ПАМЯТЬ ---
         const savedReplyTo = currentReplyTo; 
-        
-        // --- ПЕРЕДАЕМ ОТВЕТ В ГС ---
         const encryptedPayloadText = await encryptText(textMarker, currentAesKey, savedReplyTo);
         
         currentReplyTo = null;
         const replyBar = document.getElementById('reply-preview-bar');
         if (replyBar) replyBar.classList.remove('active');
-        // ------------------------------------
 
         const { data: insertedMsg, error: insertErr } = await supabaseClient.from('messages').insert([
             { chat_id: currentChatId, sender_id: currentUser.id, encrypted_text: encryptedPayloadText }
         ]).select().single();
         
         if (!insertedMsg || insertErr) return;
+
+        // ЕСЛИ АВТО-РАСШИФРОВКА ВЫКЛЮЧЕНА — МЫ ЗАКАНЧИВАЕМ РАБОТУ ЗДЕСЬ!
+        if (!isAutoWhisperOn) return;
 
         try {
             if (audioContext.state === 'suspended') await audioContext.resume();
@@ -1522,17 +1526,18 @@ function initiateReply(msgElement) {
             const fileName = parts[0];
 
             let wfStr = null;
-            let transcriptionText = 'ИИ анализирует... ⏳';
+            let transcriptionText = ''; // Убрали дефолт
             let hasTranscript = false;
 
             for (let i = 1; i < parts.length; i++) {
                 if (parts[i].startsWith('WF:')) {
                     wfStr = parts[i].substring(3);
-                } else if (!parts[i].includes('❌ Ошибка')) {
-                    transcriptionText = parts[i];
-                    hasTranscript = true;
                 } else {
                     transcriptionText = parts[i];
+                    // Если это не системные маркеры ожидания или ошибки — значит это настоящий перевод
+                    if (!transcriptionText.includes('⏳ ИИ анализирует...') && !transcriptionText.includes('❌ Ошибка')) {
+                        hasTranscript = true;
+                    }
                 }
             }
 
@@ -1556,45 +1561,34 @@ function initiateReply(msgElement) {
                     <div class="transcript-toggle" data-action="toggle-transcript"><i class="fas fa-chevron-down"></i> Показать перевод</div>
                     <div class="transcript-content" style="display:none;">${escapeHTML(transcriptionText)}</div>
                 `;
-            } else if (transcriptionText.includes('ИИ анализирует') || transcriptionText.includes('Ошибка')) {
-                // Если в процессе или сломалось
+            } else if (transcriptionText.includes('⏳ ИИ анализирует') || transcriptionText.includes('❌ Ошибка')) {
                 transcriptHtml = `<div class="transcript-toggle" style="cursor:default;">${escapeHTML(transcriptionText)}</div>`;
             } else {
-                // Если перевода нет (например, авто-режим был выключен) - показываем кнопку "Расшифровать"
+                // Если текста вообще нет (авто-режим был выключен) - рисуем кнопку!
                 const safeFileParam = text.replace('[VOICE]:', '');
                 transcriptHtml = `<div class="transcript-toggle" style="cursor:pointer; color: var(--primary);" data-action="manual-transcribe" data-filename="${safeFileParam}" data-msgid="${msgId}"><i class="fas fa-magic"></i> Расшифровать текст</div>`;
             }
 
-            if (!isNew && div.querySelector('.voice-player')) {
-                // Если ГС уже на экране (это обновление от нейросети)
-                // Безопасно меняем только плашку перевода, чтобы звук не оборвался!
+            if (isNew || !div.querySelector('.voice-player')) {
+                // Сообщение грузится впервые (или плеера еще нет) — рисуем всё с нуля
+                div.innerHTML = senderHtml + replyHtml + `
+                    <div class="voice-player">
+                        <div class="voice-play-btn" data-action="play-voice" data-filename="${fileName}">
+                            <i class="fas fa-play" style="margin-left: 3px;"></i>
+                        </div>
+                        <div class="voice-waveform" data-pointer-action="scrub-waveform" data-filename="${fileName}">
+                            ${barsHtml}
+                        </div>
+                    </div>
+                    ${transcriptHtml}
+                `;
+            } else {
+                // Это обновление (ИИ закончил перевод). Меняем ТОЛЬКО текст, не трогая плеер!
                 const oldToggle = div.querySelector('.transcript-toggle');
                 const oldContent = div.querySelector('.transcript-content');
+                
                 if (oldContent) oldContent.remove();
-                if (oldToggle) oldToggle.outerHTML = transcriptHtml; 
-            } else {
-                // Если это совершенно новое ГС - рисуем с нуля
-                if (isNew) {
-                    // Сообщение грузится впервые — рисуем всё с нуля
-                    div.innerHTML = senderHtml + replyHtml + `
-                        <div class="voice-player">
-                            <div class="voice-play-btn" data-action="play-voice" data-filename="${fileName}">
-                                <i class="fas fa-play" style="margin-left: 3px;"></i>
-                            </div>
-                            <div class="voice-waveform" data-pointer-action="scrub-waveform" data-filename="${fileName}">
-                                ${barsHtml}
-                            </div>
-                        </div>
-                        ${transcriptHtml}
-                    `;
-                } else {
-                    // Это обновление (ИИ закончил перевод). Меняем ТОЛЬКО текст, не трогая плеер!
-                    const oldToggle = div.querySelector('.transcript-toggle');
-                    const oldContent = div.querySelector('.transcript-content');
-                    
-                    if (oldContent) oldContent.remove();
-                    if (oldToggle) oldToggle.outerHTML = transcriptHtml;
-                }
+                if (oldToggle) oldToggle.outerHTML = transcriptHtml;
             }
         } 
         else if (text.startsWith('[GROUP_INVITE]:')) {
@@ -1604,7 +1598,6 @@ function initiateReply(msgElement) {
             const keysJSON = parts[2];
 
             if (isMine) {
-                // Вставляем replyHtml
                 div.innerHTML = senderHtml + replyHtml + `
                     <div style="display:flex; align-items:center; gap:10px; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px;">
                         <div style="width: 40px; height: 40px; border-radius: 50%; background: var(--surface); display:flex; align-items:center; justify-content:center; color: var(--muted);"><i class="fas fa-users"></i></div>
@@ -1616,7 +1609,6 @@ function initiateReply(msgElement) {
                 `;
             } else {
                 const safeKeys = btoa(keysJSON);
-                // Вставляем replyHtml
                 div.innerHTML = senderHtml + replyHtml + `
                     <div style="display:flex; align-items:center; gap:10px; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px;">
                         <div style="width: 40px; height: 40px; border-radius: 50%; background: var(--primary); display:flex; align-items:center; justify-content:center; color: white;"><i class="fas fa-users"></i></div>
@@ -1629,7 +1621,6 @@ function initiateReply(msgElement) {
             }
         } 
         else {
-            // И наконец, вставляем replyHtml для обычного текста
             div.innerHTML = senderHtml + replyHtml + escapeHTML(text).replace(/\n/g, '<br>');
         }
 
@@ -1879,11 +1870,19 @@ function initiateReply(msgElement) {
                         let plainText = dec.decode(decryptedBuffer);
                         try { plainText = JSON.parse(plainText).t; } catch(e) {} 
 
-                        if (newMsg.sender_id !== currentUser.id && plainText.startsWith('[VOICE]:') && !plainText.includes('|') && isAiReady) {
+                        if (newMsg.sender_id !== currentUser.id && plainText.startsWith('[VOICE]:') && isAiReady) {
                             
-                            // --- НОВОЕ: ПРОВЕРЯЕМ ТУМБЛЕР АВТО-РАСШИФРОВКИ ---
-                            if (localStorage.getItem('synd_auto_whisper') !== 'off') {
-                                // Если в коде есть эта функция (или когда добавишь её логику)
+                            const parts = plainText.split('|');
+                            let needsTranscription = true;
+                            
+                            // Проверяем, есть ли в чужом ГС уже какой-то текст (или надпись "анализирует")
+                            // Если есть - значит телефон собеседника уже сам всё переводит, мы не вмешиваемся.
+                            for (let i = 1; i < parts.length; i++) {
+                                if (!parts[i].startsWith('WF:')) needsTranscription = false;
+                            }
+                            
+                            // Если текста нет и у нас включена Авто-расшифровка — переводим сами!
+                            if (needsTranscription && localStorage.getItem('synd_auto_whisper') !== 'off') {
                                 if (typeof helpFriendTranscribe === 'function') {
                                     helpFriendTranscribe(plainText.replace('[VOICE]:', ''), newMsg.id);
                                 }
