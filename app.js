@@ -1212,9 +1212,18 @@ function initiateReply(msgElement) {
     function transcribeViaWorker(audioFloat32Array) {
         return new Promise((resolve, reject) => {
             const taskId = Date.now();
+            
+            // Предохранитель на 90 секунд (вдруг телефон завис)
+            const timeout = setTimeout(() => {
+                aiWorker.removeEventListener('message', handler);
+                reject(new Error("ИИ думал слишком долго."));
+            }, 90000);
+
             const handler = (event) => {
                 const msg = event.data;
-                if (msg.id === taskId) {
+                // Принимаем ответ, даже если воркер забыл прислать ID обратно
+                if (msg.id === taskId || msg.type === 'result' || msg.type === 'error') {
+                    clearTimeout(timeout);
                     aiWorker.removeEventListener('message', handler);
                     if (msg.type === 'result') resolve(msg.text);
                     else if (msg.type === 'error') reject(new Error(msg.error));
@@ -1230,7 +1239,7 @@ function initiateReply(msgElement) {
         if (!currentAesKey || !currentChatId) return;
         const fileName = `voice_${Date.now()}_${currentUser.id}.bin`;
         
-        // 1. Шифруем аудио и загружаем в хранилище
+        // 1. Шифруем аудио
         const arrayBuffer = await audioBlob.arrayBuffer();
         const iv = window.crypto.getRandomValues(new Uint8Array(12));
         const encryptedContent = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, currentAesKey, arrayBuffer);
@@ -1240,38 +1249,30 @@ function initiateReply(msgElement) {
 
         await supabaseClient.storage.from('voice_messages').upload(fileName, payload, { contentType: 'application/octet-stream' });
 
-        // 2. Узнаем, включена ли авто-расшифровка в настройках
+        // 2. Узнаем статус тумблера
         const isAutoWhisperOn = localStorage.getItem('synd_auto_whisper') !== 'off';
 
-        // 3. Формируем маркер (с часиками, если ИИ включен, и пустой, если выключен)
         const textMarker = isAutoWhisperOn 
             ? `[VOICE]:${fileName}|WF:${wfStr}|⏳ ИИ анализирует...` 
             : `[VOICE]:${fileName}|WF:${wfStr}`; 
         
-        // Сохраняем цитату (ответ), если она есть
         const savedReplyTo = currentReplyTo; 
         const encryptedPayloadText = await encryptText(textMarker, currentAesKey, savedReplyTo);
         
-        // Убираем плашку ответа с экрана
         currentReplyTo = null;
         const replyBar = document.getElementById('reply-preview-bar');
         if (replyBar) replyBar.classList.remove('active');
 
-        // 4. Отправляем сообщение в базу
+        // 3. Отправляем в БД
         const { data: insertedMsg, error: insertErr } = await supabaseClient.from('messages').insert([
             { chat_id: currentChatId, sender_id: currentUser.id, encrypted_text: encryptedPayloadText }
         ]).select().single();
         
         if (!insertedMsg || insertErr) return;
 
-        // === САМАЯ ВАЖНАЯ СТРОЧКА ===
-        // Если тумблер ВЫКЛЮЧЕН — мы просто прерываем функцию здесь! ИИ не запустится.
-        if (!isAutoWhisperOn) {
-            console.log("🛑 Авто-расшифровка выключена, отправлено без перевода.");
-            return; 
-        }
+        // Если авто-расшифровка выключена - умываем руки
+        if (!isAutoWhisperOn) return; 
 
-        // 5. Если тумблер ВКЛЮЧЕН — запускаем нейросеть
         try {
             if (audioContext.state === 'suspended') await audioContext.resume();
             const rawAudioBuffer = await audioBlob.arrayBuffer();
@@ -1281,21 +1282,22 @@ function initiateReply(msgElement) {
             const transcribedText = await transcribeViaWorker(audioFloat32);
             if (!transcribedText || transcribedText.trim() === '') throw new Error("ИИ не услышал слов");
 
-            const encryptedVector = await generateAndEncryptVector(transcribedText, currentAesKey);
-            
-            // Обновляем маркер готовым текстом и не забываем прикрепить обратно savedReplyTo
+            // ⚡ ИСПРАВЛЕНИЕ: МГНОВЕННО СОХРАНЯЕМ ТЕКСТ И РИСУЕМ ⚡
             const newMarker = `[VOICE]:${fileName}|WF:${wfStr}|${transcribedText.trim()}`;
             const newEncryptedText = await encryptText(newMarker, currentAesKey, savedReplyTo);
 
-            await supabaseClient.from('messages').update({ encrypted_text: newEncryptedText, encrypted_vector: encryptedVector }).eq('id', insertedMsg.id);
+            await supabaseClient.from('messages').update({ encrypted_text: newEncryptedText }).eq('id', insertedMsg.id);
             
-            // ПРИНУДИТЕЛЬНО РИСУЕМ НА ЭКРАНЕ (чтобы перевод появился мгновенно)
             const uiMsg = { ...insertedMsg, encrypted_text: newEncryptedText };
             await processAndRenderMessage(uiMsg, currentAesKey);
 
+            // ⚡ ВЕКТОР ДЛЯ ПОИСКА ГЕНЕРИРУЕТСЯ В ФОНЕ (Больше не тормозит UI!) ⚡
+            generateAndEncryptVector(transcribedText, currentAesKey).then(vec => {
+                supabaseClient.from('messages').update({ encrypted_vector: vec }).eq('id', insertedMsg.id);
+            }).catch(e => {});
+
         } catch (e) {
             try {
-                // Если ИИ сломался
                 const errorMarker = `[VOICE]:${fileName}|WF:${wfStr}|❌ Ошибка: ${e.message}`;
                 const errorEncryptedText = await encryptText(errorMarker, currentAesKey, savedReplyTo);
                 
@@ -1306,6 +1308,7 @@ function initiateReply(msgElement) {
             } catch (fallbackErr) {}
         }
     }
+
 
 
     // --- КАСТОМНЫЙ ПЛЕЕР ---
@@ -1679,34 +1682,48 @@ function initiateReply(msgElement) {
 
 // ФУНКЦИЯ ДЛЯ ПЕРЕВОДА ЧУЖИХ ГС (И РУЧНОЙ РАСШИФРОВКИ)
     async function helpFriendTranscribe(fileNameWithParams, msgId) {
+        if (!msgId || msgId === 'null') return;
+
         const msgEl = document.getElementById(`msg-${msgId}`);
         if (msgEl) {
             const toggle = msgEl.querySelector('.transcript-toggle');
             if (toggle && toggle.dataset.action === 'manual-transcribe') {
                 toggle.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Слушаю...';
                 toggle.style.color = 'inherit';
-                toggle.dataset.action = ''; // Блокируем повторные клики
+                toggle.dataset.action = ''; // Блокируем клики
             }
         }
 
         try {
             const parts = fileNameWithParams.split('|');
-            const fileName = parts[0];
+            const fileName = parts[0].trim();
             let wfStr = null;
             for (let i = 1; i < parts.length; i++) {
                 if (parts[i].startsWith('WF:')) wfStr = parts[i].substring(3);
             }
 
-            // 1. Скачиваем файл из хранилища
+            let savedReplyTo = null;
+            const { data: oldMsgData } = await supabaseClient.from('messages').select('encrypted_text, sender_id, created_at').eq('id', msgId).single();
+            
+            if (oldMsgData && oldMsgData.encrypted_text) {
+                try {
+                    const rawData = atob(oldMsgData.encrypted_text);
+                    const bytes = new Uint8Array(rawData.length);
+                    for (let i = 0; i < rawData.length; i++) bytes[i] = rawData.charCodeAt(i);
+                    const decryptedBuffer = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.slice(0, 12) }, currentAesKey, bytes.slice(12));
+                    const decryptedStr = dec.decode(decryptedBuffer);
+                    const parsed = JSON.parse(decryptedStr);
+                    if (parsed.r) savedReplyTo = parsed.r; 
+                } catch(e) {}
+            }
+
             const { data, error } = await supabaseClient.storage.from('voice_messages').download(fileName);
             if (error) throw error;
             const arrayBuffer = await data.arrayBuffer();
 
-            // 2. Расшифровываем AES-ключом чата
             const bytes = new Uint8Array(arrayBuffer);
             const decryptedBuffer = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.slice(0, 12) }, currentAesKey, bytes.slice(12));
             
-            // 3. Отдаем нейросети (Whisper)
             if (audioContext.state === 'suspended') await audioContext.resume();
             const decodedAudio = await audioContext.decodeAudioData(decryptedBuffer);
             const audioFloat32 = decodedAudio.getChannelData(0);
@@ -1714,26 +1731,35 @@ function initiateReply(msgElement) {
             const transcribedText = await transcribeViaWorker(audioFloat32);
             if (!transcribedText || transcribedText.trim() === '') throw new Error("Не удалось разобрать речь");
 
-            const encryptedVector = await generateAndEncryptVector(transcribedText, currentAesKey);
-            
-            // 4. Обновляем сообщение в базе для обоих!
+            // ⚡ ИСПРАВЛЕНИЕ: МГНОВЕННО СОХРАНЯЕМ ТЕКСТ И РИСУЕМ НА ЭКРАНЕ ⚡
             const newMarker = `[VOICE]:${fileName}|WF:${wfStr || ''}|${transcribedText.trim()}`;
-            const newEncryptedText = await encryptText(newMarker, currentAesKey);
+            const newEncryptedText = await encryptText(newMarker, currentAesKey, savedReplyTo);
 
-            await supabaseClient.from('messages').update({ encrypted_text: newEncryptedText, encrypted_vector: encryptedVector }).eq('id', msgId);
+            await supabaseClient.from('messages').update({ encrypted_text: newEncryptedText }).eq('id', msgId);
+            
+            if (oldMsgData) {
+                const uiMsg = { id: msgId, sender_id: oldMsgData.sender_id, encrypted_text: newEncryptedText, created_at: oldMsgData.created_at };
+                await processAndRenderMessage(uiMsg, currentAesKey);
+            }
+
+            // ⚡ ВЕКТОР ДЛЯ ПОИСКА ГЕНЕРИРУЕТСЯ В ФОНЕ (Не тормозит перевод!) ⚡
+            generateAndEncryptVector(transcribedText, currentAesKey).then(vec => {
+                supabaseClient.from('messages').update({ encrypted_vector: vec }).eq('id', msgId);
+            }).catch(e => console.warn("Ошибка ИИ-вектора:", e));
             
         } catch (e) {
-            console.error("Ошибка авто-расшифровки:", e);
+            console.error("Ошибка расшифровки:", e);
             if (msgEl) {
                 const toggle = msgEl.querySelector('.transcript-toggle');
                 if (toggle) {
-                    toggle.innerHTML = '<i class="fas fa-magic"></i> Ошибка (нажмите повторить)';
+                    toggle.innerHTML = '<i class="fas fa-magic"></i> Ошибка (повторить)';
                     toggle.style.color = 'var(--danger)';
                     toggle.dataset.action = 'manual-transcribe'; 
                 }
             }
         }
     }
+
 
     // --- ОСТАЛЬНАЯ ЛОГИКА ---
     const tg = window.Telegram.WebApp;
