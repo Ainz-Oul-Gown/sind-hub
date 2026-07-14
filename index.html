@@ -245,7 +245,7 @@
     
         <div id="modal-settings" class="glass-modal">
             <!-- Крестик теперь тоже работает через data-action -->
-            <button class="modal-close" data-action="close-settings"><i class="fas fa-times"></i></button>
+            <button class="modal-close" data-action="close-settings" style="left: 16px; right: auto;"><i class="fas fa-times"></i></button>
             <h3 style="text-align: center; margin-bottom: 20px;">Настройки</h3>
             
             <!-- БЛОК: ОСНОВНЫЕ -->
@@ -573,6 +573,60 @@
             <i class="fas fa-trash-alt" style="color: var(--danger); padding: 10px;"></i>
         </div>
     </div>
+
+    <!-- ЭКРАН: НЕЙРО-МОДУЛЬ -->
+    <div id="screen-ai" class="screen">
+        <div class="header-nav">
+            <button class="back-btn" data-action="back-to-settings"><i class="fas fa-chevron-left"></i> Назад</button>
+            <span>Нейро-модуль</span>
+            <div style="width: 60px;"></div>
+        </div>
+
+        <div class="card" style="text-align: center; padding: 24px 16px;">
+            <i class="fas fa-brain" style="font-size: 48px; color: #FF2D55; margin-bottom: 16px; text-shadow: 0 4px 15px rgba(255, 45, 85, 0.4);"></i>
+            <h3 style="margin: 0; font-size: 28px; font-weight: 700;" id="ai-total-used">0.00 МБ</h3>
+            <div style="color: var(--muted); font-size: 14px; margin-top: 6px;">Занято нейросетями</div>
+        </div>
+
+        <!-- Поиск -->
+        <h3 class="section-title">Семантический поиск</h3>
+        <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div style="flex-grow: 1;">
+                    <div style="font-weight: 600; font-size: 15px;">all-MiniLM-L6-v2</div>
+                    <div style="font-size: 12px; color: var(--muted); margin-top: 4px;">Умный поиск по смыслу (En/Ru)</div>
+                </div>
+                <div id="ai-search-status" style="font-size: 13px; font-weight: bold; color: var(--muted); text-align: right;">Вычисление...</div>
+            </div>
+            <button class="primary-btn" data-action="delete-ai-search" style="background: rgba(255,69,58,0.15); color: var(--danger); margin-top: 16px; padding: 10px;">
+                <i class="fas fa-trash-alt"></i> Удалить модель
+            </button>
+        </div>
+
+        <!-- Распознавание речи -->
+        <h3 class="section-title">Распознавание речи (ГС)</h3>
+        <div class="card">
+            <label style="font-size: 14px; color: var(--muted); margin-bottom: 8px; display: block;">Качество расшифровки (Whisper):</label>
+            <select id="ai-whisper-select" style="background: rgba(0,0,0,0.3);">
+                <option value="Xenova/whisper-tiny">Tiny (Самая быстрая, ~40 МБ)</option>
+                <option value="Xenova/whisper-base">Base (Баланс, ~75 МБ)</option>
+                <option value="Xenova/whisper-small">Small (Точная, ~240 МБ)</option>
+            </select>
+            
+            <div style="font-size: 12px; color: var(--muted); margin-top: 8px; margin-bottom: 16px; line-height: 1.4;">
+                * Изменение модели вступит в силу при расшифровке следующего ГС. Новая модель скачается автоматически.
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border); padding-top: 12px;">
+                <div style="font-size: 13px; color: var(--muted);" id="ai-whisper-size">Занято: 0.00 МБ</div>
+                <div id="ai-whisper-status" style="font-size: 13px; font-weight: bold; color: var(--muted);">Вычисление...</div>
+            </div>
+            
+            <button class="primary-btn" data-action="delete-ai-whisper" style="background: rgba(255,69,58,0.15); color: var(--danger); margin-top: 16px; padding: 10px;">
+                <i class="fas fa-trash-alt"></i> Удалить скачанные данные
+            </button>
+        </div>
+    </div>
     
 <script>
 
@@ -662,17 +716,108 @@
     }).join('');
 }
 
-async function kickDevice(deviceId, deviceName) {
-    if (!confirm(`Точно удалить устройство "${deviceName}"? Сеанс на нем будет мгновенно завершен.`)) return;
-    
-    // Удаляем из БД. Триггер веб-сокета сработает автоматически и убьет сессию на том девайсе!
-    await supabaseClient.from('user_devices').delete().eq('device_id', deviceId);
-    
-    if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
-    
-    // Перерисовываем список
-    loadDevicesScreen();
-}
+    // --- УПРАВЛЕНИЕ НЕЙРОСЕТЯМИ ---
+
+    // Вспомогательная функция: узнать вес модели в кэше
+    async function getTransformersModelSize(modelPath) {
+        let size = 0;
+        try {
+            const cache = await caches.open('transformers-cache');
+            const requests = await cache.keys();
+            for (let req of requests) {
+                // Если URL файла содержит путь модели (например Xenova/whisper-tiny)
+                if (req.url.includes(modelPath)) {
+                    const response = await cache.match(req);
+                    if (response) {
+                        const blob = await response.blob();
+                        size += blob.size;
+                    }
+                }
+            }
+        } catch(e) {}
+        return size;
+    }
+
+    // Вспомогательная функция: удалить конкретную модель
+    async function deleteTransformersModel(modelPath) {
+        try {
+            const cache = await caches.open('transformers-cache');
+            const requests = await cache.keys();
+            for (let req of requests) {
+                if (req.url.includes(modelPath)) {
+                    await cache.delete(req);
+                }
+            }
+        } catch(e) {}
+    }
+
+    // Главная функция отрисовки экрана ИИ
+    async function calculateAiStorage() {
+        const searchModel = 'Xenova/all-MiniLM-L6-v2';
+        const whisperModel = document.getElementById('ai-whisper-select').value;
+
+        const searchSizeBytes = await getTransformersModelSize(searchModel);
+        const whisperSizeBytes = await getTransformersModelSize(whisperModel);
+        
+        const totalMB = ((searchSizeBytes + whisperSizeBytes) / (1024 * 1024)).toFixed(2);
+        document.getElementById('ai-total-used').innerText = `${totalMB} МБ`;
+
+        // Обновляем UI Поиска
+        const searchStatus = document.getElementById('ai-search-status');
+        if (searchSizeBytes > 0) {
+            searchStatus.innerHTML = `Установлено <span style="color:var(--text); font-weight:normal;">(${(searchSizeBytes / (1024 * 1024)).toFixed(1)} МБ)</span>`;
+            searchStatus.style.color = 'var(--success)';
+        } else {
+            searchStatus.innerText = 'Не загружена';
+            searchStatus.style.color = 'var(--muted)';
+        }
+
+        // Обновляем UI Whisper
+        const whisperStatusEl = document.getElementById('ai-whisper-status');
+        const whisperSizeEl = document.getElementById('ai-whisper-size');
+        
+        if (whisperSizeBytes > 0) {
+            whisperStatusEl.innerText = 'Установлена';
+            whisperStatusEl.style.color = 'var(--success)';
+            whisperSizeEl.innerText = `Занято: ${(whisperSizeBytes / (1024 * 1024)).toFixed(2)} МБ`;
+        } else {
+            whisperStatusEl.innerText = 'Ожидает скачивания';
+            whisperStatusEl.style.color = 'var(--primary)';
+            whisperSizeEl.innerText = 'Занято: 0.00 МБ';
+        }
+    }
+
+    async function openAiSettings() {
+        toggleModal('modal-settings'); // Закрываем модалку настроек
+        switchScreen('screen-ai'); // Открываем экран ИИ
+        
+        // Восстанавливаем выбранную модель Whisper из памяти (по умолчанию tiny)
+        const savedWhisper = localStorage.getItem('synd_whisper_model') || 'Xenova/whisper-tiny';
+        const selectEl = document.getElementById('ai-whisper-select');
+        selectEl.value = savedWhisper;
+        
+        // Слушаем изменение в селекте
+        selectEl.onchange = (e) => {
+            localStorage.setItem('synd_whisper_model', e.target.value);
+            // ФИКС: Нужно передать выбор в воркер!
+            aiWorker.postMessage({ type: 'change_model', model: e.target.value });
+            calculateAiStorage(); // Пересчитываем визуал для новой модели
+        };
+
+        await calculateAiStorage();
+    }
+
+    async function kickDevice(deviceId, deviceName) {
+        if (!confirm(`Точно удалить устройство "${deviceName}"? Сеанс на нем будет мгновенно завершен.`)) return;
+        
+        // Удаляем из БД. Триггер веб-сокета сработает автоматически и убьет сессию на том девайсе!
+        await supabaseClient.from('user_devices').delete().eq('device_id', deviceId);
+        
+        if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+        
+        // Перерисовываем список
+        loadDevicesScreen();
+    }
 
 
     // --- ГРУППЫ: СОЗДАНИЕ ---
@@ -3738,6 +3883,24 @@ async function checkCryptoKeys(userId) {
             case 'back-to-settings':
                 switchScreen('screen-main'); // Возвращаемся на фон
                 document.getElementById('modal-settings').classList.add('active'); // Открываем модалку настроек
+                break;
+            case 'open-settings-ai':
+                openAiSettings();
+                break;
+            case 'delete-ai-search':
+                if(confirm("Удалить модель поиска? Она скачается заново при следующем ИИ-запросе.")) {
+                    await deleteTransformersModel('Xenova/all-MiniLM-L6-v2');
+                    calculateAiStorage();
+                    if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+                }
+                break;
+            case 'delete-ai-whisper':
+                if(confirm("Удалить текущую модель распознавания речи?")) {
+                    const wModel = document.getElementById('ai-whisper-select').value;
+                    await deleteTransformersModel(wModel);
+                    calculateAiStorage();
+                    if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+                }
                 break;
         }
     });
