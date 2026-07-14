@@ -60,6 +60,15 @@ self.onmessage = async (event) => {
             initWhisper().catch(e => self.postMessage({ type: 'error', error: e.message }));
         }
     }
+    else if (msg.type === 'force_download') {
+        // Жестко сбрасываем старую модель и очищаем проценты загрузки
+        whisperModel = null;
+        for (const prop of Object.getOwnPropertyNames(downloadTracker)) {
+            delete downloadTracker[prop];
+        }
+        // Запускаем инициализацию (скачивание)
+        initWhisper().catch(e => self.postMessage({ type: 'error', error: e.message }));
+    }
     else if (msg.type === 'transcribe') {
         try {
             if (!whisperModel) await initWhisper();
