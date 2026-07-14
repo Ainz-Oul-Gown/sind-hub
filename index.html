@@ -440,15 +440,15 @@
                 <div id="record-overlay" class="record-overlay">
 
                     <!-- Меню во время паузы (Корзина - Таймер - Микрофон - Отправить) -->
+                    <!-- Меню во время паузы -->
                     <div class="record-locked-actions" id="record-locked-actions">
-                        <button class="btn-rec-action btn-rec-cancel" data-action="cancel-recording"><i class="fas fa-trash-alt"></i></button>
-
+                        <button class="btn-rec-action btn-rec-cancel" data-pointer-action="cancel-recording"><i class="fas fa-trash-alt"></i></button>
+                    
                         <div class="record-timer paused" id="record-timer-paused" style="margin-left: 15px;"><span>0:00</span></div>
-
-                        <button class="btn-rec-action btn-rec-resume" data-action="resume-recording"><i class="fas fa-microphone"></i></button>
-                        <button class="btn-rec-action btn-rec-send" data-action="send-recording"><i class="fas fa-paper-plane"></i></button>
+                    
+                        <button class="btn-rec-action btn-rec-resume" data-pointer-action="resume-recording"><i class="fas fa-microphone"></i></button>
+                        <button class="btn-rec-action btn-rec-send" data-pointer-action="send-recording"><i class="fas fa-paper-plane"></i></button>
                     </div>
-
                     <!-- Стандартный вид (Таймер слева, Подсказка по центру) -->
                     <div class="record-slide-hint" id="record-hint" style="width: 100%; display: flex; justify-content: space-between; align-items: center;">
                         <div class="record-timer" id="record-timer-live"><i class="fas fa-microphone"></i> <span>0:00</span></div>
