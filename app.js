@@ -10,6 +10,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         window.Telegram.WebApp.expand();
     }
 
+    
+
     // 2. Безопасный запуск главных функций
     try {
         // Проверяем, существует ли функция checkAuth
@@ -27,9 +29,34 @@ document.addEventListener('DOMContentLoaded', async () => {
         } else {
             console.warn("⚠️ Функция initApp не найдена в коде.");
         }
+
+        
     } catch (e) {
         console.error("❌ Критическая ошибка при запуске:", e);
     }
+
+    // --- ПРИВЯЗКА ПОЛЕЙ ВВОДА И МИКРОФОНА ---
+    const chatInput = document.getElementById('chat-input');
+    if (chatInput) chatInput.addEventListener('input', autoResizeInput);
+
+    const semanticToggle = document.getElementById('semantic-toggle');
+    if (semanticToggle) semanticToggle.addEventListener('change', toggleSlider);
+
+    const debtRubles = document.getElementById('debt-rubles');
+    if (debtRubles) debtRubles.addEventListener('input', calculateDebt);
+
+    const debtCurrency = document.getElementById('debt-currency');
+    if (debtCurrency) debtCurrency.addEventListener('change', calculateDebt);
+
+    // Привязка микрофона
+    const micBtn = document.getElementById('btn-input-action');
+    if (micBtn) {
+        micBtn.addEventListener('pointerdown', startVoiceHold);
+        micBtn.addEventListener('pointermove', moveVoiceHold);
+        micBtn.addEventListener('pointerup', endVoiceHold);
+        micBtn.addEventListener('pointercancel', endVoiceHold);
+    }
+    
 });
 
     let currentChatType = 'private'; // 'private' или 'group'
@@ -3387,6 +3414,29 @@ async function checkCryptoKeys(userId) {
                 aiWorker.postMessage({ type: 'force_download' }); // Команда воркеру
                 break;
             }
+            case 'toggle-modal':
+                if (target.dataset.target) toggleModal(target.dataset.target);
+                break;
+            case 'switch-screen':
+                if (target.dataset.target) switchScreen(target.dataset.target);
+                break;
+            case 'open-pwa': openPWA(); break;
+            case 'toggle-status': toggleStatus(); break;
+            case 'create-group': handleCreateGroup(); break;
+            case 'send-friend-request': sendFriendRequest(); break;
+            case 'add-currency': addCurrency(); break;
+            case 'open-chat-info': openChatInfo(); break;
+            case 'open-debt-modal': openDebtModal(); break;
+            case 'remove-friend': removeFriend(); break;
+            case 'edit-group-name': editGroupName(); break;
+            case 'open-invite-modal': openInviteModal(); break;
+            case 'leave-group': leaveGroup(); break;
+            case 'delete-group': deleteGroup(); break;
+            case 'perform-search': performSearch(); break;
+            case 'cancel-recording': cancelRecording(); break;
+            case 'resume-recording': resumeRecording(); break;
+            case 'send-recording': stopAndSendRecording(); break;
+            case 'save-debt': saveDebt(); break;
         }
     });
     
