@@ -2465,26 +2465,35 @@ async function checkCryptoKeys(userId) {
     
         currentAesKey = successfullyDecryptedAes;
     
-        // ⚡ ПАГИНАЦИЯ И БЫСТРАЯ ЗАГРУЗКА ⚡
+       // ⚡ МГНОВЕННЫЙ РЕНДЕР И ФОНОВАЯ СИНХРОНИЗАЦИЯ ⚡
         const cachedHistory = await getChatFromCache(currentChatId) || [];
     
+        // 1. Мгновенно собираем память и показываем чат (Без ожидания интернета!)
+        window.currentChatFullHistory = [...cachedHistory];
+        window.chatRenderLimit = 30;
+        await renderCurrentChatSlice();
+        
+        // Сразу включаем сокеты, чтобы не пропустить живые сообщения
+        subscribeToPrivateMessages();
+    
+        // 2. В ФОНЕ идем на сервер и проверяем новые сообщения
         const lastMsgDate = cachedHistory.length > 0 ? cachedHistory[cachedHistory.length - 1].created_at : null;
         let query = supabaseClient.from('messages').select('*').eq('chat_id', currentChatId).order('created_at', { ascending: true });
         if (lastMsgDate) query = query.gt('created_at', lastMsgDate); 
-        const { data: newHistory } = await query;
         
-        const newHistArr = newHistory || [];
-        if (newHistArr.length > 0) {
-            await saveChatToCache(currentChatId, newHistArr); 
-        }
-
-        // Собираем весь чат в памяти (закэшированные + новые), но не рисуем всё!
-        window.currentChatFullHistory = [...cachedHistory, ...newHistArr];
-        window.chatRenderLimit = 30; // Рисуем только 30 свежих
-        
-        await renderCurrentChatSlice();
-    
-        subscribeToPrivateMessages();
+        // Обратите внимание: тут нет слова await! Код пошел дальше, а запрос выполняется сам.
+        query.then(async ({ data: newHistory }) => {
+            const newHistArr = newHistory || [];
+            if (newHistArr.length > 0) {
+                await saveChatToCache(currentChatId, newHistArr); 
+                window.currentChatFullHistory.push(...newHistArr); // Добавляем в память
+                
+                // Дорисовываем новые сообщения снизу
+                for (let msg of newHistArr) {
+                    await processAndRenderMessage(msg, currentAesKey);
+                }
+            }
+        }).catch(err => console.warn("Фоновая загрузка истории прервана (нет сети)", err));
     }
 
 
@@ -3090,25 +3099,33 @@ async function checkCryptoKeys(userId) {
         window.currentGroupUsers = {};
         if (usersData) usersData.forEach(u => window.currentGroupUsers[u.tg_id] = u.first_name);
     
-        // ⚡ ПАГИНАЦИЯ ДЛЯ ГРУППЫ ⚡
+        // ⚡ МГНОВЕННЫЙ РЕНДЕР ГРУППЫ И ФОНОВАЯ СИНХРОНИЗАЦИЯ ⚡
         const cachedHistory = await getChatFromCache(currentChatId) || [];
     
+        // 1. Рисуем сразу из кэша
+        window.currentChatFullHistory = [...cachedHistory];
+        window.chatRenderLimit = 30;
+        await renderCurrentChatSlice();
+        
+        // Включаем сокеты сразу
+        subscribeToPrivateMessages();
+    
+        // 2. ФОНОВАЯ загрузка пропущенных
         const lastMsgDate = cachedHistory.length > 0 ? cachedHistory[cachedHistory.length - 1].created_at : null;
         let query = supabaseClient.from('messages').select('*').eq('chat_id', currentChatId).order('created_at', { ascending: true });
         if (lastMsgDate) query = query.gt('created_at', lastMsgDate);
-        const { data: newHistory } = await query;
         
-        const newHistArr = newHistory || [];
-        if (newHistArr.length > 0) {
-            await saveChatToCache(currentChatId, newHistArr);
-        }
-
-        window.currentChatFullHistory = [...cachedHistory, ...newHistArr];
-        window.chatRenderLimit = 30;
-        
-        await renderCurrentChatSlice();
-    
-        subscribeToPrivateMessages();
+        query.then(async ({ data: newHistory }) => {
+            const newHistArr = newHistory || [];
+            if (newHistArr.length > 0) {
+                await saveChatToCache(currentChatId, newHistArr);
+                window.currentChatFullHistory.push(...newHistArr); 
+                
+                for (let msg of newHistArr) {
+                    await processAndRenderMessage(msg, currentAesKey);
+                }
+            }
+        }).catch(err => console.warn("Фоновая загрузка истории группы прервана (нет сети)", err));
     }
 
 
