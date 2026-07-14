@@ -3441,12 +3441,24 @@ async function checkCryptoKeys(userId) {
     });
     
     // Отдельный глобальный слушатель для перемотки ГС (там onpointerdown)
+    // Отдельный глобальный слушатель для перемотки ГС и кнопок записи (моментальный отклик)
     document.addEventListener('pointerdown', async (e) => {
         const target = e.target.closest('[data-pointer-action]');
         if (!target) return;
     
-        if (target.dataset.pointerAction === 'scrub-waveform') {
+        const action = target.dataset.pointerAction;
+
+        if (action === 'scrub-waveform') {
             // e - само событие (нужно для координат), target - контейнер волны
             handleWaveformPointer(e, target, target.dataset.filename);
+        } 
+        else if (action === 'cancel-recording') {
+            cancelRecording();
+        } 
+        else if (action === 'resume-recording') {
+            resumeRecording();
+        } 
+        else if (action === 'send-recording') {
+            stopAndSendRecording();
         }
     });
