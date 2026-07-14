@@ -549,8 +549,9 @@
         const dateStr = new Date(d.added_at).toLocaleDateString();
         
         let deleteBtnHtml = canDelete 
-            ? `<div style="padding: 10px; cursor: pointer; color: var(--danger);" onclick="kickDevice('${d.device_id}', '${escapeHTML(d.device_name)}')"><i class="fas fa-trash-alt"></i></div>` 
+            ? `<div style="padding: 10px; cursor: pointer; color: var(--danger);" data-action="kick-device" data-id="${d.device_id}" data-name="${escapeHTML(d.device_name)}"><i class="fas fa-trash-alt"></i></div>` 
             : `<div style="padding: 10px; color: var(--border);"><i class="fas fa-lock"></i></div>`;
+
 
         return `
             <div class="list-item" style="${isMe ? 'border-color: var(--primary); background: rgba(10,132,255,0.05);' : ''}">
@@ -1647,7 +1648,7 @@ async function kickDevice(deviceId, deviceName) {
             let transcriptHtml = '';
             if (hasTranscript) {
                 transcriptHtml = `
-                    <div class="transcript-toggle" onclick="toggleTranscript(this)"><i class="fas fa-chevron-down"></i> Показать перевод</div>
+<div class="transcript-toggle" data-action="toggle-transcript"><i class="fas fa-chevron-down"></i> Показать перевод</div>
                     <div class="transcript-content" style="display:none;">${escapeHTML(transcriptionText)}</div>
                 `;
             } else {
@@ -1655,14 +1656,14 @@ async function kickDevice(deviceId, deviceName) {
             }
 
             div.innerHTML = senderHtml + `
-                <div class="voice-player">
-                    <div class="voice-play-btn" onclick="loadAndPlayVoice('${fileName}', this)">
-                        <i class="fas fa-play" style="margin-left: 3px;"></i>
-                    </div>
-                    <div class="voice-waveform" onpointerdown="handleWaveformPointer(event, this, '${fileName}')">
-                        ${barsHtml}
-                    </div>
-                </div>
+<div class="voice-player">
+    <div class="voice-play-btn" data-action="play-voice" data-filename="${fileName}">
+        <i class="fas fa-play" style="margin-left: 3px;"></i>
+    </div>
+    <div class="voice-waveform" data-pointer-action="scrub-waveform" data-filename="${fileName}">
+        ${barsHtml}
+    </div>
+</div>
                 ${transcriptHtml}
             `;
         } 
@@ -1692,7 +1693,7 @@ async function kickDevice(deviceId, deviceName) {
                         <div style="width: 40px; height: 40px; border-radius: 50%; background: var(--primary); display:flex; align-items:center; justify-content:center; color: white;"><i class="fas fa-users"></i></div>
                         <div>
                             <div style="font-weight: 600;">${escapeHTML(groupName)}</div>
-                            <button onclick="acceptGroupInvite('${groupId}', atob('${safeKeys}'), this)" style="margin-top: 8px; background: var(--success); color: white; border: none; padding: 6px 12px; border-radius: 12px; font-weight: 600; cursor: pointer;">Вступить</button>
+                          <button data-action="accept-group-invite" data-group-id="${groupId}" data-keys="${safeKeys}" style="margin-top: 8px; background: var(--success); color: white; border: none; padding: 6px 12px; border-radius: 12px; font-weight: 600; cursor: pointer;">Вступить</button>
                         </div>
                     </div>
                 `;
@@ -2443,8 +2444,8 @@ function renderDeviceRequestBubble(requestData) {
                 </div>
             </div>
             <div style="display: flex; gap: 8px;">
-                <button onclick="handleDeviceDecision('${requestData.id}', '${safePubKey}', 'approved', this)" style="background: var(--success, #34c759); color: white; border: none; padding: 10px; border-radius: 8px; font-weight: 600; cursor: pointer; flex-grow: 1;">Разрешить</button>
-                <button onclick="handleDeviceDecision('${requestData.id}', '', 'rejected', this)" style="background: rgba(255,255,255,0.1); color: var(--danger, #ff3b30); border: none; padding: 10px; border-radius: 8px; font-weight: 600; cursor: pointer; flex-grow: 1;">Отклонить</button>
+<button data-action="device-decision" data-id="${requestData.id}" data-pubkey="${safePubKey}" data-decision="approved" style="background: var(--success, #34c759); color: white; border: none; padding: 10px; border-radius: 8px; font-weight: 600; cursor: pointer; flex-grow: 1;">Разрешить</button>
+<button data-action="device-decision" data-id="${requestData.id}" data-pubkey="" data-decision="rejected" style="background: rgba(255,255,255,0.1); color: var(--danger, #ff3b30); border: none; padding: 10px; border-radius: 8px; font-weight: 600; cursor: pointer; flex-grow: 1;">Отклонить</button>
             </div>
         `;
 
@@ -2669,7 +2670,7 @@ function renderChatsList(users, groupChats, pendingRequests = []) {
 
     // 1. ИЗБРАННОЕ (Всегда сверху)
     html += `
-        <div class="list-item" onclick="openSavedMessages()">
+<div class="list-item" data-action="open-saved" style="cursor: pointer;">
             <div class="list-item-left">
                 <div class="avatar-wrap">
                     <div class="avatar" style="background: var(--primary);"><i class="fas fa-bookmark"></i></div>
@@ -2695,8 +2696,8 @@ function renderChatsList(users, groupChats, pendingRequests = []) {
                     </div>
                 </div>
                 <div style="display:flex; gap: 6px;">
-                    <button class="primary-btn" style="width: 32px; height: 32px; padding: 0; background: var(--success);" onclick="acceptFriend('${req.id}')"><i class="fas fa-check"></i></button>
-                    <button class="primary-btn" style="width: 32px; height: 32px; padding: 0; background: rgba(255,69,58,0.2); color: var(--danger);" onclick="rejectFriend('${req.id}')"><i class="fas fa-times"></i></button>
+<button class="primary-btn" style="width: 32px; height: 32px; padding: 0; background: var(--success);" data-action="accept-friend" data-id="${req.id}"><i class="fas fa-check"></i></button>
+<button class="primary-btn" style="width: 32px; height: 32px; padding: 0; background: rgba(255,69,58,0.2); color: var(--danger);" data-action="reject-friend" data-id="${req.id}"><i class="fas fa-times"></i></button>
                 </div>
             </div>
         `;
@@ -2706,7 +2707,7 @@ function renderChatsList(users, groupChats, pendingRequests = []) {
     groupChats.forEach(g => {
         const safeName = escapeHTML(g.name);
         html += `
-            <div class="list-item" onclick="openGroupChat('${g.id}', '${safeName}')">
+<div class="list-item" data-action="open-group" data-id="${g.id}" data-name="${safeName}" style="cursor: pointer;">
                 <div class="list-item-left">
                     <div class="avatar-wrap">
                         <div class="avatar" style="background: linear-gradient(135deg, #007AFF, #00C6FF);">${safeName.charAt(0).toUpperCase()}</div>
@@ -2729,7 +2730,7 @@ function renderChatsList(users, groupChats, pendingRequests = []) {
         const safeName = escapeHTML(f.first_name);
         const isBusy = f.status?.includes('Занят');
         html += `
-            <div class="list-item" onclick="safeOpenFriend(${f.tg_id})">
+<div class="list-item" data-action="open-friend" data-id="${f.tg_id}" style="cursor: pointer;">
                 <div class="list-item-left">
                     <div class="avatar-wrap">
                         <div class="avatar" style="background: ${getAvatarGradient(f.tg_id)};">${safeName.charAt(0).toUpperCase()}</div>
@@ -3007,7 +3008,7 @@ async function loadChats() {
                         <div class="list-item-subtitle">Курс: ${c.rub_value} ₽</div>
                     </div>
                 </div>
-                <div style="padding: 10px; cursor: pointer; color: var(--danger);" onclick="deleteCurrency('${c.id}')"><i class="fas fa-trash-alt"></i></div>
+<div style="padding: 10px; cursor: pointer; color: var(--danger);" data-action="delete-currency" data-id="${c.id}"><i class="fas fa-trash-alt"></i></div>
             </div>
         `).join('');
     }
@@ -3040,14 +3041,14 @@ async function loadChats() {
             html += iOwe.map(d => `
                 <div class="debt-row">
                     <span class="debt-amount owe"><i class="fas fa-arrow-up" style="font-size: 12px; margin-right: 4px;"></i> ${d.amount} ${escapeHTML(d.currency)}</span>
-                    <button class="btn-resolve" onclick="deleteDebt('${d.id}')">Отдал</button>
+<button class="btn-resolve" data-action="delete-debt" data-id="${d.id}">Отдал</button>
                 </div>`).join('');
         }
         if (owesMe && owesMe.length > 0) {
             html += owesMe.map(d => `
                 <div class="debt-row">
                     <span class="debt-amount owed"><i class="fas fa-arrow-down" style="font-size: 12px; margin-right: 4px;"></i> ${d.amount} ${escapeHTML(d.currency)}</span>
-                    <button class="btn-resolve" onclick="deleteDebt('${d.id}')">Простить</button>
+<button class="btn-resolve" data-action="delete-debt" data-id="${d.id}">Простить</button>
                 </div>`).join('');
         }
         document.getElementById('friend-debts-list').innerHTML = html || '<div style="color:var(--muted); font-size: 15px; text-align: center; padding: 20px 0;"><i class="fas fa-check-circle" style="font-size:32px; color:var(--success); margin-bottom:10px; opacity:0.7;"></i><br>Никто никому не должен</div>';
@@ -3083,7 +3084,7 @@ async function loadChats() {
                     <div class="list-item-title">${escapeHTML(f.first_name)}</div>
                 </div>
                 <!-- ID друга теперь передается как строка (в кавычках), чтобы избежать багов JS -->
-                <button class="primary-btn" style="width:auto; padding: 6px 12px; font-size: 13px;" onclick="backgroundSendGroupInvite('${f.tg_id}', this)">Позвать</button>
+<button class="primary-btn" style="width:auto; padding: 6px 12px; font-size: 13px;" data-action="invite-friend" data-id="${f.tg_id}">Позвать</button>
             </div>
         `).join('');
         toggleModal('modal-invite-friend');
@@ -3430,8 +3431,72 @@ async function loadChats() {
     }
 
     initApp();
+    
+    // === ГЛОБАЛЬНЫЙ ПЕРЕХВАТЧИК СОБЫТИЙ (ЗАЩИТА ОТ XSS) ===
+document.body.addEventListener('click', (e) => {
+    // Ищем ближайший элемент, по которому кликнули, у которого есть data-action
+    const target = e.target.closest('[data-action]');
+    if (!target) return; // Если клик не по нашей кнопке - игнорируем
+
+    const action = target.dataset.action;
+
+    // Распределяем действия
+    switch (action) {
+        case 'kick-device':
+            kickDevice(target.dataset.id, target.dataset.name);
+            break;
+        case 'open-saved':
+            openSavedMessages();
+            break;
+        case 'accept-friend':
+            acceptFriend(target.dataset.id);
+            break;
+        case 'reject-friend':
+            rejectFriend(target.dataset.id);
+            break;
+        case 'open-group':
+            openGroupChat(target.dataset.id, target.dataset.name);
+            break;
+        case 'open-friend':
+            safeOpenFriend(parseInt(target.dataset.id));
+            break;
+        case 'delete-currency':
+            deleteCurrency(target.dataset.id);
+            break;
+        case 'delete-debt':
+            deleteDebt(target.dataset.id);
+            break;
+        case 'invite-friend':
+            // target передаем вместо this
+            backgroundSendGroupInvite(target.dataset.id, target);
+            break;
+        case 'toggle-transcript':
+            toggleTranscript(target);
+            break;
+        case 'play-voice':
+            loadAndPlayVoice(target.dataset.filename, target);
+            break;
+        case 'accept-group-invite':
+            acceptGroupInvite(target.dataset.groupId, atob(target.dataset.keys), target);
+            break;
+        case 'device-decision':
+            handleDeviceDecision(target.dataset.id, target.dataset.pubkey, target.dataset.decision, target);
+            break;
+    }
+});
+
+// Отдельный глобальный слушатель для перемотки ГС (там onpointerdown)
+document.body.addEventListener('pointerdown', (e) => {
+    const target = e.target.closest('[data-pointer-action]');
+    if (!target) return;
+
+    if (target.dataset.pointerAction === 'scrub-waveform') {
+        // e - само событие (нужно для координат), target - контейнер волны
+        handleWaveformPointer(e, target, target.dataset.filename);
+    }
+});
+
 </script>
 </body>
 </html>
-
 
