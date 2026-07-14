@@ -3515,7 +3515,7 @@ document.addEventListener('click', (e) => {
 });
 
 // Отдельный глобальный слушатель для перемотки ГС (там onpointerdown)
-document.body.addEventListener('pointerdown', (e) => {
+document.addEventListener('pointerdown', (e) => {
     const target = e.target.closest('[data-pointer-action]');
     if (!target) return;
 
