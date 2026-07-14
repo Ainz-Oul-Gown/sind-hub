@@ -1172,29 +1172,41 @@ function initiateReply(msgElement) {
     const aiWorker = new Worker('ai-worker.js', { type: 'module' });
     const audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
 
-    aiWorker.onmessage = (event) => {
+   aiWorker.onmessage = (event) => {
         const msg = event.data;
         if (msg.type === 'progress') {
             if (window.isWhisperDownloading) {
                 const btn = document.getElementById('btn-download-whisper');
                 if (btn) btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Загрузка ${msg.percent}%`;
             }
+            // НОВОЕ: Показываем прогресс загрузки модели прямо в чате на кнопке!
+            document.querySelectorAll('.transcript-toggle[data-action=""]').forEach(el => {
+                if (el.innerHTML.includes('Слушаю...')) {
+                    el.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ИИ качается: ${msg.percent}%`;
+                }
+            });
         } else if (msg.type === 'ready') {
             isAiReady = true;
             if (window.isWhisperDownloading) {
                 window.isWhisperDownloading = false;
                 calculateAiStorage(); // Вернет кнопки в правильное состояние
-                if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+                if(window.Telegram && window.Telegram.WebApp.HapticFeedback) window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
             }
+            // Когда скачалось — пишем "Перевожу"
+            document.querySelectorAll('.transcript-toggle[data-action=""]').forEach(el => {
+                if (el.innerHTML.includes('ИИ качается:')) {
+                    el.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Перевожу...`;
+                }
+            });
         } else if (msg.type === 'error') {
-            // ФИКС: Ловим ошибки скачивания!
             if (window.isWhisperDownloading) {
                 window.isWhisperDownloading = false;
-                calculateAiStorage(); // Сбрасываем кнопку "Подготовка..." обратно на "Скачать"
+                calculateAiStorage(); 
                 alert("Ошибка ИИ: " + msg.error);
             }
         }
     };
+
 
     function transcribeViaWorker(audioFloat32Array) {
         return new Promise((resolve, reject) => {
@@ -1571,8 +1583,9 @@ function initiateReply(msgElement) {
             } else if (isProcessing || isError) {
                 transcriptHtml = `<div class="transcript-toggle" style="cursor:default;">${escapeHTML(transcriptionText)}</div>`;
             } else {
-                // Если текста нет вообще - ЖЕЛЕЗОБЕТОННО рисуем синюю кнопку!
-                transcriptHtml = `<div class="transcript-toggle" style="cursor:pointer; color: var(--primary);" data-action="manual-transcribe" data-filename="${rawParams}" data-msgid="${msgId}"><i class="fas fa-magic"></i> Расшифровать текст</div>`;
+                const safeFileParam = text.replace('[VOICE]:', '');
+                // ИСПОЛЬЗУЕМ color: inherit, чтобы цвет подстраивался под фон пузыря чата!
+                transcriptHtml = `<div class="transcript-toggle" style="cursor:pointer; color: inherit; opacity: 0.9; font-weight: 500;" data-action="manual-transcribe" data-filename="${safeFileParam}" data-msgid="${msgId}"><i class="fas fa-magic"></i> Расшифровать текст</div>`;
             }
 
             // Рисуем график
@@ -1670,7 +1683,7 @@ function initiateReply(msgElement) {
             const toggle = msgEl.querySelector('.transcript-toggle');
             if (toggle && toggle.dataset.action === 'manual-transcribe') {
                 toggle.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Слушаю...';
-                toggle.style.color = 'var(--muted)';
+                toggle.style.color = 'inherit';
                 toggle.dataset.action = ''; // Блокируем повторные клики
             }
         }
